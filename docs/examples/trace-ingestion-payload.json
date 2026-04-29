@@ -1,0 +1,372 @@
+{
+  "traces": [
+    {
+      "client_trace_id": "ct_lead_20260429_9f4c2a",
+      "name": "real_estate_agent.answer_lead",
+      "service": "agente-imobiliaria-api",
+      "environment": "prod",
+      "started_at": "2026-04-29T13:42:10.120Z",
+      "ended_at": "2026-04-29T13:42:13.740Z",
+      "status": "partial",
+      "tags": {
+        "feature": "lead-qualification",
+        "agent": "imobiliaria-v3",
+        "channel": "whatsapp",
+        "prompt": "real-estate-lead-agent@12",
+        "market": "sao-paulo"
+      },
+      "user_ref": "lead_sha256_7b4b0b6d0f2f41a9",
+      "metadata": {
+        "trace_type": "agent_response",
+        "external_user_id": "lead_anon_8f2b1c",
+        "session_id": "sess_01JSD7Q65NF7R7M4SGV6W2KXQ8",
+        "request_id": "req_01JSD7Q6M86H2DJF5P9Y1GK2KB",
+        "sdk": {
+          "name": "evalops-python",
+          "version": "0.1.0",
+          "language": "python",
+          "runtime": "CPython 3.12.3",
+          "transport": "httpx",
+          "instrumentation": ["decorator", "openai"],
+          "sample_rate": 1.0
+        },
+        "input": {
+          "user_message": "Ola, busco apartamento de 2 quartos perto do metro Vila Mariana, ate BRL 850000, com vaga. Pode me indicar opcoes?"
+        },
+        "output": {
+          "assistant_message": "Tenho duas opcoes dentro do seu perfil. A melhor aderencia e o Residencial Aroeira, a 450 m do metro Vila Mariana, 2 quartos, 1 vaga e valor anunciado de BRL 835000. Tambem encontrei o Edificio Parque Sul por BRL 820000, mas ele fica a 1,2 km do metro. Posso encaminhar as duas fichas e sugerir horarios de visita para esta semana. Valores e disponibilidade devem ser confirmados pela equipe comercial antes de proposta."
+        },
+        "latency_ms": 3620,
+        "token_usage": {
+          "tokens_in": 2336,
+          "tokens_out": 328,
+          "total_tokens": 2664
+        },
+        "estimated_cost_usd": 0.001068,
+        "fallback_used": true,
+        "safety_blocked": false,
+        "error": null,
+        "redaction": {
+          "mode": "off",
+          "status": "not_applied",
+          "contains_pii": false
+        },
+        "client": {
+          "app_version": "2026.04.29",
+          "git_sha": "8f31c9a",
+          "region": "gru1"
+        }
+      },
+      "spans": [
+        {
+          "client_span_id": "cs_root",
+          "parent_client_span_id": null,
+          "type": "chain",
+          "name": "real_estate_agent.answer_lead",
+          "started_at": "2026-04-29T13:42:10.120Z",
+          "ended_at": "2026-04-29T13:42:13.740Z",
+          "status": "ok",
+          "input": {
+            "user_input": "Ola, busco apartamento de 2 quartos perto do metro Vila Mariana, ate BRL 850000, com vaga. Pode me indicar opcoes?"
+          },
+          "output": {
+            "final_output": "Tenho duas opcoes dentro do seu perfil. A melhor aderencia e o Residencial Aroeira, a 450 m do metro Vila Mariana, 2 quartos, 1 vaga e valor anunciado de BRL 835000. Tambem encontrei o Edificio Parque Sul por BRL 820000, mas ele fica a 1,2 km do metro. Posso encaminhar as duas fichas e sugerir horarios de visita para esta semana. Valores e disponibilidade devem ser confirmados pela equipe comercial antes de proposta."
+          },
+          "metadata": {
+            "trace_type": "agent_response",
+            "latency_ms": 3620,
+            "business_flow": "lead_qualification"
+          }
+        },
+        {
+          "client_span_id": "cs_retrieval_inventory",
+          "parent_client_span_id": "cs_root",
+          "type": "retrieval",
+          "name": "inventory.hybrid_search",
+          "started_at": "2026-04-29T13:42:10.180Z",
+          "ended_at": "2026-04-29T13:42:10.420Z",
+          "status": "ok",
+          "input": {
+            "query": "2 quartos Vila Mariana ate BRL 850000 com vaga metro",
+            "top_k": 4,
+            "filters": {
+              "city": "sao-paulo",
+              "property_type": "apartment",
+              "max_price_brl": 850000,
+              "bedrooms_min": 2,
+              "parking_min": 1
+            }
+          },
+          "output": {
+            "documents": [
+              {
+                "id": "listing:apt-1029",
+                "title": "Residencial Aroeira",
+                "snippet": "2 quartos, 1 vaga, 450 m do metro Vila Mariana, BRL 835000, disponivel para visita.",
+                "score": 0.91
+              },
+              {
+                "id": "listing:apt-1044",
+                "title": "Edificio Parque Sul",
+                "snippet": "2 quartos, 1 vaga, 1.2 km do metro Vila Mariana, BRL 820000, aceita financiamento.",
+                "score": 0.82
+              },
+              {
+                "id": "policy:pricing-disclaimer",
+                "title": "Pricing and availability disclaimer",
+                "snippet": "Always state that values and availability must be confirmed by the commercial team.",
+                "score": 0.78
+              }
+            ]
+          },
+          "metadata": {
+            "retrieval_context": {
+              "index": "property_inventory_prod",
+              "strategy": "hybrid_bm25_vector",
+              "embedding_model": "text-embedding-3-small"
+            },
+            "citations": [
+              {
+                "id": "listing:apt-1029",
+                "source": "inventory"
+              },
+              {
+                "id": "listing:apt-1044",
+                "source": "inventory"
+              },
+              {
+                "id": "policy:pricing-disclaimer",
+                "source": "policy"
+              }
+            ]
+          }
+        },
+        {
+          "client_span_id": "cs_llm_primary",
+          "parent_client_span_id": "cs_root",
+          "type": "llm_call",
+          "name": "gemini.chat.completions",
+          "started_at": "2026-04-29T13:42:10.450Z",
+          "ended_at": "2026-04-29T13:42:11.080Z",
+          "status": "error",
+          "provider": "gemini",
+          "model": "gemini-2.5-flash",
+          "prompt_version_ref": "real-estate-lead-agent@12",
+          "messages_in": [
+            {
+              "role": "system",
+              "content": "You are a real estate lead assistant. Use only retrieved inventory and always include the pricing disclaimer."
+            },
+            {
+              "role": "user",
+              "content": "Ola, busco apartamento de 2 quartos perto do metro Vila Mariana, ate BRL 850000, com vaga. Pode me indicar opcoes?"
+            }
+          ],
+          "messages_out": [],
+          "tokens_in": 798,
+          "tokens_out": 0,
+          "cost_usd": 0.000000,
+          "fallback_from_client_span_id": null,
+          "error": {
+            "type": "rate_limit_429",
+            "message": "Provider rate limit exceeded before first token.",
+            "retryable": true
+          },
+          "metadata": {
+            "model_config": {
+              "temperature": 0.2,
+              "max_tokens": 500,
+              "top_p": 0.9
+            },
+            "latency_ms": 630,
+            "safety_blocked": false
+          },
+          "events": [
+            {
+              "type": "fallback_triggered",
+              "occurred_at": "2026-04-29T13:42:11.082Z",
+              "payload": {
+                "from_provider": "gemini",
+                "from_model": "gemini-2.5-flash",
+                "to_provider": "openai",
+                "to_model": "gpt-4o-mini",
+                "reason": "rate_limit_429"
+              }
+            }
+          ]
+        },
+        {
+          "client_span_id": "cs_llm_draft",
+          "parent_client_span_id": "cs_root",
+          "type": "llm_call",
+          "name": "openai.chat.completions",
+          "started_at": "2026-04-29T13:42:11.120Z",
+          "ended_at": "2026-04-29T13:42:12.250Z",
+          "status": "ok",
+          "provider": "openai",
+          "model": "gpt-4o-mini",
+          "prompt_version_ref": "real-estate-lead-agent@12",
+          "messages_in": [
+            {
+              "role": "system",
+              "content": "You are a real estate lead assistant. Use only retrieved inventory and always include the pricing disclaimer."
+            },
+            {
+              "role": "user",
+              "content": "Ola, busco apartamento de 2 quartos perto do metro Vila Mariana, ate BRL 850000, com vaga. Pode me indicar opcoes?"
+            }
+          ],
+          "messages_out": [
+            {
+              "role": "assistant",
+              "content": "Vou consultar disponibilidade de visita para as duas melhores opcoes encontradas.",
+              "tool_calls": [
+                {
+                  "id": "call_7Yq4",
+                  "type": "function",
+                  "function": {
+                    "name": "availability.find_visit_slots",
+                    "arguments": "{\"listing_ids\":[\"listing:apt-1029\",\"listing:apt-1044\"],\"week\":\"2026-W18\"}"
+                  }
+                }
+              ]
+            }
+          ],
+          "tools": [
+            {
+              "name": "availability.find_visit_slots",
+              "description": "Find available visit slots for selected listings.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "listing_ids": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "week": {
+                    "type": "string"
+                  }
+                },
+                "required": ["listing_ids", "week"]
+              }
+            }
+          ],
+          "tokens_in": 1048,
+          "tokens_out": 94,
+          "cost_usd": 0.000343,
+          "fallback_from_client_span_id": "cs_llm_primary",
+          "metadata": {
+            "model_config": {
+              "temperature": 0.2,
+              "max_tokens": 500,
+              "top_p": 0.9
+            },
+            "latency_ms": 1130,
+            "fallback_used": true,
+            "safety_blocked": false
+          }
+        },
+        {
+          "client_span_id": "cs_tool_visit_slots",
+          "parent_client_span_id": "cs_llm_draft",
+          "type": "tool_call",
+          "name": "availability.find_visit_slots",
+          "started_at": "2026-04-29T13:42:12.260Z",
+          "ended_at": "2026-04-29T13:42:12.680Z",
+          "status": "ok",
+          "input": {
+            "listing_ids": ["listing:apt-1029", "listing:apt-1044"],
+            "week": "2026-W18"
+          },
+          "output": {
+            "slots": [
+              {
+                "listing_id": "listing:apt-1029",
+                "starts_at": "2026-05-01T18:00:00-03:00"
+              },
+              {
+                "listing_id": "listing:apt-1044",
+                "starts_at": "2026-05-02T10:00:00-03:00"
+              }
+            ],
+            "requires_human_confirmation": true
+          },
+          "metadata": {
+            "latency_ms": 420,
+            "tool_provider": "internal-crm"
+          }
+        },
+        {
+          "client_span_id": "cs_llm_final",
+          "parent_client_span_id": "cs_root",
+          "type": "llm_call",
+          "name": "openai.chat.completions",
+          "started_at": "2026-04-29T13:42:12.700Z",
+          "ended_at": "2026-04-29T13:42:13.720Z",
+          "status": "ok",
+          "provider": "openai",
+          "model": "gpt-4o-mini",
+          "prompt_version_ref": "real-estate-lead-agent@12",
+          "messages_in": [
+            {
+              "role": "system",
+              "content": "You are a real estate lead assistant. Use only retrieved inventory and always include the pricing disclaimer."
+            },
+            {
+              "role": "user",
+              "content": "Ola, busco apartamento de 2 quartos perto do metro Vila Mariana, ate BRL 850000, com vaga. Pode me indicar opcoes?"
+            },
+            {
+              "role": "tool",
+              "tool_call_id": "call_7Yq4",
+              "content": "{\"slots\":[{\"listing_id\":\"listing:apt-1029\",\"starts_at\":\"2026-05-01T18:00:00-03:00\"},{\"listing_id\":\"listing:apt-1044\",\"starts_at\":\"2026-05-02T10:00:00-03:00\"}],\"requires_human_confirmation\":true}"
+            }
+          ],
+          "messages_out": [
+            {
+              "role": "assistant",
+              "content": "Tenho duas opcoes dentro do seu perfil. A melhor aderencia e o Residencial Aroeira, a 450 m do metro Vila Mariana, 2 quartos, 1 vaga e valor anunciado de BRL 835000. Tambem encontrei o Edificio Parque Sul por BRL 820000, mas ele fica a 1,2 km do metro. Posso encaminhar as duas fichas e sugerir horarios de visita para esta semana. Valores e disponibilidade devem ser confirmados pela equipe comercial antes de proposta."
+            }
+          ],
+          "tokens_in": 1288,
+          "tokens_out": 234,
+          "cost_usd": 0.000725,
+          "fallback_from_client_span_id": null,
+          "metadata": {
+            "model_config": {
+              "temperature": 0.2,
+              "max_tokens": 500,
+              "top_p": 0.9
+            },
+            "latency_ms": 1020,
+            "safety_blocked": false,
+            "citation_quality_expected": true,
+            "citations": [
+              {
+                "id": "listing:apt-1029",
+                "claim": "Residencial Aroeira matches budget, bedrooms, parking and metro distance."
+              },
+              {
+                "id": "listing:apt-1044",
+                "claim": "Edificio Parque Sul is under budget but farther from metro."
+              },
+              {
+                "id": "policy:pricing-disclaimer",
+                "claim": "Values and availability require commercial confirmation."
+              }
+            ],
+            "tool_calls": [
+              {
+                "name": "availability.find_visit_slots",
+                "status": "ok",
+                "latency_ms": 420
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}
