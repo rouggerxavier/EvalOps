@@ -41,7 +41,7 @@ export default function HomePage() {
       <main className="mk-wrap">
         <section className="hero mk-container">
           <span className="hero__pill">
-            <span>v0.4 &middot; Tracing + LLM-as-judge em produção</span>
+            <span>Observabilidade contínua para apps de IA em produção</span>
             <span className="arrow">&rsaquo;</span>
           </span>
           <h1>
