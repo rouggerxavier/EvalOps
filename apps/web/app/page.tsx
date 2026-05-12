@@ -105,6 +105,7 @@ export default function HomePage() {
       <main className="mk-wrap">
         <section className="hero mk-container">
           <span className="hero__pill">
+            <span>Observabilidade contínua para apps de IA em produção</span>
             <span>v0.7 - tracing, avaliação e experimentos</span>
             <span className="arrow">&rsaquo;</span>
           </span>
