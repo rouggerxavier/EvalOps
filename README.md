@@ -1,43 +1,98 @@
 # EvalOps Studio
 
-> Mini-SaaS de **LLMOps / AgentOps** para tracing, avaliação automática, versionamento de prompts/modelos e melhoria contínua de aplicações com LLMs e agentes.
+EvalOps Studio is a portfolio-first LLMOps platform for:
 
-EvalOps Studio é a camada de **observabilidade, governança e qualidade** para aplicações de IA. Permite instrumentar agentes e apps com poucas linhas de código (SDK Python oficial), capturar traces ricos (prompt, resposta, ferramentas, tokens, custo, latência, fallback, erro), avaliar respostas com rubricas configuráveis (LLM-as-judge + heurísticas), comparar versões de prompt/modelo em testes de regressão e exportar datasets para fine-tuning ou few-shot.
+- trace ingestion and observability
+- rubric-based evaluations
+- prompt/dataset/experiment workflows
+- human feedback and JSONL export
 
-Pensado para servir de **camada de operação** sobre projetos como **DocOps Agent**, **Aurora Support AI** e **Agente ImobiliarIA** — e para demonstrar competência sênior em AI Engineering / LLMOps em contexto de portfólio.
+The project is spec-driven (`docs/`) and implemented in this monorepo.
 
----
+## Phase status
 
-## Status atual
+- Phase 1: identity, orgs, projects, API keys
+- Phase 2: trace ingestion + SDK Python
+- Phase 3: trace dashboard (overview/list/detail)
+- Phase 4: rubrics + sync evaluations
+- Phase 5: prompts, datasets, experiments
+- Phase 6: feedback, exports, usage/quota mocks
+- Phase 7: MVP hardening and release prep (current)
 
-🚧 **Fase: Spec Driven Development.** O projeto está em fase de especificação. **Nenhuma implementação ainda.** A documentação completa está em [`docs/`](docs/README.md).
+## Repository layout
 
-## Por onde começar
+```text
+apps/
+  api/               # FastAPI backend
+  web/               # Next.js dashboard
+packages/
+  sdk-python/        # evalops-python SDK
+docs/                # product, architecture, roadmap, ADRs
+```
 
-1. [`docs/00-project-overview.md`](docs/00-project-overview.md) — visão de produto e problema.
-2. [`docs/03-mvp-scope.md`](docs/03-mvp-scope.md) — o que está dentro e fora do MVP.
-3. [`docs/04-system-architecture.md`](docs/04-system-architecture.md) — arquitetura macro.
-4. [`docs/14-implementation-roadmap.md`](docs/14-implementation-roadmap.md) — plano de execução em fases.
-5. [`docs/decisions/`](docs/decisions/) — ADRs (Architecture Decision Records).
+## Local quickstart
 
-## Stack alvo (resumo)
+### 1) API
 
-- **Backend / API:** FastAPI + Python 3.12, Pydantic v2, SQLAlchemy 2 (async), Alembic.
-- **Workers:** Arq (Redis-based, async-native). _Fase 1.1._
-- **Banco:** PostgreSQL 16 (Neon). Redis (Upstash) para fila/cache/rate-limit.
-- **Frontend:** Next.js 15 (App Router) + TypeScript + Tailwind + shadcn/ui + Recharts.
-- **Auth:** Auth.js (NextAuth v5) com Email magic link + GitHub OAuth.
-- **LLM providers:** abstração via `litellm`. Default judges: OpenAI (`gpt-4o-mini`, `gpt-4.1`), Gemini (`gemini-2.5-flash`), Groq (`llama-3.3-70b`) para evals baratos.
-- **SDK oficial:** `evalops-python` (decorator `@trace`, cliente HTTP, contexto async).
-- **Deploy:** Vercel (frontend), Fly.io ou Railway (API + workers), Neon (Postgres), Upstash (Redis).
-- **Observabilidade do próprio EvalOps:** OpenTelemetry, logs estruturados (structlog), Sentry.
+```bash
+cd apps/api
+python -m venv .venv
+.venv\Scripts\activate
+pip install -e .[dev]
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
 
-> Justificativa completa em [`docs/decisions/ADR-0001-tech-stack.md`](docs/decisions/ADR-0001-tech-stack.md).
+### 2) Seed dev workspace
 
-## Contribuindo / explorando o projeto
+```bash
+python scripts/seed_dev.py
+```
 
-Este é um projeto de portfólio em fase de design. Sugestões e revisões de spec são bem-vindas via Issues ou PRs em `docs/`.
+### 3) Web
 
-## Licença
+```bash
+cd apps/web
+npm install
+npm run dev
+```
 
-A definir antes da primeira implementação. Default proposto: **MIT** para o SDK e **PolyForm Noncommercial** ou similar para o backend/frontend (caso o autor queira manter direito comercial). Ver [`docs/17-risks-tradeoffs-and-open-questions.md`](docs/17-risks-tradeoffs-and-open-questions.md).
+Open:
+
+- Dashboard: `http://localhost:3000/o/my-org/p/my-project`
+- API docs: `http://localhost:8000/docs`
+
+## Validation commands
+
+### Backend tests
+
+```bash
+pytest apps/api/tests -q
+```
+
+### SDK tests
+
+```bash
+pytest packages/sdk-python/tests -q
+```
+
+### Web build
+
+```bash
+cd apps/web && npm run build
+```
+
+### Hosted smoke (phase 7)
+
+```bash
+python apps/api/scripts/smoke_hosted.py --base-url http://localhost:8000
+```
+
+## Documentation map
+
+- Product overview: [docs/00-project-overview.md](docs/00-project-overview.md)
+- MVP scope: [docs/03-mvp-scope.md](docs/03-mvp-scope.md)
+- API spec: [docs/07-api-spec.md](docs/07-api-spec.md)
+- Roadmap: [docs/14-implementation-roadmap.md](docs/14-implementation-roadmap.md)
+- Acceptance checklist: [docs/21-mvp-acceptance-checklist.md](docs/21-mvp-acceptance-checklist.md)
+- Phase gates: [docs/22-phase-gates-and-validation.md](docs/22-phase-gates-and-validation.md)
+- Codebase audit: [docs/24-codebase-audit.md](docs/24-codebase-audit.md)

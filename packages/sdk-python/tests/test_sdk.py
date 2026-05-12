@@ -1,4 +1,7 @@
 import evalops
+import json
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from threading import Thread
 
 
 class DummyUploader:
@@ -49,3 +52,58 @@ def test_trace_decorator_submits_payload() -> None:
 def test_instrument_openai_is_safe_when_dep_missing() -> None:
     result = evalops.instrument_openai()
     assert isinstance(result, bool)
+
+
+class _CaptureHandler(BaseHTTPRequestHandler):
+    events: list[dict] = []
+
+    def do_POST(self) -> None:  # noqa: N802
+        length = int(self.headers.get("Content-Length", "0"))
+        body = self.rfile.read(length).decode("utf-8") if length > 0 else "{}"
+        payload = json.loads(body)
+        self.__class__.events.append({"path": self.path, "headers": dict(self.headers), "payload": payload})
+        self.send_response(202)
+        self.end_headers()
+        self.wfile.write(b'{"ingested":1}')
+
+    def log_message(self, format: str, *args: object) -> None:
+        return
+
+
+def test_sdk_smoke_real_http_integration() -> None:
+    _CaptureHandler.events.clear()
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _CaptureHandler)
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    port = server.server_port
+
+    try:
+        evalops.init(
+            api_key="evk_prod_integration",
+            project="docops",
+            environment="prod",
+            service="docops-api",
+            api_url=f"http://127.0.0.1:{port}/v1",
+            disabled=False,
+        )
+
+        @evalops.trace("docops.answer")
+        def handler(msg: str) -> str:
+            with evalops.span("retrieve", type="retrieval") as sp:
+                sp.set_io(input={"query": msg}, output={"hits": 2})
+            return "ok"
+
+        assert handler("hello") == "ok"
+        evalops.flush()
+
+        assert len(_CaptureHandler.events) >= 1
+        event = _CaptureHandler.events[-1]
+        assert event["path"] == "/v1/traces"
+        assert event["payload"]["traces"][0]["name"] == "docops.answer"
+        assert len(event["payload"]["traces"][0]["spans"]) >= 1
+    finally:
+        if evalops._tracer._uploader is not None:
+            evalops._tracer._uploader.shutdown()
+            evalops._tracer._uploader = None
+        server.shutdown()
+        server.server_close()

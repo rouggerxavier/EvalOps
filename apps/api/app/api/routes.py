@@ -6,8 +6,9 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.deps import ensure_org_membership, get_current_user, get_project_from_api_key
+from app.domain.services.usage_service import enforce_quota, increment_usage
 from app.infra.llm.pricing import compute_cost_usd
-from app.models import ApiKey, Event, Membership, Organization, Project, Span, Trace, User
+from app.models import ApiKey, Event, HumanFeedback, Membership, Organization, Project, Span, Trace, User
 from app.schemas import (
     ApiKeyCreate,
     ApiKeyCreateOut,
@@ -58,6 +59,35 @@ def create_organization(
     db.commit()
     db.refresh(org)
     return org
+
+
+@router.get("/resolve")
+def resolve_slugs(
+    org_slug: str,
+    project_slug: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Resolve org_slug + project_slug → real IDs. Used by the dashboard."""
+    org = db.query(Organization).filter(Organization.slug == org_slug).first()
+    if not org:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="not_found")
+    ensure_org_membership(db, user.id, org.id)
+    project = (
+        db.query(Project)
+        .filter(Project.organization_id == org.id, Project.slug == project_slug, Project.archived_at.is_(None))
+        .first()
+    )
+    if not project:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="not_found")
+    return {
+        "org_id": org.id,
+        "org_slug": org.slug,
+        "org_name": org.name,
+        "project_id": project.id,
+        "project_slug": project.slug,
+        "project_name": project.name,
+    }
 
 
 @router.get("/projects", response_model=dict)
@@ -201,6 +231,7 @@ def ingest_traces(
     project: Project = Depends(get_project_from_api_key),
     db: Session = Depends(get_db),
 ) -> dict:
+    enforce_quota(db, project, "traces_ingested", len(payload.traces))
     results: list[dict] = []
     errors: list[dict] = []
 
@@ -321,6 +352,8 @@ def ingest_traces(
             trace_row.total_cost_usd = float(total_cost)
             db.add(trace_row)
             db.commit()
+            increment_usage(db, project.organization_id, traces=1, cost_usd=float(total_cost))
+            db.commit()
             results.append({"client_trace_id": trace_in.client_trace_id, "trace_id": trace_id})
         except Exception as exc:  # noqa: BLE001
             db.rollback()
@@ -404,7 +437,33 @@ def get_trace(
                 ],
             }
         )
-    return {"trace": TraceOut.model_validate(trace).model_dump(), "spans": span_data, "events_count": len(events)}
+    feedback = (
+        db.query(HumanFeedback)
+        .filter(HumanFeedback.trace_id == trace_id)
+        .order_by(HumanFeedback.created_at.desc())
+        .all()
+    )
+    feedback_data = [
+        {
+            "id": row.id,
+            "trace_id": row.trace_id,
+            "source": row.source,
+            "thumbs": row.thumbs,
+            "rating": row.rating,
+            "comment": row.comment,
+            "tags": row.tags or [],
+            "user_ref": row.user_ref,
+            "correction": row.correction,
+            "created_at": row.created_at,
+        }
+        for row in feedback
+    ]
+    return {
+        "trace": TraceOut.model_validate(trace).model_dump(),
+        "spans": span_data,
+        "events_count": len(events),
+        "feedback": feedback_data,
+    }
 
 
 @router.delete("/traces/{trace_id}", status_code=status.HTTP_204_NO_CONTENT)

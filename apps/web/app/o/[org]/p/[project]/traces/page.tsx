@@ -1,6 +1,8 @@
-import Link from "next/link";
+﻿import Link from "next/link";
 
-import { getTraces, hasDashboardToken } from "@/lib/api";
+import { AuthRequiredPanel } from "@/components/AuthRequiredPanel";
+import { getTraces, hasAuthToken, resolveProject } from "@/lib/api";
+import { QuickstartCard } from "@/components/QuickstartCard";
 
 type Props = {
   params: Promise<{ org: string; project: string }>;
@@ -11,21 +13,13 @@ export default async function TracesListPage({ params, searchParams }: Props) {
   const { org, project } = await params;
   const qp = await searchParams;
 
-  if (!hasDashboardToken()) {
-    return (
-      <main className="container">
-        <div className="panel">
-          <h2 style={{ marginTop: 0 }}>Configuração pendente</h2>
-          <p className="muted">
-            Defina <code>EVALOPS_DASHBOARD_BEARER_TOKEN</code> para o dashboard consultar a API.
-          </p>
-        </div>
-      </main>
-    );
+  if (!(await hasAuthToken())) {
+    return <AuthRequiredPanel layout="container" />;
   }
 
+  const resolved = await resolveProject(org, project);
   const traces = await getTraces({
-    projectId: project,
+    projectId: resolved.project_id,
     status: qp.status,
     environment: qp.environment,
     name: qp.name,
@@ -58,7 +52,16 @@ export default async function TracesListPage({ params, searchParams }: Props) {
 
       <section className="panel" style={{ marginTop: 12 }}>
         {traces.data.length === 0 ? (
-          <p className="muted">Nenhum trace encontrado com os filtros atuais.</p>
+          <QuickstartCard
+            title="Nenhum trace ainda"
+            description="Conecte o SDK para comeÃ§ar a visualizar traces, spans e custos neste projeto."
+            steps={[
+              "Crie uma API key em API Keys com escopo ingest.",
+              "Configure EVALOPS_API_KEY no seu serviÃ§o.",
+              "Envie alguns requests instrumentados e atualize esta tela.",
+            ]}
+            snippet={`import evalops\n\nevalops.init(api_key="evk_prod_...", project="demo", environment="prod")\n\n@evalops.trace("chat.answer")\ndef answer(msg: str):\n    with evalops.span("llm_call", type="llm_call"):\n        return "ok"`}
+          />
         ) : (
           <table>
             <thead>
@@ -66,7 +69,7 @@ export default async function TracesListPage({ params, searchParams }: Props) {
                 <th>Nome</th>
                 <th>Status</th>
                 <th>Ambiente</th>
-                <th>Duração</th>
+                <th>DuraÃ§Ã£o</th>
                 <th>Tokens</th>
                 <th>Custo USD</th>
                 <th>Criado em</th>
@@ -95,3 +98,6 @@ export default async function TracesListPage({ params, searchParams }: Props) {
     </main>
   );
 }
+
+
+

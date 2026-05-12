@@ -1,9 +1,12 @@
-import Link from "next/link";
+﻿import Link from "next/link";
 
-import { getTrace, hasDashboardToken } from "@/lib/api";
+import { AuthRequiredPanel } from "@/components/AuthRequiredPanel";
+import { getTrace, hasAuthToken } from "@/lib/api";
+import { createTraceFeedbackAction } from "@/lib/actions";
 
 type Props = {
   params: Promise<{ org: string; project: string; trace: string }>;
+  searchParams: Promise<{ feedback?: string; error?: string }>;
 };
 
 function prettyJson(value: unknown): string {
@@ -11,20 +14,12 @@ function prettyJson(value: unknown): string {
   return JSON.stringify(value, null, 2);
 }
 
-export default async function TraceDetailPage({ params }: Props) {
+export default async function TraceDetailPage({ params, searchParams }: Props) {
   const { org, project, trace } = await params;
+  const qp = await searchParams;
 
-  if (!hasDashboardToken()) {
-    return (
-      <main className="container">
-        <div className="panel">
-          <h2 style={{ marginTop: 0 }}>Configuração pendente</h2>
-          <p className="muted">
-            Defina <code>EVALOPS_DASHBOARD_BEARER_TOKEN</code> para o dashboard consultar a API.
-          </p>
-        </div>
-      </main>
-    );
+  if (!(await hasAuthToken())) {
+    return <AuthRequiredPanel layout="container" />;
   }
 
   const detail = await getTrace(trace);
@@ -47,7 +42,7 @@ export default async function TraceDetailPage({ params }: Props) {
 
       <section className="grid-4" style={{ marginTop: 12 }}>
         <div className="panel">
-          <div className="muted">Duração</div>
+          <div className="muted">DuraÃ§Ã£o</div>
           <div className="kpi">{traceRow.duration_ms}ms</div>
         </div>
         <div className="panel">
@@ -78,7 +73,7 @@ export default async function TraceDetailPage({ params }: Props) {
                 <th>Tipo</th>
                 <th>Status</th>
                 <th>Model</th>
-                <th>Duração</th>
+                <th>DuraÃ§Ã£o</th>
                 <th>Eventos</th>
               </tr>
             </thead>
@@ -98,6 +93,57 @@ export default async function TraceDetailPage({ params }: Props) {
         )}
       </section>
 
+      <section className="panel" style={{ marginTop: 12 }}>
+        <h3 style={{ marginTop: 0 }}>Feedback humano</h3>
+        {qp.feedback === "1" ? <p className="ok">Feedback registrado.</p> : null}
+        {qp.error ? <p className="error">{qp.error}</p> : null}
+
+        <form action={createTraceFeedbackAction} className="grid-2" style={{ marginTop: 8 }}>
+          <input type="hidden" name="org" value={org} />
+          <input type="hidden" name="project" value={project} />
+          <input type="hidden" name="trace_id" value={traceRow.id} />
+          <label>
+            Thumbs
+            <select name="thumbs" defaultValue="up">
+              <option value="up">up</option>
+              <option value="down">down</option>
+            </select>
+          </label>
+          <label>
+            ComentÃ¡rio
+            <input name="comment" placeholder="o que aconteceu neste trace?" />
+          </label>
+          <button type="submit">Enviar feedback</button>
+        </form>
+
+        <div style={{ marginTop: 12 }}>
+          {detail.feedback.length === 0 ? (
+            <p className="muted">Sem feedback para este trace.</p>
+          ) : (
+            <table>
+              <thead>
+                <tr>
+                  <th>Thumbs</th>
+                  <th>ComentÃ¡rio</th>
+                  <th>Source</th>
+                  <th>Data</th>
+                </tr>
+              </thead>
+              <tbody>
+                {detail.feedback.map((fb) => (
+                  <tr key={fb.id}>
+                    <td>{fb.thumbs ?? "-"}</td>
+                    <td>{fb.comment ?? "-"}</td>
+                    <td>{fb.source}</td>
+                    <td>{new Date(fb.created_at).toLocaleString()}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </section>
+
       <section className="grid-2" style={{ marginTop: 12 }}>
         <div className="panel">
           <h3 style={{ marginTop: 0 }}>Trace metadata</h3>
@@ -113,3 +159,6 @@ export default async function TraceDetailPage({ params }: Props) {
     </main>
   );
 }
+
+
+

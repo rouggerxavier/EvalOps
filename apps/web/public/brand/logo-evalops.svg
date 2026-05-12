@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="200" height="32" viewBox="0 0 200 32" fill="none">
+  
+  <circle cx="14" cy="16" r="11" stroke="#3b8df5" stroke-width="2"></circle>
+  <circle cx="14" cy="16" r="6" stroke="#22d3ee" stroke-width="2"></circle>
+  <circle cx="14" cy="16" r="2" fill="#22d3ee"></circle>
+  
+  <text x="34" y="21" font-family="Inter, system-ui, sans-serif" font-size="15" font-weight="700" fill="#eef2ff" letter-spacing="-0.02em">EvalOps</text>
+  <text x="106" y="21" font-family="Inter, system-ui, sans-serif" font-size="15" font-weight="400" fill="#8a98c4" letter-spacing="-0.01em">Studio</text>
+</svg>

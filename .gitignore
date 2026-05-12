@@ -14,6 +14,7 @@ build/
 # Node
 node_modules/
 .next/
+*.tsbuildinfo
 coverage/
 npm-debug.log*
 yarn-error.log*
@@ -27,3 +28,17 @@ yarn-error.log*
 .DS_Store
 Thumbs.db
 .claude/
+
+# Repo hygiene
+# Keep only app source, tests and small project metadata at the API root.
+apps/api/*
+!apps/api/README.md
+!apps/api/pyproject.toml
+!apps/api/app/
+!apps/api/app/**
+!apps/api/tests/
+!apps/api/tests/**
+!apps/api/scripts/
+!apps/api/scripts/**
+apps/api/**/__pycache__/
+apps/api/**/*.py[cod]

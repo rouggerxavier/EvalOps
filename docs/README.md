@@ -48,6 +48,8 @@ Cada documento marca explicitamente:
 | 21 | [MVP Acceptance Checklist](21-mvp-acceptance-checklist.md) | Gate final para declarar o MVP pronto |
 | 22 | [Phase Gates & Validation](22-phase-gates-and-validation.md) | Gates objetivos para avancar entre fases |
 | 23 | [Agent Implementation Prompts](23-agent-implementation-prompts.md) | Prompts operacionais para agentes de implementacao |
+| 24 | [Codebase Audit & Repository Structure](24-codebase-audit.md) | Estado real do repo, mapa de pastas e problemas de organizacao |
+| 25 | [Phase 7 Release Report](25-phase7-release-report.md) | O que foi fechado na fase 7 e pendencias finais |
 
 ### Decisoes arquiteturais (ADRs)
 - [ADR-0001 - Tech Stack](decisions/ADR-0001-tech-stack.md)

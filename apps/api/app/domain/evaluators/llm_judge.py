@@ -1,0 +1,123 @@
+from __future__ import annotations
+
+import json
+import os
+import re
+import time
+from typing import Any
+
+from app.domain.evaluators.base import EvaluatorResult
+from app.domain.rubrics.resolver import resolve_dotpath
+
+
+def _extract_first_json(text: str) -> str | None:
+    match = re.search(r"\{.*\}", text, re.DOTALL)
+    return match.group(0) if match else None
+
+
+# Module-level hook — replace in tests via monkeypatch
+def _call_llm(model: str, messages: list[dict], temperature: float) -> str:
+    """Call LLM and return raw text response."""
+    import httpx
+
+    # Strip provider prefix (e.g. "openai/gpt-4o-mini" → "gpt-4o-mini")
+    model_name = model.split("/")[-1] if "/" in model else model
+
+    api_key = os.getenv("OPENAI_API_KEY", "")
+    resp = httpx.post(
+        "https://api.openai.com/v1/chat/completions",
+        headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+        json={"model": model_name, "messages": messages, "temperature": temperature},
+        timeout=60,
+    )
+    resp.raise_for_status()
+    return resp.json()["choices"][0]["message"]["content"]
+
+
+# Replaceable in tests
+call_llm = _call_llm
+
+
+def _render_prompt(template: str, context: dict) -> str:
+    try:
+        from jinja2 import Template
+        return Template(template).render(context)
+    except Exception:  # noqa: BLE001
+        return template
+
+
+def run(context: dict, config: dict[str, Any]) -> EvaluatorResult:
+    t0 = time.monotonic()
+    model: str = config.get("model", "openai/gpt-4o-mini")
+    temperature: float = config.get("temperature", 0)
+    prompt_template: str = config.get("prompt", "")
+    retry_on_invalid: int = config.get("retry_on_invalid", 1)
+    pass_threshold: float = config.get("pass_threshold", 0.7)
+    cost_cap_usd: float = config.get("cost_cap_usd", 0.01)
+
+    rendered_prompt = _render_prompt(prompt_template, context)
+    messages = [{"role": "user", "content": rendered_prompt}]
+
+    raw_text = ""
+    parsed: dict | None = None
+    attempts = 0
+    max_attempts = 1 + retry_on_invalid
+
+    while attempts < max_attempts:
+        attempts += 1
+        try:
+            raw_text = call_llm(model, messages, temperature)
+        except Exception as exc:  # noqa: BLE001
+            latency_ms = int((time.monotonic() - t0) * 1000)
+            return EvaluatorResult(
+                score=0.0,
+                passed=False,
+                reasoning=f"LLM call failed: {exc}",
+                raw_output={"error": str(exc)},
+                latency_ms=latency_ms,
+            )
+
+        # Try strict parse
+        try:
+            parsed = json.loads(raw_text)
+            break
+        except json.JSONDecodeError:
+            pass
+
+        # Try extract first JSON
+        extracted = _extract_first_json(raw_text)
+        if extracted:
+            try:
+                parsed = json.loads(extracted)
+                break
+            except json.JSONDecodeError:
+                pass
+
+        # Retry hint
+        if attempts < max_attempts:
+            messages.append({"role": "assistant", "content": raw_text})
+            messages.append({"role": "user", "content": "Respond ONLY with valid JSON."})
+
+    latency_ms = int((time.monotonic() - t0) * 1000)
+
+    if parsed is None:
+        return EvaluatorResult(
+            score=0.0,
+            passed=False,
+            reasoning="LLM returned invalid JSON after retries",
+            raw_output={"parse_error": True, "raw": raw_text[:500]},
+            latency_ms=latency_ms,
+        )
+
+    score = float(parsed.get("score", 0.0))
+    score = max(0.0, min(1.0, score))
+    passed = score >= pass_threshold
+    reasoning = str(parsed.get("reasoning", parsed.get("rationale", "")))
+
+    return EvaluatorResult(
+        score=score,
+        passed=passed,
+        reasoning=reasoning,
+        raw_output=parsed,
+        latency_ms=latency_ms,
+    )
