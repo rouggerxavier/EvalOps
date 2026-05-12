@@ -70,6 +70,28 @@ def get_evaluation_run(
     return {"run": _run_detail(run, db)}
 
 
+@router.get("/projects/{project_id}/evaluations")
+def list_project_evaluations(
+    project_id: str,
+    limit: int = 100,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    project = db.get(Project, project_id)
+    if not project:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="not_found")
+    ensure_org_membership(db, user.id, project.organization_id)
+    runs = (
+        db.query(EvaluationRun)
+        .join(Trace, EvaluationRun.trace_id == Trace.id)
+        .filter(Trace.project_id == project_id)
+        .order_by(EvaluationRun.created_at.desc())
+        .limit(limit)
+        .all()
+    )
+    return {"data": [_run_detail(run, db) for run in runs]}
+
+
 @router.get("/traces/{trace_id}/evaluations")
 def list_trace_evaluations(
     trace_id: str,

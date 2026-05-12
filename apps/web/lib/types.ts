@@ -33,29 +33,36 @@ export type TraceListResponse = {
   next_cursor: string | null;
 };
 
+export type TraceSpan = {
+  id: string;
+  trace_id: string;
+  parent_span_id: string | null;
+  type: string;
+  name: string;
+  status: string;
+  started_at: string | null;
+  ended_at: string | null;
+  duration_ms: number;
+  provider: string | null;
+  model: string | null;
+  tokens_in: number | null;
+  tokens_out: number | null;
+  cost_usd: number | null;
+  metadata: Record<string, unknown>;
+  input: Record<string, unknown> | null;
+  output: Record<string, unknown> | null;
+  error: Record<string, unknown> | null;
+  events: Array<{
+    id: string;
+    type: string;
+    occurred_at: string;
+    payload: Record<string, unknown>;
+  }>;
+};
+
 export type TraceDetailResponse = {
   trace: Trace;
-  spans: Array<{
-    id: string;
-    trace_id: string;
-    parent_span_id: string | null;
-    type: string;
-    name: string;
-    status: string;
-    duration_ms: number;
-    provider: string | null;
-    model: string | null;
-    metadata: Record<string, unknown>;
-    input: Record<string, unknown> | null;
-    output: Record<string, unknown> | null;
-    error: Record<string, unknown> | null;
-    events: Array<{
-      id: string;
-      type: string;
-      occurred_at: string;
-      payload: Record<string, unknown>;
-    }>;
-  }>;
+  spans: TraceSpan[];
   events_count: number;
   feedback: HumanFeedback[];
 };

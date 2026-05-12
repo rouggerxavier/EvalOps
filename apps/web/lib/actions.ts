@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { isRedirectError } from "next/dist/client/components/redirect-error";
 
 import {
   buildDatasetFromTraces,
@@ -29,6 +30,13 @@ function redirectWithMessage(path: string, params: Record<string, string>): neve
   redirect(`${path}?${search.toString()}`);
 }
 
+function messageFromActionError(error: unknown, fallback: string): string {
+  if (isRedirectError(error)) {
+    throw error;
+  }
+  return error instanceof Error ? error.message : fallback;
+}
+
 export async function createApiKeyAction(formData: FormData): Promise<void> {
   const org = String(formData.get("org") ?? "");
   const project = String(formData.get("project") ?? "");
@@ -38,20 +46,22 @@ export async function createApiKeyAction(formData: FormData): Promise<void> {
   const scopes = formData.getAll("scopes").map(String);
   const path = projectPath(org, project, "keys");
 
+  let result: { key: string; prefix: string } | null = null;
+  let errorMsg: string | null = null;
   try {
-    const created = await createApiKey(projectId, {
+    result = await createApiKey(projectId, {
       name,
       environment,
       scopes: scopes.length > 0 ? scopes : ["ingest", "read"],
     });
     revalidatePath(path);
-    redirectWithMessage(path, {
-      created: "1",
-      key: created.key,
-      prefix: created.prefix,
-    });
   } catch (error) {
-    redirectWithMessage(path, { error: error instanceof Error ? error.message : "Failed to create API key" });
+    errorMsg = messageFromActionError(error, "Failed to create API key");
+  }
+  if (result) {
+    redirectWithMessage(path, { created: "1", key: result.key, prefix: result.prefix });
+  } else {
+    redirectWithMessage(path, { error: errorMsg ?? "Failed to create API key" });
   }
 }
 
@@ -62,13 +72,14 @@ export async function revokeApiKeyAction(formData: FormData): Promise<void> {
   const keyId = String(formData.get("key_id") ?? "");
   const path = projectPath(org, project, "keys");
 
+  let errorMsg: string | null = null;
   try {
     await revokeApiKey(projectId, keyId);
     revalidatePath(path);
-    redirectWithMessage(path, { revoked: "1" });
   } catch (error) {
-    redirectWithMessage(path, { error: error instanceof Error ? error.message : "Failed to revoke API key" });
+    errorMsg = messageFromActionError(error, "Failed to revoke API key");
   }
+  redirectWithMessage(path, errorMsg ? { error: errorMsg } : { revoked: "1" });
 }
 
 export async function createRubricAction(formData: FormData): Promise<void> {
@@ -78,13 +89,14 @@ export async function createRubricAction(formData: FormData): Promise<void> {
   const yamlSource = String(formData.get("yaml_source") ?? "");
   const path = projectPath(org, project, "rubrics");
 
+  let errorMsg: string | null = null;
   try {
     await createRubric(projectId, yamlSource);
     revalidatePath(path);
-    redirectWithMessage(path, { created: "1" });
   } catch (error) {
-    redirectWithMessage(path, { error: error instanceof Error ? error.message : "Failed to create rubric" });
+    errorMsg = messageFromActionError(error, "Failed to create rubric");
   }
+  redirectWithMessage(path, errorMsg ? { error: errorMsg } : { created: "1" });
 }
 
 export async function createRubricVersionAction(formData: FormData): Promise<void> {
@@ -94,13 +106,14 @@ export async function createRubricVersionAction(formData: FormData): Promise<voi
   const yamlSource = String(formData.get("yaml_source") ?? "");
   const path = projectPath(org, project, "rubrics");
 
+  let errorMsg: string | null = null;
   try {
     await createRubricVersion(rubricId, yamlSource);
     revalidatePath(path);
-    redirectWithMessage(path, { versioned: "1" });
   } catch (error) {
-    redirectWithMessage(path, { error: error instanceof Error ? error.message : "Failed to create rubric version" });
+    errorMsg = messageFromActionError(error, "Failed to create rubric version");
   }
+  redirectWithMessage(path, errorMsg ? { error: errorMsg } : { versioned: "1" });
 }
 
 export async function triggerEvaluationAction(formData: FormData): Promise<void> {
@@ -111,6 +124,7 @@ export async function triggerEvaluationAction(formData: FormData): Promise<void>
   const rubricVersionRaw = String(formData.get("rubric_version") ?? "").trim();
   const path = projectPath(org, project, "evaluations");
 
+  let errorMsg: string | null = null;
   try {
     await triggerEvaluation({
       trace_id: traceId,
@@ -119,10 +133,10 @@ export async function triggerEvaluationAction(formData: FormData): Promise<void>
       triggered_by: "dashboard",
     });
     revalidatePath(path);
-    redirectWithMessage(path, { created: "1" });
   } catch (error) {
-    redirectWithMessage(path, { error: error instanceof Error ? error.message : "Failed to run evaluation" });
+    errorMsg = messageFromActionError(error, "Failed to run evaluation");
   }
+  redirectWithMessage(path, errorMsg ? { error: errorMsg } : { created: "1" });
 }
 
 export async function createPromptAction(formData: FormData): Promise<void> {
@@ -136,6 +150,7 @@ export async function createPromptAction(formData: FormData): Promise<void> {
   const metadataRaw = String(formData.get("metadata_json") ?? "{}");
   const path = projectPath(org, project, "prompts");
 
+  let errorMsg: string | null = null;
   try {
     await createPrompt(projectId, {
       slug,
@@ -146,10 +161,10 @@ export async function createPromptAction(formData: FormData): Promise<void> {
       changelog: "Created from dashboard",
     });
     revalidatePath(path);
-    redirectWithMessage(path, { created: "1" });
   } catch (error) {
-    redirectWithMessage(path, { error: error instanceof Error ? error.message : "Failed to create prompt" });
+    errorMsg = messageFromActionError(error, "Failed to create prompt");
   }
+  redirectWithMessage(path, errorMsg ? { error: errorMsg } : { created: "1" });
 }
 
 export async function createPromptVersionAction(formData: FormData): Promise<void> {
@@ -161,6 +176,7 @@ export async function createPromptVersionAction(formData: FormData): Promise<voi
   const metadataRaw = String(formData.get("metadata_json") ?? "{}");
   const path = projectPath(org, project, "prompts");
 
+  let errorMsg: string | null = null;
   try {
     await createPromptVersion(promptId, {
       template,
@@ -169,10 +185,10 @@ export async function createPromptVersionAction(formData: FormData): Promise<voi
       changelog: "Updated from dashboard",
     });
     revalidatePath(path);
-    redirectWithMessage(path, { versioned: "1" });
   } catch (error) {
-    redirectWithMessage(path, { error: error instanceof Error ? error.message : "Failed to create prompt version" });
+    errorMsg = messageFromActionError(error, "Failed to create prompt version");
   }
+  redirectWithMessage(path, errorMsg ? { error: errorMsg } : { versioned: "1" });
 }
 
 export async function createDatasetAction(formData: FormData): Promise<void> {
@@ -184,6 +200,7 @@ export async function createDatasetAction(formData: FormData): Promise<void> {
   const source = String(formData.get("source") ?? "manual");
   const path = projectPath(org, project, "datasets");
 
+  let errorMsg: string | null = null;
   try {
     await createDataset(projectId, {
       slug,
@@ -191,10 +208,10 @@ export async function createDatasetAction(formData: FormData): Promise<void> {
       source,
     });
     revalidatePath(path);
-    redirectWithMessage(path, { created: "1" });
   } catch (error) {
-    redirectWithMessage(path, { error: error instanceof Error ? error.message : "Failed to create dataset" });
+    errorMsg = messageFromActionError(error, "Failed to create dataset");
   }
+  redirectWithMessage(path, errorMsg ? { error: errorMsg } : { created: "1" });
 }
 
 export async function addDatasetItemAction(formData: FormData): Promise<void> {
@@ -206,6 +223,7 @@ export async function addDatasetItemAction(formData: FormData): Promise<void> {
   const metadataRaw = String(formData.get("metadata_json") ?? "{}");
   const path = projectPath(org, project, "datasets");
 
+  let errorMsg: string | null = null;
   try {
     await createDatasetItems(datasetId, {
       items: [
@@ -217,10 +235,10 @@ export async function addDatasetItemAction(formData: FormData): Promise<void> {
       ],
     });
     revalidatePath(path);
-    redirectWithMessage(path, { items_added: "1" });
   } catch (error) {
-    redirectWithMessage(path, { error: error instanceof Error ? error.message : "Failed to add dataset item" });
+    errorMsg = messageFromActionError(error, "Failed to add dataset item");
   }
+  redirectWithMessage(path, errorMsg ? { error: errorMsg } : { items_added: "1" });
 }
 
 export async function buildDatasetFromTracesAction(formData: FormData): Promise<void> {
@@ -232,6 +250,7 @@ export async function buildDatasetFromTracesAction(formData: FormData): Promise<
   const limitRaw = String(formData.get("limit") ?? "50");
   const path = projectPath(org, project, "datasets");
 
+  let errorMsg: string | null = null;
   try {
     await buildDatasetFromTraces(datasetId, {
       environment: environment || undefined,
@@ -239,10 +258,10 @@ export async function buildDatasetFromTracesAction(formData: FormData): Promise<
       limit: Number(limitRaw) || 50,
     });
     revalidatePath(path);
-    redirectWithMessage(path, { built: "1" });
   } catch (error) {
-    redirectWithMessage(path, { error: error instanceof Error ? error.message : "Failed to build dataset from traces" });
+    errorMsg = messageFromActionError(error, "Failed to build dataset from traces");
   }
+  redirectWithMessage(path, errorMsg ? { error: errorMsg } : { built: "1" });
 }
 
 export async function createExperimentAction(formData: FormData): Promise<void> {
@@ -257,6 +276,7 @@ export async function createExperimentAction(formData: FormData): Promise<void> 
   const baselineVariant = String(formData.get("baseline_variant") ?? "");
   const path = projectPath(org, project, "experiments");
 
+  let errorMsg: string | null = null;
   try {
     await createExperiment(projectId, {
       name,
@@ -267,10 +287,10 @@ export async function createExperimentAction(formData: FormData): Promise<void> 
       baseline_variant: baselineVariant || undefined,
     });
     revalidatePath(path);
-    redirectWithMessage(path, { created: "1" });
   } catch (error) {
-    redirectWithMessage(path, { error: error instanceof Error ? error.message : "Failed to create experiment" });
+    errorMsg = messageFromActionError(error, "Failed to create experiment");
   }
+  redirectWithMessage(path, errorMsg ? { error: errorMsg } : { created: "1" });
 }
 
 export async function runExperimentAction(formData: FormData): Promise<void> {
@@ -279,12 +299,18 @@ export async function runExperimentAction(formData: FormData): Promise<void> {
   const experimentId = String(formData.get("experiment_id") ?? "");
   const path = projectPath(org, project, "experiments");
 
+  let result: { run_id: string } | null = null;
+  let errorMsg: string | null = null;
   try {
-    const res = await runExperiment(experimentId, { triggered_by: "dashboard" });
+    result = await runExperiment(experimentId, { triggered_by: "dashboard" });
     revalidatePath(path);
-    redirectWithMessage(path, { run: "1", run_id: res.run_id, experiment_id: experimentId });
   } catch (error) {
-    redirectWithMessage(path, { error: error instanceof Error ? error.message : "Failed to run experiment" });
+    errorMsg = messageFromActionError(error, "Failed to run experiment");
+  }
+  if (result) {
+    redirectWithMessage(path, { run: "1", run_id: result.run_id, experiment_id: experimentId });
+  } else {
+    redirectWithMessage(path, { error: errorMsg ?? "Failed to run experiment" });
   }
 }
 
@@ -296,6 +322,7 @@ export async function createTraceFeedbackAction(formData: FormData): Promise<voi
   const comment = String(formData.get("comment") ?? "");
   const path = projectPath(org, project, `traces/${traceId}`);
 
+  let errorMsg: string | null = null;
   try {
     await createTraceFeedback(traceId, {
       source: "dashboard",
@@ -303,10 +330,10 @@ export async function createTraceFeedbackAction(formData: FormData): Promise<voi
       comment: comment || undefined,
     });
     revalidatePath(path);
-    redirectWithMessage(path, { feedback: "1" });
   } catch (error) {
-    redirectWithMessage(path, { error: error instanceof Error ? error.message : "Failed to create feedback" });
+    errorMsg = messageFromActionError(error, "Failed to create feedback");
   }
+  redirectWithMessage(path, errorMsg ? { error: errorMsg } : { feedback: "1" });
 }
 
 export async function createExportAction(formData: FormData): Promise<void> {
@@ -320,15 +347,22 @@ export async function createExportAction(formData: FormData): Promise<void> {
   if (environment) filters.environment = environment;
   if (status) filters.status = status;
 
+  let result: { export_id: string } | null = null;
+  let errorMsg: string | null = null;
   try {
-    const res = await createExport({
+    result = await createExport({
       project_id: projectId,
       format: "jsonl",
       filters,
     });
     revalidatePath(path);
-    redirectWithMessage(path, { created: "1", export_id: res.export_id });
   } catch (error) {
-    redirectWithMessage(path, { error: error instanceof Error ? error.message : "Failed to create export" });
+    errorMsg = messageFromActionError(error, "Failed to create export");
+  }
+  if (result) {
+    redirectWithMessage(path, { created: "1", export_id: result.export_id });
+  } else {
+    redirectWithMessage(path, { error: errorMsg ?? "Failed to create export" });
   }
 }
+

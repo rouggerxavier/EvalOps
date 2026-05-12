@@ -1,9 +1,9 @@
-import { redirect } from "next/navigation";
+﻿import { redirect } from "next/navigation";
 
 import { getSession } from "@/lib/auth";
 
 export const metadata = {
-  title: "Opening your workspace · EvalOps Studio",
+  title: "Abrindo seu workspace ? EvalOps Studio",
 };
 
 export const dynamic = "force-dynamic";
@@ -18,7 +18,7 @@ export default async function AppEntrypoint() {
     redirect(`/o/${org_slug}/p/${project_slug}`);
   }
 
-  // Authenticated but no workspace yet — show a minimal entry card.
+  // Authenticated but no workspace yet - show a minimal entry card.
   return (
     <>
       <div className="bg-stage">
@@ -36,18 +36,18 @@ export default async function AppEntrypoint() {
               letterSpacing: "-0.02em",
             }}
           >
-            No workspace yet
+            Nenhum workspace ainda
           </h1>
           <p style={{ color: "var(--fg-3)", fontSize: 14, margin: "0 0 20px" }}>
-            Your account is signed in, but no workspace was found. Create one to continue.
+            Sua conta está autenticada, mas nenhum workspace foi encontrado. Crie um para continuar.
           </p>
           <p style={{ color: "var(--fg-4)", fontSize: 12, margin: 0 }}>
             <a href="/register" style={{ color: "var(--primary-300)", fontWeight: 600 }}>
-              Create workspace
+              Criar workspace
             </a>
             &nbsp;&middot;&nbsp;
             <a href="/login" style={{ color: "var(--primary-300)", fontWeight: 600 }}>
-              Sign in as another user
+              Entrar com outro usuário
             </a>
           </p>
         </div>
@@ -55,3 +55,5 @@ export default async function AppEntrypoint() {
     </>
   );
 }
+
+

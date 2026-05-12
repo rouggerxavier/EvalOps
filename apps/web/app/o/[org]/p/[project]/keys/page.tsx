@@ -27,18 +27,18 @@ export default async function KeysPage({ params, searchParams }: Props) {
     <main className="main">
       <div className="page-header">
         <div>
-          <h1>API Keys</h1>
-          <p className="sub">Create ingestion keys, review scopes and revoke leaked credentials.</p>
+          <h1>Chaves API</h1>
+          <p className="sub">Crie chaves de ingestão, revise escopos e revogue credenciais vazadas.</p>
         </div>
       </div>
 
       {qp.error ? <Flash kind="error" message={qp.error} /> : null}
-      {qp.created ? <Flash kind="success" message="API key created. Copy the secret now; it will not be shown again." /> : null}
-      {qp.revoked ? <Flash kind="success" message="API key revoked." /> : null}
+      {qp.created ? <Flash kind="success" message="Chave API criada. Copie o segredo agora; ele não será mostrado novamente." /> : null}
+      {qp.revoked ? <Flash kind="success" message="Chave API revogada." /> : null}
       {qp.key ? (
         <section className="card secret-card">
           <div className="rail__head">
-            <span className="title">New API key</span>
+            <span className="title">Nova chave API</span>
             {qp.prefix ? <span className="badge badge--primary">{qp.prefix}</span> : null}
           </div>
           <pre className="secret-value">{qp.key}</pre>
@@ -49,8 +49,8 @@ export default async function KeysPage({ params, searchParams }: Props) {
         <section className="card">
           <div className="section-head">
             <div>
-              <h2>Create key</h2>
-              <p>Use `ingest` for SDK writes and `read` for internal dashboards or tooling.</p>
+              <h2>Criar chave</h2>
+              <p>Use `ingest` para escrita pelo SDK e `read` para dashboards internos ou ferramentas.</p>
             </div>
           </div>
 
@@ -65,7 +65,7 @@ export default async function KeysPage({ params, searchParams }: Props) {
             </label>
 
             <label className="field">
-              <span>Environment</span>
+              <span>Ambiente</span>
               <select name="environment" defaultValue="prod">
                 <option value="dev">dev</option>
                 <option value="staging">staging</option>
@@ -85,26 +85,26 @@ export default async function KeysPage({ params, searchParams }: Props) {
               </label>
             </fieldset>
 
-            <button type="submit" className="primary-btn">Create key</button>
+            <button type="submit" className="primary-btn">Criar chave</button>
           </form>
         </section>
 
         <section className="card">
           <div className="section-head">
             <div>
-              <h2>Existing keys</h2>
+              <h2>Chaves existentes</h2>
               <p>{keys.data.length} key(s) registered for this project.</p>
             </div>
           </div>
 
           {keys.data.length === 0 ? (
             <QuickstartCard
-              title="Nenhuma API key ainda"
-              description="Gere uma key de ingest para conectar seu serviÃ§o ao EvalOps."
+              title="Nenhuma chave API ainda"
+              description="Crie uma chave de ingestão antes de conectar o SDK Python."
               steps={[
-                "Crie uma key com escopo ingest.",
-                "Salve a secret imediatamente (exibida uma Ãºnica vez).",
-                "Configure a key no SDK Python e valide com um trace.",
+                "Crie uma chave com o escopo ingest.",
+                "Copie o segredo imediatamente; ele aparece uma única vez.",
+                "Configure a chave no SDK Python e valide com um trace.",
               ]}
             />
           ) : (
@@ -126,7 +126,7 @@ export default async function KeysPage({ params, searchParams }: Props) {
                     <td><code>{key.prefix}</code></td>
                     <td><span className="badge badge--env">{key.environment}</span></td>
                     <td>{key.scopes.join(", ")}</td>
-                    <td>{key.revoked_at ? <span className="badge badge--failed">Revoked</span> : <span className="badge badge--passed">Active</span>}</td>
+                    <td>{key.revoked_at ? <span className="badge badge--failed">Revogada</span> : <span className="badge badge--passed">Ativa</span>}</td>
                     <td>
                       {!key.revoked_at ? (
                         <form action={revokeApiKeyAction}>
@@ -134,7 +134,7 @@ export default async function KeysPage({ params, searchParams }: Props) {
                           <input type="hidden" name="project" value={project} />
                           <input type="hidden" name="project_id" value={resolved.project_id} />
                           <input type="hidden" name="key_id" value={key.id} />
-                          <button type="submit" className="danger-btn">Revoke</button>
+                          <button type="submit" className="danger-btn">Revogar</button>
                         </form>
                       ) : null}
                     </td>
@@ -148,6 +148,8 @@ export default async function KeysPage({ params, searchParams }: Props) {
     </main>
   );
 }
+
+
 
 
 

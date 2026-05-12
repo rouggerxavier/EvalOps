@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { LogOut } from "lucide-react";
 
@@ -28,3 +28,5 @@ export function UserMenu({ initials, email, name }: Props) {
     </form>
   );
 }
+
+

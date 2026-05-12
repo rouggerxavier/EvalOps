@@ -1,4 +1,4 @@
-import Link from "next/link";
+﻿import Link from "next/link";
 import { redirect } from "next/navigation";
 import { ArrowLeft, ArrowRight } from "lucide-react";
 
@@ -7,7 +7,7 @@ import { loginAction } from "@/lib/auth-actions";
 import { getSession } from "@/lib/auth";
 
 export const metadata = {
-  title: "Sign in · EvalOps Studio",
+  title: "Entrar - EvalOps Studio",
 };
 
 type Search = Promise<{ error?: string; email?: string; redirected?: string }>;
@@ -24,7 +24,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Search
       <div className="auth-grid">
         <section className="auth-pane">
           <Link className="auth-back" href="/">
-            <ArrowLeft size={14} /> Back home
+            <ArrowLeft size={14} /> Voltar ao início
           </Link>
           <div className="auth-pane__form">
             <Link className="auth-brand" href="/">
@@ -33,9 +33,9 @@ export default async function LoginPage({ searchParams }: { searchParams: Search
                 EvalOps<span className="sub">Studio</span>
               </span>
             </Link>
-            <h1>Welcome back</h1>
+            <h1>Boas-vindas de volta</h1>
             <p className="auth-sub">
-              Sign in to your workspace to keep tracing, evaluating and shipping.
+              Entre no seu workspace para continuar rastreando, avaliando e evoluindo seus agentes.
             </p>
 
             {sp?.error ? <p className="auth-error">{sp.error}</p> : null}
@@ -47,7 +47,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Search
                   id="email"
                   name="email"
                   type="email"
-                  placeholder="you@company.com"
+                  placeholder="voce@empresa.com"
                   autoComplete="email"
                   defaultValue={sp?.email ?? ""}
                   required
@@ -55,31 +55,31 @@ export default async function LoginPage({ searchParams }: { searchParams: Search
               </div>
               <div className="auth-field">
                 <div className="auth-field__row">
-                  <label htmlFor="password">Password</label>
+                  <label htmlFor="password">Senha</label>
                 </div>
                 <input
                   id="password"
                   name="password"
                   type="password"
-                  placeholder="••••••••"
+                  placeholder="********"
                   autoComplete="current-password"
                   required
                 />
               </div>
               <label className="auth-checkbox">
-                <input type="checkbox" name="remember" defaultChecked /> Keep me signed in for 30 days
+                <input type="checkbox" name="remember" defaultChecked /> Manter conectado por 30 dias
               </label>
               <button type="submit" className="mk-btn mk-btn--primary mk-btn--block mk-btn--lg">
-                Sign in <ArrowRight />
+                Entrar <ArrowRight />
               </button>
             </form>
 
             <p className="auth-foot">
-              Don&apos;t have a workspace? <Link href="/register">Create one</Link>
+              Ainda não tem workspace? <Link href="/register">Crie um</Link>
             </p>
             <p className="auth-legal">
-              By signing in you agree to our <a href="#">Terms</a> and <a href="#">Privacy Policy</a>.
-              Single sign-on (SSO) is available on the Team plan.
+              Ao entrar, você concorda com nossos <a href="#">Termos</a> e <a href="#">Política de Privacidade</a>.
+              Single sign-on (SSO) está disponível no plano Team.
             </p>
           </div>
         </section>
@@ -89,3 +89,5 @@ export default async function LoginPage({ searchParams }: { searchParams: Search
     </div>
   );
 }
+
+

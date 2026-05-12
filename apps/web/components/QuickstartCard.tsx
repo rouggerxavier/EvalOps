@@ -1,4 +1,4 @@
-type QuickstartCardProps = {
+﻿type QuickstartCardProps = {
   title: string;
   description: string;
   steps: string[];
@@ -23,3 +23,5 @@ export function QuickstartCard({ title, description, steps, snippet }: Quickstar
     </div>
   );
 }
+
+
