@@ -3,36 +3,51 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  LayoutDashboard,
   Activity,
-  Gauge,
-  ListChecks,
-  FileText,
+  ChevronDown,
   Database,
-  FlaskConical,
-  GitCompare,
   Download,
+  FlaskConical,
+  Home,
   KeyRound,
-  Settings,
-  ChevronsUpDown,
-  Terminal,
+  List,
+  Sparkles,
+  Target,
 } from "lucide-react";
 
-const ACTIVE_NAV = [
-  { id: "overview",   label: "Overview",    Icon: LayoutDashboard, path: "" },
-  { id: "traces",     label: "Traces",      Icon: Activity,        path: "/traces" },
-  { id: "evals",      label: "Evaluations", Icon: Gauge,           path: "/evaluations" },
-  { id: "rubrics",    label: "Rubrics",     Icon: ListChecks,      path: "/rubrics" },
-  { id: "keys",       label: "API Keys",    Icon: KeyRound,        path: "/keys" },
-  { id: "prompts",    label: "Prompts",     Icon: FileText,        path: "/prompts" },
-  { id: "datasets",   label: "Datasets",    Icon: Database,        path: "/datasets" },
-  { id: "experiments",label: "Experiments", Icon: FlaskConical,    path: "/experiments" },
-  { id: "exports",    label: "Exports",     Icon: Download,         path: "/exports" },
-];
+type NavItem = {
+  id: string;
+  label: string;
+  Icon: React.ElementType;
+  path: string;
+  shortcut?: string;
+};
 
-const FUTURE_NAV = [
-  { id: "regression", label: "Regression",  Icon: GitCompare },
-  { id: "settings",   label: "Settings",    Icon: Settings,        path: "/settings" },
+const SECTIONS: Array<{ label: string; items: NavItem[] }> = [
+  {
+    label: "Projeto",
+    items: [
+      { id: "overview",    label: "Visão geral", Icon: Home,         path: "",             shortcut: "G O" },
+      { id: "traces",      label: "Traces",       Icon: Activity,     path: "/traces",      shortcut: "G T" },
+      { id: "evaluations", label: "Avaliações",   Icon: Target,       path: "/evaluations", shortcut: "G E" },
+      { id: "experiments", label: "Experimentos", Icon: FlaskConical, path: "/experiments", shortcut: "G X" },
+    ],
+  },
+  {
+    label: "Recursos",
+    items: [
+      { id: "prompts",  label: "Prompts",  Icon: Sparkles, path: "/prompts" },
+      { id: "rubrics",  label: "Rubricas", Icon: List,     path: "/rubrics" },
+      { id: "datasets", label: "Datasets", Icon: Database, path: "/datasets" },
+    ],
+  },
+  {
+    label: "Operação",
+    items: [
+      { id: "keys",    label: "Chaves API", Icon: KeyRound, path: "/keys" },
+      { id: "exports", label: "Exports",    Icon: Download, path: "/exports" },
+    ],
+  },
 ];
 
 export function Sidebar({ org, project }: { org: string; project: string }) {
@@ -44,81 +59,51 @@ export function Sidebar({ org, project }: { org: string; project: string }) {
     return pathname.startsWith(base + path);
   }
 
-  const initials = org.substring(0, 2).toUpperCase();
-
   return (
-    <aside className="sidebar">
-      <div className="sidebar__brand">
-        <svg className="mark" width="22" height="22" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-          <circle cx="16" cy="16" r="13" stroke="#3b8df5" strokeWidth="2" />
-          <circle cx="16" cy="16" r="7" stroke="#22d3ee" strokeWidth="2" />
-          <circle cx="16" cy="16" r="2.5" fill="#22d3ee" />
-        </svg>
-        <div className="name">
-          EvalOps<span className="sub">Studio</span>
+    <aside className="evo-sidebar">
+      <div className="evo-sidebar__brand">
+        <div className="evo-sidebar__logo" aria-hidden="true">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+            <path d="M2 3.5 L7 1 L12 3.5 L12 10.5 L7 13 L2 10.5 Z" stroke="#4F8CFF" strokeWidth="1.4" />
+            <circle cx="7" cy="7" r="1.5" fill="#4F8CFF" />
+          </svg>
         </div>
+        <div className="evo-sidebar__brand-name">EvalOps</div>
+        <span className="evo-sidebar__brand-meta">v1.0</span>
       </div>
 
-      <div className="workspace">
-        <div className="workspace__avatar">{initials}</div>
-        <div className="workspace__meta">
-          <span className="workspace__label">Workspace</span>
-          <span className="workspace__name">{org}</span>
+      <div className="evo-project-switcher">
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div className="evo-project-switcher__org">{org} · prod</div>
+          <div className="evo-project-switcher__name">{project}</div>
         </div>
-        <ChevronsUpDown size={14} className="workspace__chevron" />
+        <ChevronDown size={14} className="evo-project-switcher__chevron" />
       </div>
 
-      <nav className="nav">
-        <div className="nav__group-label">Live now</div>
-        {ACTIVE_NAV.map(({ id, label, Icon, path }) => (
-          <Link
-            key={id}
-            href={path === "" ? base : `${base}${path}`}
-            className={`nav__item${isActive(path) ? " active" : ""}`}
-          >
-            <Icon size={16} />
-            <span>{label}</span>
-          </Link>
-        ))}
-
-        <div className="nav__group-label" style={{ marginTop: 10 }}>Future</div>
-        {FUTURE_NAV.map(({ id, label, Icon }) => (
-          <div key={id} className="nav__item nav__item--disabled" aria-disabled="true">
-            <Icon size={16} />
-            <span>{label}</span>
-            <span className="nav__tag">Soon</span>
-          </div>
-        ))}
-      </nav>
-
-      <div className="sidebar__footer">
-        <div className="side-card">
-          <div className="side-card__row">
-            <div className="side-card__icon">
-              <KeyRound size={14} />
-            </div>
-            <div style={{ flex: 1 }}>
-              <div className="side-card__title">API Keys</div>
-              <div className="side-card__meta">Project access management</div>
-            </div>
-          </div>
-        </div>
-
-        <div className="side-card">
-          <div className="side-card__row">
-            <div
-              className="side-card__icon"
-              style={{ background: "rgba(46,194,126,0.14)", color: "var(--success)" }}
+      {SECTIONS.map((section) => (
+        <div className="evo-nav-section" key={section.label}>
+          <div className="evo-nav-section__label">{section.label}</div>
+          {section.items.map(({ id, label, Icon, path, shortcut }) => (
+            <Link
+              key={id}
+              href={path === "" ? base : `${base}${path}`}
+              className={`evo-nav-item${isActive(path) ? " is-active" : ""}`}
             >
-              <Terminal size={14} />
-            </div>
-            <div style={{ flex: 1 }}>
-              <div className="side-card__title">SDK Python</div>
-              <div className="side-card__meta">Ingestion source</div>
-            </div>
+              <Icon className="evo-nav-item__icon" size={15} />
+              <span>{label}</span>
+              {shortcut ? <span className="evo-nav-item__shortcut">{shortcut}</span> : null}
+            </Link>
+          ))}
+        </div>
+      ))}
+
+      <div className="evo-sidebar__footer">
+        <div className="evo-sdk-status">
+          <span className="evo-pulse" aria-hidden="true" />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="evo-sdk-status__name">SDK Python</div>
+            <div className="evo-sdk-status__meta">online · ingestão pronta</div>
           </div>
-          <div className="side-card__healthy">Healthy</div>
-          <div className="side-card__lastseen">Last seen: 1m ago</div>
         </div>
       </div>
     </aside>
