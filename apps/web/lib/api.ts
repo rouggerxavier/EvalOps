@@ -165,6 +165,11 @@ export async function createRubricVersion(rubricId: string, yamlSource: string):
   });
 }
 
+export async function getProjectEvaluations(projectId: string, limit = 100): Promise<{ data: EvaluationRun[] }> {
+  const params = new URLSearchParams({ limit: String(limit) });
+  return fetchJson<{ data: EvaluationRun[] }>(`/projects/${projectId}/evaluations?${params.toString()}`);
+}
+
 export async function getTraceEvaluations(traceId: string): Promise<{ data: EvaluationRun[] }> {
   return fetchJson<{ data: EvaluationRun[] }>(`/traces/${traceId}/evaluations`);
 }
