@@ -1,4 +1,4 @@
-import Link from "next/link";
+﻿import Link from "next/link";
 
 export function MarketingFooter() {
   return (
@@ -13,14 +13,14 @@ export function MarketingFooter() {
               </span>
             </Link>
             <p>
-              A camada de observabilidade, governança e qualidade para aplicações de IA. Feito para
-              engenheiros de IA que colocam agentes em produção.
+              A camada de observabilidade, governança e qualidade para aplicações de IA. Feita para engenheiros
+              que colocam agentes em produção.
             </p>
           </div>
           <div>
             <h5>Produto</h5>
             <ul>
-              <li><a href="/#product">Rastreamento</a></li>
+              <li><a href="/#product">Tracing</a></li>
               <li><a href="/#product">Rubricas</a></li>
               <li><a href="/#product">Experimentos</a></li>
               <li><a href="/#product">Datasets</a></li>
@@ -31,8 +31,8 @@ export function MarketingFooter() {
             <h5>Desenvolvedores</h5>
             <ul>
               <li><Link href="/docs">Documentação</Link></li>
-              <li><Link href="/docs">Python SDK</Link></li>
-              <li><Link href="/docs">HTTP API</Link></li>
+              <li><Link href="/docs">SDK Python</Link></li>
+              <li><Link href="/docs">API HTTP</Link></li>
               <li>
                 <a href="https://github.com/rouggerxavier/EvalOps" target="_blank" rel="noreferrer">
                   GitHub
@@ -44,7 +44,7 @@ export function MarketingFooter() {
             <h5>Empresa</h5>
             <ul>
               <li><Link href="/login">Entrar</Link></li>
-              <li><Link href="/register">Criar espaço de trabalho</Link></li>
+              <li><Link href="/register">Criar workspace</Link></li>
               <li><Link href="/app">Abrir app</Link></li>
             </ul>
           </div>
@@ -57,3 +57,5 @@ export function MarketingFooter() {
     </footer>
   );
 }
+
+

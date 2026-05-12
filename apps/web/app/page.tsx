@@ -15,6 +15,68 @@ import LightPillar from "@/components/LightPillar";
 import { MarketingFooter } from "@/components/MarketingFooter";
 import { MarketingNav } from "@/components/MarketingNav";
 
+const features = [
+  {
+    Icon: Activity,
+    title: "Tracing estruturado para agentes",
+    body: "Capture a árvore completa de execução: chamadas LLM, ferramentas, retrievals e fallbacks com tokens, custo e latência em cada span.",
+    chip: "FR-20 / FR-25",
+  },
+  {
+    Icon: Gauge,
+    title: "Rubricas como código",
+    body: "Declare qualidade em YAML. LLM-as-judge, regex, validação de schema, similaridade cosseno e exact match podem ser compostos e versionados.",
+    chip: "FR-30 / FR-31 / FR-33",
+  },
+  {
+    Icon: GitCompare,
+    title: "Experimentos e regressão",
+    body: "Rode um golden set contra variantes de prompt ou modelo. Compare pass rate, custo e latência antes de publicar.",
+    chip: "FR-42 / FR-43 / FR-44",
+  },
+  {
+    Icon: ThumbsUp,
+    title: "Feedback que vira dado de treino",
+    body: "Revisões humanas entram nos datasets. Exporte traces aprovados como JSONL para fine-tuning, few-shot ou análise offline.",
+    chip: "FR-60 / FR-63 / FR-64",
+  },
+  {
+    Icon: DollarSign,
+    title: "Custo visível por padrão",
+    body: "Cada span carrega custo em USD. Agrupe por modelo, projeto, ambiente ou usuário e encontre prompts caros antes que virem surpresa.",
+    chip: "FR-50 / FR-53",
+  },
+  {
+    Icon: ShieldCheck,
+    title: "Schema pronto para privacidade",
+    body: "Redação, retenção e auditoria fazem parte do modelo desde o início: chaves API com hash, ownership claro e hooks de compliance.",
+    chip: "NFR-21 / NFR-30 / NFR-31",
+  },
+];
+
+const steps = [
+  {
+    step: "ETAPA 01",
+    title: "Instrumente",
+    body: "Adicione o SDK ou envie traces por POST diretamente. Spans, ferramentas e eventos entram em um único grafo de execução.",
+  },
+  {
+    step: "ETAPA 02",
+    title: "Avalie",
+    body: "Rode rubricas na ingestão ou manualmente. Cada trace recebe score, reasoning e status de aprovação.",
+  },
+  {
+    step: "ETAPA 03",
+    title: "Compare",
+    body: "Rode experimentos entre prompts, modelos ou parâmetros e compare qualidade, custo e latência.",
+  },
+  {
+    step: "ETAPA 04",
+    title: "Melhore",
+    body: "Promova a melhor variante e exporte exemplos de alta qualidade para fine-tuning ou suítes de regressão.",
+  },
+];
+
 export default function HomePage() {
   return (
     <div className="mk-shell">
@@ -37,11 +99,13 @@ export default function HomePage() {
         </div>
         <div className="bg-grid" />
       </div>
+
       <MarketingNav variant="landing" />
+
       <main className="mk-wrap">
         <section className="hero mk-container">
           <span className="hero__pill">
-            <span>v0.4 &middot; Tracing + LLM-as-judge em produção</span>
+            <span>v0.7 - tracing, avaliação e experimentos</span>
             <span className="arrow">&rsaquo;</span>
           </span>
           <h1>
@@ -50,25 +114,23 @@ export default function HomePage() {
             para aplicações de IA.
           </h1>
           <p className="hero__lede">
-            Rastreie cada chamada de LLM. Avalie cada resposta com rubricas declarativas. Compare prompts e
-            modelos em tráfego real. Envie para produção com confiança &mdash; sem torcer.
+            Trace cada chamada LLM. Avalie cada resposta com rubricas declarativas. Compare prompts e modelos
+            em tráfego de produção antes que a qualidade desvie em silêncio.
           </p>
           <div className="hero__cta">
             <Link className="mk-btn mk-btn--primary mk-btn--lg" href="/register">
-              Começar grátis
+              Comece a rastrear grátis
               <ArrowRight />
             </Link>
             <Link className="mk-btn mk-btn--secondary mk-btn--lg" href="/docs">
               <BookOpen />
-              Ler documentação
+              Ler a documentação
             </Link>
           </div>
           <div className="hero__meta">
-            <span>
-              <code>pip install evalops</code>
-            </span>
+            <span><code>pip install evalops</code></span>
             <span className="dot" />
-            <span>SDK Python &middot; compatível com OpenTelemetry &middot; pronto para self-hosting</span>
+            <span>SDK Python - compatível com OpenTelemetry - pronto para self-host</span>
           </div>
 
           <div className="hero__preview">
@@ -79,14 +141,12 @@ export default function HomePage() {
                   EvalOps
                 </div>
                 <div className="dash-mock__nav">
-                  <div className="item active"><span className="dot" />Visão geral</div>
-                  <div className="item"><span className="dot" />Traces</div>
-                  <div className="item"><span className="dot" />Avaliações</div>
-                  <div className="item"><span className="dot" />Rubricas</div>
-                  <div className="item"><span className="dot" />Experimentos</div>
-                  <div className="item"><span className="dot" />Datasets</div>
-                  <div className="item"><span className="dot" />Prompts</div>
-                  <div className="item"><span className="dot" />Chaves API</div>
+                  {["Visão geral", "Traces", "Avaliações", "Rubricas", "Experimentos", "Datasets", "Prompts", "Chaves API"].map((item, index) => (
+                    <div key={item} className={`item${index === 0 ? " active" : ""}`}>
+                      <span className="dot" />
+                      {item}
+                    </div>
+                  ))}
                 </div>
               </aside>
               <div className="dash-mock__main">
@@ -100,15 +160,15 @@ export default function HomePage() {
                   </span>
                 </div>
                 <div className="dash-mock__kpis">
-                  <div className="dash-mock__kpi"><div className="l">Traces</div><div className="v">128,547</div><div className="d">&uarr; 18.6%</div></div>
-                  <div className="dash-mock__kpi"><div className="l">Score médio</div><div className="v">0.86</div><div className="d">&uarr; 6.3%</div></div>
-                  <div className="dash-mock__kpi"><div className="l">Latência P95</div><div className="v">2.48s</div><div className="d">&darr; 9.7%</div></div>
-                  <div className="dash-mock__kpi"><div className="l">Custo</div><div className="v">$1,842</div><div className="d">&darr; 14.2%</div></div>
+                  <div className="dash-mock__kpi"><div className="l">Traces</div><div className="v">128,547</div><div className="d">+18.6%</div></div>
+                  <div className="dash-mock__kpi"><div className="l">Score médio</div><div className="v">0.86</div><div className="d">+6.3%</div></div>
+                  <div className="dash-mock__kpi"><div className="l">Latência P95</div><div className="v">2.48s</div><div className="d">-9.7%</div></div>
+                  <div className="dash-mock__kpi"><div className="l">Custo</div><div className="v">$1,842</div><div className="d">-14.2%</div></div>
                 </div>
                 <div className="dash-mock__chart">
                   <div className="head">
                     <span className="t">Traces ao longo do tempo</span>
-                    <span>Diário &#9662;</span>
+                    <span>Diário v</span>
                   </div>
                   <svg viewBox="0 0 600 160" preserveAspectRatio="none">
                     <defs>
@@ -150,66 +210,20 @@ export default function HomePage() {
         <section className="mk-section" id="product">
           <div className="mk-container">
             <span className="mk-eyebrow">A plataforma</span>
-            <h2>Tudo o que você precisa para enviar apps com LLM sem degradação silenciosa.</h2>
+            <h2>Tudo para publicar apps LLM sem degradação silenciosa.</h2>
             <p className="lede">
-              Tracing, avaliação automatica, versionamento de prompts, suítes de regressão, feedback humano e
-              exportação de datasets &mdash; uma stack, um esquema, um dashboard.
+              Tracing, avaliação automática, versionamento de prompts, suítes de regressão, feedback humano e exportação
+              de datasets em um único schema e dashboard.
             </p>
             <div className="feature-grid">
-              <article className="feature">
-                <div className="feature__icon"><Activity /></div>
-                <h3>Tracing estruturado para agentes</h3>
-                <p>
-                  Capture a árvore completa &mdash; chamadas de LLM, ferramentas, retrievals e fallbacks
-                  &mdash; com tokens, custo e latência em cada span. Feito para agentes multietapa.
-                </p>
-                <span className="feature__chip">FR-20 &middot; FR-25</span>
-              </article>
-              <article className="feature">
-                <div className="feature__icon"><Gauge /></div>
-                <h3>Rubricas como código</h3>
-                <p>
-                  Declare qualidade em YAML. LLM-as-judge, regex, schema-valid, cosine similarity e exact
-                  match &mdash; tudo composto e versionado junto com seus prompts.
-                </p>
-                <span className="feature__chip">FR-30 &middot; FR-31 &middot; FR-33</span>
-              </article>
-              <article className="feature">
-                <div className="feature__icon"><GitCompare /></div>
-                <h3>Experimentos e regressão</h3>
-                <p>
-                  Rode um golden set contra duas variantes de prompt/modelo. Veja pass rate, custo e latência
-                  lado a lado. Bloqueie deploys no CI quando houver regressão de qualidade.
-                </p>
-                <span className="feature__chip">FR-42 &middot; FR-43 &middot; FR-44</span>
-              </article>
-              <article className="feature">
-                <div className="feature__icon"><ThumbsUp /></div>
-                <h3>Feedback que vira dado de treino</h3>
-                <p>
-                  Thumbs e revisões humanas entram no seu dataset. Exporte JSONL em formato chat ou
-                  HuggingFace &mdash; faça fine-tune no que seus usuários realmente aprovaram.
-                </p>
-                <span className="feature__chip">FR-60 &middot; FR-63 &middot; FR-64</span>
-              </article>
-              <article className="feature">
-                <div className="feature__icon"><DollarSign /></div>
-                <h3>Custo visível por padrão</h3>
-                <p>
-                  Cada span tem custo em USD. Agrupe por modelo, projeto, ambiente ou usuário. Descubra o
-                  prompt que está queimando $400/dia sem você perceber.
-                </p>
-                <span className="feature__chip">FR-50 &middot; FR-53</span>
-              </article>
-              <article className="feature">
-                <div className="feature__icon"><ShieldCheck /></div>
-                <h3>Esquema pronto para privacidade</h3>
-                <p>
-                  Redação, retenção e direito ao esquecimento fazem parte do modelo de dados desde o início.
-                  Repositórios prontos para RLS, API keys com hash e trilha de auditoria.
-                </p>
-                <span className="feature__chip">NFR-21 &middot; NFR-30 &middot; NFR-31</span>
-              </article>
+              {features.map(({ Icon, title, body, chip }) => (
+                <article key={title} className="feature">
+                  <div className="feature__icon"><Icon /></div>
+                  <h3>{title}</h3>
+                  <p>{body}</p>
+                  <span className="feature__chip">{chip}</span>
+                </article>
+              ))}
             </div>
           </div>
         </section>
@@ -218,11 +232,11 @@ export default function HomePage() {
           <div className="mk-container">
             <div className="split">
               <div>
-                <span className="mk-eyebrow">SDK Python</span>
-                <h2>Instrumente um agente em três linhas.</h2>
+                <span className="mk-eyebrow">Python SDK</span>
+                <h2>Instrumente an agent in three lines.</h2>
                 <p className="lede">
-                  Um decorator, um context manager, um flush. O SDK roda em background com batching e retry
-                  exponencial &mdash; e nunca bloqueia a requisição do usuário, mesmo quando o EvalOps cai.
+                  Um decorator, um context manager e um uploader em background. O SDK faz batch e retry sem
+                  bloquear a requisição do usuário.
                 </p>
                 <div style={{ marginTop: 28, display: "flex", gap: 12, flexWrap: "wrap" }}>
                   <Link className="mk-btn mk-btn--secondary" href="/docs">
@@ -240,8 +254,7 @@ export default function HomePage() {
                   </a>
                 </div>
               </div>
-              <div>
-                <pre className="snippet">
+              <pre className="snippet">
 {`# pip install evalops
 import evalops
 from openai import OpenAI
@@ -257,8 +270,7 @@ def summarize(question: str, doc: str):
         model="gpt-4o",
         messages=build_prompt(question, chunks),
     )`}
-                </pre>
-              </div>
+              </pre>
             </div>
           </div>
         </section>
@@ -266,39 +278,15 @@ def summarize(question: str, doc: str):
         <section className="mk-section" id="how">
           <div className="mk-container">
             <span className="mk-eyebrow">Como funciona</span>
-            <h2>Do tráfego em produção ao deploy com regressão testada.</h2>
+            <h2>Do tráfego de produção a um deploy testado contra regressões.</h2>
             <div className="steps">
-              <div className="step">
-                <div className="step__num">PASSO 01</div>
-                <h4>Instrumentar</h4>
-                <p>
-                  Adicione o SDK ou envie POST para{" "}
-                  <code style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--accent-cyan)" }}>
-                    /v1/traces
-                  </code>
-                  . Spans, ferramentas e eventos entram em streaming.
-                </p>
-              </div>
-              <div className="step">
-                <div className="step__num">PASSO 02</div>
-                <h4>Avaliar</h4>
-                <p>As rubricas rodam na ingestão ou manualmente. Cada trace recebe score, reasoning e pass/fail.</p>
-              </div>
-              <div className="step">
-                <div className="step__num">PASSO 03</div>
-                <h4>Comparar</h4>
-                <p>
-                  Rode um experimento entre prompt v1 e v2. Veja pass rate, latência e custo no mesmo painel.
-                </p>
-              </div>
-              <div className="step">
-                <div className="step__num">PASSO 04</div>
-                <h4>Melhorar</h4>
-                <p>
-                  Promova a variante melhor. Exporte traces com thumbs-up como dataset JSONL para fine-tune ou
-                  few-shot.
-                </p>
-              </div>
+              {steps.map((item) => (
+                <div key={item.step} className="step">
+                  <div className="step__num">{item.step}</div>
+                  <h4>{item.title}</h4>
+                  <p>{item.body}</p>
+                </div>
+              ))}
             </div>
           </div>
         </section>
@@ -306,22 +294,14 @@ def summarize(question: str, doc: str):
         <section className="mk-section">
           <div className="mk-container">
             <div className="cta-card">
-              <h2>Pare de depurar seu agente por screenshot.</h2>
+              <h2>Pare de debugar seu agente por screenshots.</h2>
               <p>
-                Crie um projeto, conecte o SDK no seu app e tenha seus primeiros traces avaliados fluindo em
-                menos de cinco minutos.
+                Crie um projeto, conecte o SDK e veja seus primeiros traces avaliados fluindo em menos de cinco
+                minutos.
               </p>
-              <div
-                style={{
-                  display: "inline-flex",
-                  gap: 12,
-                  flexWrap: "wrap",
-                  justifyContent: "center",
-                  position: "relative",
-                }}
-              >
+              <div className="actions-row" style={{ justifyContent: "center" }}>
                 <Link className="mk-btn mk-btn--primary mk-btn--lg" href="/register">
-                  Criar espaço de trabalho
+                  Crie seu workspace
                   <ArrowRight />
                 </Link>
                 <Link className="mk-btn mk-btn--secondary mk-btn--lg" href="/login">
@@ -337,4 +317,5 @@ def summarize(question: str, doc: str):
     </div>
   );
 }
+
 

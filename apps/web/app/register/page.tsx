@@ -1,4 +1,4 @@
-import Link from "next/link";
+﻿import Link from "next/link";
 import { redirect } from "next/navigation";
 import { ArrowLeft, ArrowRight } from "lucide-react";
 
@@ -7,7 +7,7 @@ import { registerAction } from "@/lib/auth-actions";
 import { getSession } from "@/lib/auth";
 
 export const metadata = {
-  title: "Create your workspace · EvalOps Studio",
+  title: "Crie seu workspace - EvalOps Studio",
 };
 
 type Search = Promise<{ error?: string; email?: string; name?: string }>;
@@ -24,7 +24,7 @@ export default async function RegisterPage({ searchParams }: { searchParams: Sea
       <div className="auth-grid">
         <section className="auth-pane">
           <Link className="auth-back" href="/">
-            <ArrowLeft size={14} /> Back home
+            <ArrowLeft size={14} /> Voltar ao início
           </Link>
           <div className="auth-pane__form">
             <Link className="auth-brand" href="/">
@@ -33,16 +33,16 @@ export default async function RegisterPage({ searchParams }: { searchParams: Sea
                 EvalOps<span className="sub">Studio</span>
               </span>
             </Link>
-            <h1>Create your workspace</h1>
+            <h1>Crie seu workspace</h1>
             <p className="auth-sub">
-              Trace your first agent in under five minutes. Free during beta &mdash; no card required.
+              Rastreie seu primeiro agente em menos de cinco minutos. Gratuito durante o beta &mdash; sem cartão.
             </p>
 
             {sp?.error ? <p className="auth-error">{sp.error}</p> : null}
 
             <form action={registerAction}>
               <div className="auth-field">
-                <label htmlFor="name">Full name</label>
+                <label htmlFor="name">Nome completo</label>
                 <input
                   id="name"
                   name="name"
@@ -54,31 +54,31 @@ export default async function RegisterPage({ searchParams }: { searchParams: Sea
                 />
               </div>
               <div className="auth-field">
-                <label htmlFor="email">Work email</label>
+                <label htmlFor="email">Email de trabalho</label>
                 <input
                   id="email"
                   name="email"
                   type="email"
-                  placeholder="you@company.com"
+                  placeholder="voce@empresa.com"
                   autoComplete="email"
                   defaultValue={sp?.email ?? ""}
                   required
                 />
               </div>
               <div className="auth-field">
-                <label htmlFor="password">Password</label>
+                <label htmlFor="password">Senha</label>
                 <input
                   id="password"
                   name="password"
                   type="password"
-                  placeholder="At least 8 characters"
+                  placeholder="Pelo menos 8 caracteres"
                   autoComplete="new-password"
                   required
                   minLength={8}
                 />
               </div>
               <div className="auth-field">
-                <label htmlFor="org_name">Workspace name (optional)</label>
+                <label htmlFor="org_name">Nome do workspace (opcional)</label>
                 <input
                   id="org_name"
                   name="org_name"
@@ -88,22 +88,22 @@ export default async function RegisterPage({ searchParams }: { searchParams: Sea
                 />
               </div>
               <label className="auth-checkbox">
-                <input type="checkbox" name="terms" required defaultChecked /> I agree to the{" "}
-                <a href="#" style={{ color: "var(--primary-300)", marginLeft: 4 }}>Terms</a>
-                &nbsp;and&nbsp;
-                <a href="#" style={{ color: "var(--primary-300)" }}>Privacy Policy</a>
+                <input type="checkbox" name="terms" required defaultChecked /> Eu concordo com os{" "}
+                <a href="#" style={{ color: "var(--primary-300)", marginLeft: 4 }}>Termos</a>
+                &nbsp;e&nbsp;
+                <a href="#" style={{ color: "var(--primary-300)" }}>Política de Privacidade</a>
               </label>
               <button type="submit" className="mk-btn mk-btn--primary mk-btn--block mk-btn--lg">
-                Create workspace <ArrowRight />
+                Criar workspace <ArrowRight />
               </button>
             </form>
 
             <p className="auth-foot">
-              Already have a workspace? <Link href="/login">Sign in</Link>
+              Já tem workspace? <Link href="/login">Entrar</Link>
             </p>
             <p className="auth-legal">
-              By creating a workspace you&apos;ll receive setup tips and product updates. You can opt out at
-              any time. We never train on your prompts or responses.
+              Ao criar um workspace, você receber? dicas de setup e novidades do produto. Voc? pode sair
+              quando quiser. Nunca treinamos modelos com seus prompts ou respostas.
             </p>
           </div>
         </section>
@@ -113,3 +113,5 @@ export default async function RegisterPage({ searchParams }: { searchParams: Sea
     </div>
   );
 }
+
+
