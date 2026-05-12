@@ -31,21 +31,21 @@ export default async function DatasetsPage({ params, searchParams }: Props) {
       <div className="page-header">
         <div>
           <h1>Datasets</h1>
-          <p className="sub">Curate trace-based or manual datasets used by experiments and regression checks.</p>
+          <p className="sub">Curadoria de datasets manuais ou baseados em traces para experimentos e checks de regressão.</p>
         </div>
       </div>
 
       {qp.error ? <Flash kind="error" message={qp.error} /> : null}
-      {qp.created ? <Flash kind="success" message="Dataset created." /> : null}
-      {qp.items_added ? <Flash kind="success" message="Dataset item added." /> : null}
-      {qp.built ? <Flash kind="success" message="Dataset populated from traces." /> : null}
+      {qp.created ? <Flash kind="success" message="Dataset criado." /> : null}
+      {qp.items_added ? <Flash kind="success" message="Item adicionado ao dataset." /> : null}
+      {qp.built ? <Flash kind="success" message="Dataset populado a partir de traces." /> : null}
 
       <div className="content-grid">
         <section className="card">
           <div className="section-head">
             <div>
-              <h2>Create dataset</h2>
-              <p>Choose manual or traces as source.</p>
+              <h2>Criar dataset</h2>
+              <p>Escolha manual ou traces como fonte.</p>
             </div>
           </div>
 
@@ -59,17 +59,17 @@ export default async function DatasetsPage({ params, searchParams }: Props) {
               <input name="slug" placeholder="support-golden-set" required />
             </label>
             <label className="field">
-              <span>Description</span>
+              <span>Descrição</span>
               <input name="description" placeholder="Golden set for support traces" />
             </label>
             <label className="field">
-              <span>Source</span>
+              <span>Fonte</span>
               <select name="source" defaultValue="manual">
                 <option value="manual">manual</option>
                 <option value="traces">traces</option>
               </select>
             </label>
-            <button type="submit" className="primary-btn">Create dataset</button>
+            <button type="submit" className="primary-btn">Criar dataset</button>
           </form>
         </section>
 
@@ -78,11 +78,11 @@ export default async function DatasetsPage({ params, searchParams }: Props) {
             <div className="card">
               <QuickstartCard
                 title="Nenhum dataset ainda"
-                description="Datasets sustentam regressÃ£o, experimentos e comparaÃ§Ã£o de variantes."
+                description="Datasets alimentam checks de regressão, experimentos e exports para fine-tuning."
                 steps={[
                   "Crie um dataset manual para baseline.",
-                  "Ou faÃ§a build a partir de traces reais.",
-                  "Depois rode experiments com rubricas.",
+                  "Ou construa um a partir de traces reais.",
+                  "Rode experimentos com rubricas depois que o dataset tiver exemplos.",
                 ]}
               />
             </div>
@@ -94,7 +94,7 @@ export default async function DatasetsPage({ params, searchParams }: Props) {
                   <div className="section-head">
                     <div>
                       <h2>{dataset.slug}</h2>
-                      <p>{dataset.description ?? "No description provided."}</p>
+                      <p>{dataset.description ?? "Sem descrição."}</p>
                     </div>
                     <div className="meta-pills">
                       <span className="badge badge--env">{dataset.source}</span>
@@ -103,7 +103,7 @@ export default async function DatasetsPage({ params, searchParams }: Props) {
                   </div>
 
                   <details className="details-block">
-                    <summary>Add item manually</summary>
+                    <summary>Adicionar item manualmente</summary>
                     <form action={addDatasetItemAction} className="stack-form">
                       <input type="hidden" name="org" value={org} />
                       <input type="hidden" name="project" value={project} />
@@ -117,7 +117,7 @@ export default async function DatasetsPage({ params, searchParams }: Props) {
                         />
                       </label>
                       <label className="field">
-                        <span>Expected output JSON</span>
+                        <span>Output esperado JSON</span>
                         <textarea
                           name="expected_output_json"
                           className="yaml-input"
@@ -137,13 +137,13 @@ export default async function DatasetsPage({ params, searchParams }: Props) {
                   </details>
 
                   <details className="details-block">
-                    <summary>Build from traces</summary>
+                    <summary>Construir a partir de traces</summary>
                     <form action={buildDatasetFromTracesAction} className="stack-form">
                       <input type="hidden" name="org" value={org} />
                       <input type="hidden" name="project" value={project} />
                       <input type="hidden" name="dataset_id" value={dataset.id} />
                       <label className="field">
-                        <span>Environment</span>
+                        <span>Ambiente</span>
                         <select name="environment" defaultValue="">
                           <option value="">any</option>
                           <option value="dev">dev</option>
@@ -161,16 +161,16 @@ export default async function DatasetsPage({ params, searchParams }: Props) {
                         </select>
                       </label>
                       <label className="field">
-                        <span>Limit</span>
+                        <span>Limite</span>
                         <input name="limit" type="number" min={1} max={500} defaultValue={50} />
                       </label>
-                      <button type="submit" className="primary-btn">Build from traces</button>
+                      <button type="submit" className="primary-btn">Construir a partir de traces</button>
                     </form>
                   </details>
 
                   {items.length > 0 ? (
                     <details className="details-block">
-                      <summary>Preview items</summary>
+                      <summary>Prévia dos itens</summary>
                       <div className="versions-stack">
                         {items.slice(0, 5).map((item) => (
                           <div key={item.id} className="version-item">
@@ -193,6 +193,8 @@ export default async function DatasetsPage({ params, searchParams }: Props) {
     </main>
   );
 }
+
+
 
 
 
