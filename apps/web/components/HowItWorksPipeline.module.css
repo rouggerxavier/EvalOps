@@ -1,0 +1,228 @@
+.howPipelineRoot {
+  position: relative;
+}
+
+.howPipelineIntro {
+  margin: 10px 0 26px;
+  color: #9db4df;
+  font-size: 14px;
+  line-height: 1.55;
+  max-width: 720px;
+}
+
+.howPipelineTrack {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.howPipelineTrack::before {
+  content: "";
+  position: absolute;
+  left: 4%;
+  right: 4%;
+  top: 49px;
+  height: 2px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(41, 223, 255, 0.14), rgba(91, 124, 255, 0.56), rgba(72, 252, 165, 0.2));
+  box-shadow: 0 0 20px rgba(41, 223, 255, 0.2);
+  pointer-events: none;
+}
+
+.howPipelineCard {
+  position: relative;
+  z-index: 1;
+  min-height: 292px;
+  padding: 16px 14px 14px;
+  border-radius: 16px;
+  border: 1px solid rgba(92, 140, 223, 0.34);
+  background: linear-gradient(160deg, rgba(10, 18, 36, 0.72) 0%, rgba(9, 15, 30, 0.6) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(160, 203, 255, 0.1),
+    0 14px 30px rgba(0, 8, 22, 0.34);
+  backdrop-filter: blur(7px);
+  -webkit-backdrop-filter: blur(7px);
+  transition:
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    transform 180ms ease,
+    background 180ms ease;
+}
+
+.howPipelineCard::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 46%;
+  border-radius: inherit;
+  background: linear-gradient(180deg, rgba(79, 143, 255, 0.12), rgba(79, 143, 255, 0));
+  pointer-events: none;
+}
+
+.howPipelineCard:hover {
+  transform: translateY(-2px);
+  border-color: rgba(120, 177, 255, 0.6);
+  box-shadow:
+    inset 0 1px 0 rgba(184, 220, 255, 0.12),
+    0 18px 36px rgba(4, 18, 49, 0.38),
+    0 0 24px rgba(41, 223, 255, 0.24);
+}
+
+.howPipelineTop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.howPipelineStep {
+  color: #65d7ff;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.howPipelineDot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 4px rgba(58, 111, 196, 0.18);
+}
+
+.isTrace {
+  background: #29dfff;
+}
+
+.isEval {
+  background: #5b7cff;
+}
+
+.isCompare {
+  background: #4cc8ff;
+}
+
+.isShip {
+  background: #48fca5;
+}
+
+.howPipelineCard h4 {
+  margin: 0 0 8px;
+  color: #e8f2ff;
+  font-size: 22px;
+  letter-spacing: -0.02em;
+}
+
+.howPipelineCard p {
+  margin: 0;
+  color: #a6b6d6;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.howPipelinePreview {
+  margin-top: 14px;
+  padding: 10px 10px 9px;
+  border-radius: 12px;
+  border: 1px solid rgba(96, 137, 209, 0.3);
+  background: linear-gradient(150deg, rgba(12, 22, 44, 0.68), rgba(10, 16, 31, 0.48));
+}
+
+.howPipelinePreviewTitle {
+  display: inline-flex;
+  margin-bottom: 8px;
+  color: #8fb6ef;
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  font-weight: 700;
+}
+
+.howPipelinePreviewLines {
+  display: grid;
+  gap: 6px;
+}
+
+.howPipelinePreviewLines span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 25px;
+  padding: 0 8px;
+  border-radius: 8px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: #cde3ff;
+  border: 1px solid rgba(103, 140, 208, 0.36);
+  background: rgba(11, 20, 38, 0.64);
+}
+
+.howPipelineCard:hover .howPipelinePreviewLines span {
+  border-color: rgba(96, 147, 232, 0.42);
+  box-shadow: inset 0 0 0 1px rgba(111, 168, 255, 0.1);
+}
+
+@media (max-width: 1120px) {
+  .howPipelineTrack {
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+
+  .howPipelineTrack::before {
+    display: none;
+  }
+}
+
+@media (max-width: 760px) {
+  .howPipelineIntro {
+    margin-bottom: 16px;
+    font-size: 13px;
+  }
+
+  .howPipelineTrack {
+    grid-template-columns: 1fr;
+    gap: 10px;
+    padding-left: 16px;
+  }
+
+  .howPipelineTrack::before {
+    display: block;
+    left: 4px;
+    right: auto;
+    top: 6px;
+    bottom: 6px;
+    width: 2px;
+    height: auto;
+    background: linear-gradient(180deg, rgba(41, 223, 255, 0.12), rgba(91, 124, 255, 0.5), rgba(72, 252, 165, 0.18));
+    box-shadow: 0 0 14px rgba(41, 223, 255, 0.12);
+  }
+
+  .howPipelineCard {
+    min-height: 0;
+    padding: 14px 12px 12px;
+  }
+
+  .howPipelineCard::after {
+    content: "";
+    position: absolute;
+    left: -18px;
+    top: 18px;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #6bc9ff;
+    box-shadow: 0 0 0 4px rgba(66, 114, 189, 0.22);
+  }
+
+  .howPipelineCard h4 {
+    font-size: 19px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .howPipelineCard {
+    transition: none;
+  }
+}

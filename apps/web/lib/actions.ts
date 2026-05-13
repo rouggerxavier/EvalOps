@@ -342,10 +342,16 @@ export async function createExportAction(formData: FormData): Promise<void> {
   const projectId = String(formData.get("project_id") ?? "");
   const environment = String(formData.get("environment") ?? "");
   const status = String(formData.get("status") ?? "");
+  const nameContains = String(formData.get("name_contains") ?? "");
+  const knownExportIds = String(formData.get("known_export_ids") ?? "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
   const path = projectPath(org, project, "exports");
   const filters: Record<string, unknown> = {};
   if (environment) filters.environment = environment;
   if (status) filters.status = status;
+  if (nameContains) filters.name_contains = nameContains;
 
   let result: { export_id: string } | null = null;
   let errorMsg: string | null = null;
@@ -360,9 +366,11 @@ export async function createExportAction(formData: FormData): Promise<void> {
     errorMsg = messageFromActionError(error, "Failed to create export");
   }
   if (result) {
-    redirectWithMessage(path, { created: "1", export_id: result.export_id });
+    const ids = [result.export_id, ...knownExportIds.filter((id) => id !== result.export_id)].slice(0, 20);
+    redirectWithMessage(path, { created: "1", export_id: result.export_id, ids: ids.join(",") });
   } else {
     redirectWithMessage(path, { error: errorMsg ?? "Failed to create export" });
   }
 }
+
 
