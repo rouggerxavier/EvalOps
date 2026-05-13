@@ -48,3 +48,4 @@ apps/api/**/*.py[cod]
 # Local artifacts / references
 /*.zip
 /evaluations-*.png
+.vercel
