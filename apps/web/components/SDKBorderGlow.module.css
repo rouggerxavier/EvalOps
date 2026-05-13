@@ -1,0 +1,154 @@
+.sdkBorderGlowCard {
+  --sdk-edge-proximity: 0;
+  --sdk-cursor-angle: 45deg;
+  --sdk-edge-sensitivity: 30;
+  --sdk-color-sensitivity: calc(var(--sdk-edge-sensitivity) + 20);
+  --sdk-border-radius: 26px;
+  --sdk-glow-padding: 36px;
+  --sdk-cone-spread: 22;
+
+  position: relative;
+  border-radius: var(--sdk-border-radius);
+  isolation: isolate;
+  display: grid;
+  border: 1px solid rgb(255 255 255 / 12%);
+  background: var(--sdk-card-bg, #0b1220);
+  overflow: visible;
+  box-shadow:
+    rgb(0 0 0 / 10%) 0 1px 2px,
+    rgb(0 0 0 / 10%) 0 4px 10px,
+    rgb(0 0 0 / 18%) 0 18px 48px;
+}
+
+.sdkBorderGlowCard::before,
+.sdkBorderGlowCard::after,
+.sdkBorderGlowEdgeLight {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  transition: opacity 0.25s ease-out;
+  z-index: -1;
+}
+
+.sdkBorderGlowCard:not(:hover):not(.sdkBorderGlowSweepActive)::before,
+.sdkBorderGlowCard:not(:hover):not(.sdkBorderGlowSweepActive)::after,
+.sdkBorderGlowCard:not(:hover):not(.sdkBorderGlowSweepActive) .sdkBorderGlowEdgeLight {
+  opacity: 0;
+  transition: opacity 0.7s ease-in-out;
+}
+
+.sdkBorderGlowCard::before {
+  border: 1px solid transparent;
+  background:
+    linear-gradient(var(--sdk-card-bg, #0b1220) 0 100%) padding-box,
+    linear-gradient(rgb(255 255 255 / 0%) 0% 100%) border-box,
+    var(--sdk-gradient-one) border-box,
+    var(--sdk-gradient-two) border-box,
+    var(--sdk-gradient-three) border-box,
+    var(--sdk-gradient-four) border-box,
+    var(--sdk-gradient-five) border-box,
+    var(--sdk-gradient-six) border-box,
+    var(--sdk-gradient-seven) border-box,
+    var(--sdk-gradient-base) border-box;
+
+  opacity: calc((var(--sdk-edge-proximity) - var(--sdk-color-sensitivity)) / (100 - var(--sdk-color-sensitivity)));
+
+  mask-image:
+    conic-gradient(
+      from var(--sdk-cursor-angle) at center,
+      black calc(var(--sdk-cone-spread) * 1%),
+      transparent calc((var(--sdk-cone-spread) + 15) * 1%),
+      transparent calc((100 - var(--sdk-cone-spread) - 15) * 1%),
+      black calc((100 - var(--sdk-cone-spread)) * 1%)
+    );
+}
+
+.sdkBorderGlowCard::after {
+  border: 1px solid transparent;
+  background:
+    var(--sdk-gradient-one) padding-box,
+    var(--sdk-gradient-two) padding-box,
+    var(--sdk-gradient-three) padding-box,
+    var(--sdk-gradient-four) padding-box,
+    var(--sdk-gradient-five) padding-box,
+    var(--sdk-gradient-six) padding-box,
+    var(--sdk-gradient-seven) padding-box,
+    var(--sdk-gradient-base) padding-box;
+
+  mask-image:
+    linear-gradient(to bottom, black, black),
+    radial-gradient(ellipse at 50% 50%, black 40%, transparent 65%),
+    radial-gradient(ellipse at 66% 66%, black 5%, transparent 40%),
+    radial-gradient(ellipse at 33% 33%, black 5%, transparent 40%),
+    radial-gradient(ellipse at 66% 33%, black 5%, transparent 40%),
+    radial-gradient(ellipse at 33% 66%, black 5%, transparent 40%),
+    conic-gradient(from var(--sdk-cursor-angle) at center, transparent 5%, black 15%, black 85%, transparent 95%);
+
+  mask-composite: subtract, add, add, add, add, add;
+  opacity: calc(var(--sdk-fill-opacity, 0.18) * (var(--sdk-edge-proximity) - var(--sdk-color-sensitivity)) / (100 - var(--sdk-color-sensitivity)));
+  mix-blend-mode: soft-light;
+}
+
+.sdkBorderGlowEdgeLight {
+  inset: calc(var(--sdk-glow-padding) * -1);
+  pointer-events: none;
+  z-index: 1;
+
+  mask-image:
+    conic-gradient(
+      from var(--sdk-cursor-angle) at center,
+      black 2.5%,
+      transparent 10%,
+      transparent 90%,
+      black 97.5%
+    );
+
+  opacity: calc((var(--sdk-edge-proximity) - var(--sdk-edge-sensitivity)) / (100 - var(--sdk-edge-sensitivity)));
+  mix-blend-mode: plus-lighter;
+}
+
+.sdkBorderGlowEdgeLight::before {
+  content: "";
+  position: absolute;
+  inset: var(--sdk-glow-padding);
+  border-radius: inherit;
+  box-shadow:
+    inset 0 0 0 1px var(--sdk-glow-color),
+    inset 0 0 1px 0 var(--sdk-glow-color-60),
+    inset 0 0 3px 0 var(--sdk-glow-color-50),
+    inset 0 0 6px 0 var(--sdk-glow-color-40),
+    inset 0 0 14px 0 var(--sdk-glow-color-30),
+    inset 0 0 24px 2px var(--sdk-glow-color-20),
+    inset 0 0 44px 2px var(--sdk-glow-color-10),
+    0 0 2px 0 var(--sdk-glow-color-60),
+    0 0 4px 0 var(--sdk-glow-color-50),
+    0 0 9px 0 var(--sdk-glow-color-40),
+    0 0 16px 0 var(--sdk-glow-color-30),
+    0 0 24px 2px var(--sdk-glow-color-20),
+    0 0 44px 2px var(--sdk-glow-color-10);
+}
+
+.sdkBorderGlowInner {
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow: hidden;
+  z-index: 1;
+  border-radius: inherit;
+}
+
+@media (max-width: 760px) {
+  .sdkBorderGlowCard {
+    --sdk-glow-padding: 24px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sdkBorderGlowCard::before,
+  .sdkBorderGlowCard::after,
+  .sdkBorderGlowEdgeLight {
+    transition: none;
+  }
+}
+

@@ -1,80 +1,38 @@
 ﻿import Link from "next/link";
+import type { CSSProperties } from "react";
 import {
-  Activity,
   ArrowRight,
   BookOpen,
-  DollarSign,
-  Gauge,
-  Github,
-  GitCompare,
-  ShieldCheck,
-  ThumbsUp,
 } from "lucide-react";
 
+import { EvalOpsFeatureStepper } from "@/components/EvalOpsFeatureStepper";
+import { FinalLandingCta } from "@/components/FinalLandingCta";
+import { HowItWorksPipeline } from "@/components/HowItWorksPipeline";
+import { IntegrationLogoLoop } from "@/components/IntegrationLogoLoop";
 import LightPillar from "@/components/LightPillar";
 import { MarketingFooter } from "@/components/MarketingFooter";
 import { MarketingNav } from "@/components/MarketingNav";
+import { SDKShowcase } from "@/components/SDKShowcase";
 
-const features = [
-  {
-    Icon: Activity,
-    title: "Tracing estruturado para agentes",
-    body: "Capture a árvore completa de execução: chamadas LLM, ferramentas, retrievals e fallbacks com tokens, custo e latência em cada span.",
-    chip: "FR-20 / FR-25",
-  },
-  {
-    Icon: Gauge,
-    title: "Rubricas como código",
-    body: "Declare qualidade em YAML. LLM-as-judge, regex, validação de schema, similaridade cosseno e exact match podem ser compostos e versionados.",
-    chip: "FR-30 / FR-31 / FR-33",
-  },
-  {
-    Icon: GitCompare,
-    title: "Experimentos e regressão",
-    body: "Rode um golden set contra variantes de prompt ou modelo. Compare pass rate, custo e latência antes de publicar.",
-    chip: "FR-42 / FR-43 / FR-44",
-  },
-  {
-    Icon: ThumbsUp,
-    title: "Feedback que vira dado de treino",
-    body: "Revisões humanas entram nos datasets. Exporte traces aprovados como JSONL para fine-tuning, few-shot ou análise offline.",
-    chip: "FR-60 / FR-63 / FR-64",
-  },
-  {
-    Icon: DollarSign,
-    title: "Custo visível por padrão",
-    body: "Cada span carrega custo em USD. Agrupe por modelo, projeto, ambiente ou usuário e encontre prompts caros antes que virem surpresa.",
-    chip: "FR-50 / FR-53",
-  },
-  {
-    Icon: ShieldCheck,
-    title: "Schema pronto para privacidade",
-    body: "Redação, retenção e auditoria fazem parte do modelo desde o início: chaves API com hash, ownership claro e hooks de compliance.",
-    chip: "NFR-21 / NFR-30 / NFR-31",
-  },
+const heroMockMetrics = [
+  { label: "Traces", value: "14,287", trend: "+12.4% vs 24h", tone: "good", spark: "M4,38 L20,34 L36,36 L52,24 L68,28 L84,18 L100,22 L116,12" },
+  { label: "p95 Latência", value: "1.14s", trend: "+38ms", tone: "warn", spark: "M4,30 L20,26 L36,34 L52,20 L68,16 L84,24 L100,18 L116,8" },
+  { label: "Custo", value: "$13.42", trend: "+8.1%", tone: "good", spark: "M4,36 L20,30 L36,34 L52,20 L68,28 L84,16 L100,22 L116,10" },
+  { label: "Erro", value: "1.8%", trend: "-0.4pp", tone: "good", spark: "M4,34 L18,18 L32,32 L46,8 L60,24 L74,38 L88,30 L102,18 L116,28" },
 ];
 
-const steps = [
-  {
-    step: "ETAPA 01",
-    title: "Instrumente",
-    body: "Adicione o SDK ou envie traces por POST diretamente. Spans, ferramentas e eventos entram em um único grafo de execução.",
-  },
-  {
-    step: "ETAPA 02",
-    title: "Avalie",
-    body: "Rode rubricas na ingestão ou manualmente. Cada trace recebe score, reasoning e status de aprovação.",
-  },
-  {
-    step: "ETAPA 03",
-    title: "Compare",
-    body: "Rode experimentos entre prompts, modelos ou parâmetros e compare qualidade, custo e latência.",
-  },
-  {
-    step: "ETAPA 04",
-    title: "Melhore",
-    body: "Promova a melhor variante e exporte exemplos de alta qualidade para fine-tuning ou suítes de regressão.",
-  },
+const heroMockModels = [
+  { model: "gpt-4o-mini", provider: "openai", calls: "8.420", cost: "$4.2380", share: "41%" },
+  { model: "gpt-4.1", provider: "openai", calls: "1.206", cost: "$6.8104", share: "32%" },
+  { model: "claude-haiku-4.5", provider: "anthropic", calls: "2.310", cost: "$1.4720", share: "14%" },
+  { model: "llama-3.3-70b", provider: "groq", calls: "1.840", cost: "$0.5210", share: "8%" },
+  { model: "2.5-flash", provider: "gemini", calls: "920", cost: "$0.4080", share: "5%" },
+];
+
+const heroMockIssues = [
+  { trace: "support.refund.flow", status: "schema_mismatch", score: "0.42" },
+  { trace: "billing.plan.change", status: "timeout", score: "0.58" },
+  { trace: "rag.answer.compose", status: "low_confidence", score: "0.61" },
 ];
 
 export default function HomePage() {
@@ -139,11 +97,32 @@ export default function HomePage() {
               <aside className="dash-mock__sidebar">
                 <div className="dash-mock__brand">
                   <img src="/brand/mark-evalops.svg" style={{ width: 18, height: 18 }} alt="" />
-                  EvalOps
+                  <span>EvalOps</span>
+                  <span className="dash-mock__version">v1.0</span>
+                </div>
+                <div className="dash-mock__workspace">
+                  <span>ACME - PROD</span>
+                  <strong>aurora-support</strong>
                 </div>
                 <div className="dash-mock__nav">
-                  {["Visão geral", "Traces", "Avaliações", "Rubricas", "Experimentos", "Datasets", "Prompts", "Chaves API"].map((item, index) => (
+                  <span className="dash-mock__nav-label">Projeto</span>
+                  {["Visão geral", "Traces", "Evaluations", "Experiments"].map((item, index) => (
                     <div key={item} className={`item${index === 0 ? " active" : ""}`}>
+                      <span className="dot" />
+                      {item}
+                      {item === "Traces" ? <small>1.2k</small> : null}
+                    </div>
+                  ))}
+                  <span className="dash-mock__nav-label">Recursos</span>
+                  {["Prompts", "Rubrics", "Datasets"].map((item) => (
+                    <div key={item} className="item">
+                      <span className="dot" />
+                      {item}
+                    </div>
+                  ))}
+                  <span className="dash-mock__nav-label">Operação</span>
+                  {["API Keys", "Exports"].map((item) => (
+                    <div key={item} className="item">
                       <span className="dot" />
                       {item}
                     </div>
@@ -152,60 +131,117 @@ export default function HomePage() {
               </aside>
               <div className="dash-mock__main">
                 <div className="dash-mock__bar">
-                  <span className="dash-mock__chip">DocOps Agent</span>
-                  <span className="dash-mock__chip live">&bull; prod</span>
-                  <span className="dash-mock__chip">Últimos 7d</span>
-                  <span style={{ flex: 1 }} />
-                  <span className="dash-mock__chip" style={{ fontFamily: "var(--font-mono)" }}>
-                    trace_9f8d2a7c
-                  </span>
+                  <div className="dash-mock__crumbs">
+                    <span>acme</span>
+                    <span>aurora-support</span>
+                    <strong>Visão geral</strong>
+                  </div>
+                  <div className="dash-mock__search">Buscar traces, prompts, rubrics...</div>
+                  <span className="dash-mock__chip live">&bull; env: prod</span>
+                  <span className="dash-mock__avatar">RX</span>
+                </div>
+                <div className="dash-mock__header">
+                  <div>
+                    <h3>Aurora Support AI</h3>
+                    <p>Resumo de operação · janela: últimas 24h · env: prod</p>
+                  </div>
+                  <div className="dash-mock__actions">
+                    <span className="dash-mock__chip">Últimas 24h</span>
+                    <span className="dash-mock__chip">Atualizar</span>
+                    <span className="dash-mock__run">Rodar evaluation</span>
+                  </div>
                 </div>
                 <div className="dash-mock__kpis">
-                  <div className="dash-mock__kpi"><div className="l">Traces</div><div className="v">128,547</div><div className="d">+18.6%</div></div>
-                  <div className="dash-mock__kpi"><div className="l">Score médio</div><div className="v">0.86</div><div className="d">+6.3%</div></div>
-                  <div className="dash-mock__kpi"><div className="l">Latência P95</div><div className="v">2.48s</div><div className="d">-9.7%</div></div>
-                  <div className="dash-mock__kpi"><div className="l">Custo</div><div className="v">$1,842</div><div className="d">-14.2%</div></div>
+                  {heroMockMetrics.map((metric) => (
+                    <div className="dash-mock__kpi" key={metric.label}>
+                      <div className="l">{metric.label}</div>
+                      <div className="v">{metric.value}</div>
+                      <div className={`d ${metric.tone}`}>{metric.trend}</div>
+                      <svg viewBox="0 0 120 44" preserveAspectRatio="none" aria-hidden="true">
+                        <path d={metric.spark} />
+                      </svg>
+                    </div>
+                  ))}
                 </div>
-                <div className="dash-mock__chart">
-                  <div className="head">
-                    <span className="t">Traces ao longo do tempo</span>
-                    <span>Diário v</span>
+                <div className="dash-mock__content">
+                  <div className="dash-mock__chart">
+                    <div className="head">
+                      <div>
+                        <span className="t">Custo & volume por dia</span>
+                        <span>USD · últimos 14 dias</span>
+                      </div>
+                      <span className="dash-mock__metric-pill">cost</span>
+                    </div>
+                    <svg viewBox="0 0 660 270" preserveAspectRatio="none" aria-hidden="true">
+                      <defs>
+                        <linearGradient id="hero-cost-area" x1="0" x2="0" y1="0" y2="1">
+                          <stop offset="0%" stopColor="#4f8cff" stopOpacity="0.5" />
+                          <stop offset="100%" stopColor="#4f8cff" stopOpacity="0.02" />
+                        </linearGradient>
+                      </defs>
+                      <line x1="0" y1="72" x2="660" y2="72" />
+                      <line x1="0" y1="136" x2="660" y2="136" />
+                      <line x1="0" y1="200" x2="660" y2="200" />
+                      <path
+                        className="area"
+                        d="M0,194 L58,176 L116,182 L174,160 L232,148 L290,170 L348,126 L406,130 L464,102 L522,118 L580,88 L660,58 L660,270 L0,270 Z"
+                      />
+                      <path
+                        className="line"
+                        d="M0,194 L58,176 L116,182 L174,160 L232,148 L290,170 L348,126 L406,130 L464,102 L522,118 L580,88 L660,58"
+                      />
+                      {[0, 116, 232, 348, 464, 580].map((x, index) => (
+                        <text key={x} x={x} y="252">{["/05", "06/05", "08/05", "10/05", "12/05", "14/05"][index]}</text>
+                      ))}
+                    </svg>
                   </div>
-                  <svg viewBox="0 0 600 160" preserveAspectRatio="none">
-                    <defs>
-                      <linearGradient id="ar" x1="0" x2="0" y1="0" y2="1">
-                        <stop offset="0%" stopColor="#22d3ee" stopOpacity="0.32" />
-                        <stop offset="100%" stopColor="#22d3ee" stopOpacity="0" />
-                      </linearGradient>
-                    </defs>
-                    <line x1="0" y1="40" x2="600" y2="40" stroke="#1c2748" strokeDasharray="2 4" />
-                    <line x1="0" y1="80" x2="600" y2="80" stroke="#1c2748" strokeDasharray="2 4" />
-                    <line x1="0" y1="120" x2="600" y2="120" stroke="#1c2748" strokeDasharray="2 4" />
-                    <path
-                      d="M0,110 L80,80 L160,95 L240,55 L320,82 L400,40 L480,68 L560,30 L600,42 L600,160 L0,160 Z"
-                      fill="url(#ar)"
-                    />
-                    <path
-                      d="M0,110 L80,80 L160,95 L240,55 L320,82 L400,40 L480,68 L560,30 L600,42"
-                      fill="none"
-                      stroke="#22d3ee"
-                      strokeWidth="2"
-                    />
-                  </svg>
+                  <div className="dash-mock__models">
+                    <div className="head">
+                      <span className="t">Custo por modelo</span>
+                      <span>Ver detalhes</span>
+                    </div>
+                    <div className="dash-mock__table-head">
+                      <span>Modelo</span>
+                      <span>Calls</span>
+                      <span>Custo</span>
+                      <span>Share</span>
+                    </div>
+                    {heroMockModels.map((row) => (
+                      <div className="dash-mock__model-row" key={row.model}>
+                        <div>
+                          <strong>{row.model}</strong>
+                          <small>{row.provider}</small>
+                        </div>
+                        <span>{row.calls}</span>
+                        <span>{row.cost}</span>
+                        <span className="dash-mock__share" style={{ "--share": row.share } as CSSProperties}>
+                          <i />
+                          {row.share}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className="dash-mock__issues">
+                  <div className="head">
+                    <span className="t">Últimos traces com problema</span>
+                    <span>Ver todos os traces</span>
+                  </div>
+                  <div className="dash-mock__issue-list">
+                    {heroMockIssues.map((issue) => (
+                      <div className="dash-mock__issue" key={issue.trace}>
+                        <span>{issue.trace}</span>
+                        <small>{issue.status}</small>
+                        <strong>{issue.score}</strong>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
             </div>
           </div>
 
-          <div className="logos">
-            <span>OPENAI</span>
-            <span>ANTHROPIC</span>
-            <span>GEMINI</span>
-            <span>GROQ</span>
-            <span>LITELLM</span>
-            <span>LANGGRAPH</span>
-            <span>OPENTELEMETRY</span>
-          </div>
+          <IntegrationLogoLoop />
         </section>
 
         <section className="mk-section" id="product">
@@ -213,66 +249,16 @@ export default function HomePage() {
             <span className="mk-eyebrow">A plataforma</span>
             <h2>Tudo para publicar apps LLM sem degradação silenciosa.</h2>
             <p className="lede">
-              Tracing, avaliação automática, versionamento de prompts, suítes de regressão, feedback humano e exportação
-              de datasets em um único schema e dashboard.
+              Um fluxo guiado para instrumentar, avaliar, comparar e liberar com segurança sem sobrecarregar a equipe
+              com dezenas de cards ao mesmo tempo.
             </p>
-            <div className="feature-grid">
-              {features.map(({ Icon, title, body, chip }) => (
-                <article key={title} className="feature">
-                  <div className="feature__icon"><Icon /></div>
-                  <h3>{title}</h3>
-                  <p>{body}</p>
-                  <span className="feature__chip">{chip}</span>
-                </article>
-              ))}
-            </div>
+            <EvalOpsFeatureStepper />
           </div>
         </section>
 
-        <section className="mk-section mk-section--alt" id="sdk">
+        <section className="mk-section" id="sdk">
           <div className="mk-container">
-            <div className="split">
-              <div>
-                <span className="mk-eyebrow">Python SDK</span>
-                <h2>Instrumente an agent in three lines.</h2>
-                <p className="lede">
-                  Um decorator, um context manager e um uploader em background. O SDK faz batch e retry sem
-                  bloquear a requisição do usuário.
-                </p>
-                <div style={{ marginTop: 28, display: "flex", gap: 12, flexWrap: "wrap" }}>
-                  <Link className="mk-btn mk-btn--secondary" href="/docs">
-                    <BookOpen />
-                    Referência do SDK
-                  </Link>
-                  <a
-                    className="mk-btn mk-btn--ghost"
-                    href="https://github.com/rouggerxavier/EvalOps"
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    <Github />
-                    Ver no GitHub
-                  </a>
-                </div>
-              </div>
-              <pre className="snippet">
-{`# pip install evalops
-import evalops
-from openai import OpenAI
-
-evalops.init(api_key="evk_live_...", project="docops-agent")
-client = OpenAI()
-
-@evalops.trace(name="rag.summarize")
-def summarize(question: str, doc: str):
-    with evalops.span("retrieve"):
-        chunks = retriever(doc, k=8)
-    return client.chat.completions.create(
-        model="gpt-4o",
-        messages=build_prompt(question, chunks),
-    )`}
-              </pre>
-            </div>
+            <SDKShowcase />
           </div>
         </section>
 
@@ -280,36 +266,13 @@ def summarize(question: str, doc: str):
           <div className="mk-container">
             <span className="mk-eyebrow">Como funciona</span>
             <h2>Do tráfego de produção a um deploy testado contra regressões.</h2>
-            <div className="steps">
-              {steps.map((item) => (
-                <div key={item.step} className="step">
-                  <div className="step__num">{item.step}</div>
-                  <h4>{item.title}</h4>
-                  <p>{item.body}</p>
-                </div>
-              ))}
-            </div>
+            <HowItWorksPipeline />
           </div>
         </section>
 
         <section className="mk-section">
           <div className="mk-container">
-            <div className="cta-card">
-              <h2>Pare de debugar seu agente por screenshots.</h2>
-              <p>
-                Crie um projeto, conecte o SDK e veja seus primeiros traces avaliados fluindo em menos de cinco
-                minutos.
-              </p>
-              <div className="actions-row" style={{ justifyContent: "center" }}>
-                <Link className="mk-btn mk-btn--primary mk-btn--lg" href="/register">
-                  Crie seu workspace
-                  <ArrowRight />
-                </Link>
-                <Link className="mk-btn mk-btn--secondary mk-btn--lg" href="/login">
-                  Entrar
-                </Link>
-              </div>
-            </div>
+            <FinalLandingCta />
           </div>
         </section>
 

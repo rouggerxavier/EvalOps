@@ -19,12 +19,12 @@ const LANDING_ITEMS: NavItem[] = [
   { href: "#product", label: "Produto", kind: "anchor" },
   { href: "#how", label: "Como funciona", kind: "anchor" },
   { href: "#sdk", label: "SDK", kind: "anchor" },
-  { href: "/docs", label: "Documentação", kind: "route" },
+  { href: "/docs", label: "Documenta\u00E7\u00E3o", kind: "route" },
   { href: "/changelog", label: "Changelog", kind: "route" },
 ];
 
 const DEFAULT_ITEMS: NavItem[] = [
-  { href: "/docs", label: "Documentação", kind: "route" },
+  { href: "/docs", label: "Documenta\u00E7\u00E3o", kind: "route" },
   { href: "/changelog", label: "Changelog", kind: "route" },
 ];
 
@@ -299,7 +299,7 @@ export function MarketingNav({ variant = "default" }: Props) {
           </span>
         </Link>
 
-        <nav className="mk-nav__links mk-gooey" aria-label="Navegação principal" ref={desktopNavRef}>
+        <nav className="mk-nav__links mk-gooey" aria-label={"Navega\u00E7\u00E3o principal"} ref={desktopNavRef}>
           <span className={`mk-gooey__pill${canAnimateGooey ? " is-gooey" : ""}`} ref={gooeyPillRef} aria-hidden="true">
             <span className="mk-gooey__core" />
           </span>
@@ -331,7 +331,7 @@ export function MarketingNav({ variant = "default" }: Props) {
       </div>
 
       <div className="mk-nav__mobile" id="mk-mobile-menu" aria-hidden={!menuOpen}>
-        <nav className="mk-nav__mobile-links" aria-label="Navegação mobile">
+        <nav className="mk-nav__mobile-links" aria-label={"Navega\u00E7\u00E3o mobile"}>
           {navItems.map((item) => renderMobileItem(item, () => setMenuOpen(false)))}
         </nav>
         <div className="mk-nav__mobile-actions">
