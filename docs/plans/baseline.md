@@ -543,3 +543,156 @@ cd apps/api && rm -f evalops.db* && .venv/Scripts/python.exe -m pytest tests/tes
 
 ✅ **Sim**: todos os critérios de aceite passaram. Fase 4 concluída com 18/18
 novos testes e 42/42 de regressão verdes.
+
+---
+
+## Consolidação pós-Fase 4 — validação 2026-05-14
+
+### Contexto
+
+Esta máquina agora tem Node.js (`v24.15.0`, `npm 11.12.1`) e Python 3.14.4
+instalados. A validação frontend da Fase 1 (`npx tsc --noEmit && npm run build
+&& npm run test`) **não havia rodado** em máquina anterior por ausência de
+Node — risco registrado como "trade-off documentado" na seção da Fase 1. Esta
+sessão executa a validação consolidada pós-Fase 4 antes de habilitar a Fase 5.
+
+Sessão **não tocou em código produtivo**; apenas executa suítes existentes e
+atualiza este documento.
+
+### Setup desta sessão
+
+- Frontend: `cd apps/web && npm install` (instalou 46 pacotes; alerta de 2
+  vulnerabilidades — 1 moderate, 1 high — não bloqueante para validação).
+- Backend: `cd apps/api && python3 -m venv .venv && .venv/bin/pip install -e
+  ".[dev]"` (Python 3.14.4 satisfaz `requires-python>=3.12`).
+
+### Validação frontend (`apps/web`) — agora executada com Node
+
+```bash
+cd apps/web && npx tsc --noEmit
+```
+**Resultado**: ✅ sem erros (saída vazia).
+
+```bash
+cd apps/web && npm run build
+```
+**Resultado**: ✅ `Compiled successfully in 9.0s` + `Generating static pages
+(8/8)`. Build artefato gerado para todas as rotas (`/`, `/changelog`, `/docs`,
+`/login`, `/register`, `/app`, e 9 rotas dinâmicas `/o/[org]/p/[project]/*`).
+Two warnings (não bloqueantes):
+- `autoprefixer: end value has mixed support, consider using flex-end instead`
+  em `app/globals.css:686:3` — questão cosmética de CSS.
+- `[webpack.cache.PackFileCacheStrategy] Skipped not serializable cache item`
+  para o aviso anterior — webpack não consegue serializar o objeto Warning
+  no cache; não afeta build.
+
+```bash
+cd apps/web && npm run test
+```
+**Resultado**: ✅ `tests 13 / pass 13 / fail 0` em `105ms`. Cobre G-02, G-03,
+G-04 conforme planejado em `apps/web/tests/security.test.mjs`.
+
+**Conclusão frontend**: tipos OK, build OK, testes OK. O risco assumido na
+Fase 1 ("erro de tipo TS ou falha de build poderia escapar até o próximo PC
+com Node disponível") **foi fechado** — código frontend não tem regressão de
+compilação nem de testes.
+
+### Regressão backend pós-Fase 4
+
+| Suíte | Arquivos | Testes | Resultado | Tempo |
+|---|---|---|---|---|
+| `test_phase8_p0_security.py` (Fase 1) | 1 | 5 | ✅ pass | 100.15s |
+| `test_phase9_auth_hardening.py` (Fase 2) | 1 | 14 | ✅ pass | 177.41s |
+| `test_phase10_audit_privacy_exports.py` (Fase 4) | 1 | 18 | ✅ pass | 265.82s |
+| `test_phase5_prompts_datasets_experiments.py` (Fase 3) | 1 | 8 | ✅ pass | 136.94s |
+| Regressão adicional (health + auth_flow + phase1/2/3/6/7) | 7 | 15 | ✅ pass | 195.87s |
+| **Total executado** | **11** | **60** | **✅ pass** | **~876s (~14.6 min)** |
+
+Comandos executados (idênticos aos do roadmap; workaround SQLite mantido):
+
+```bash
+cd apps/api && rm -f evalops.db* && python -m pytest tests/test_phase8_p0_security.py -q --tb=short -p no:warnings
+cd apps/api && rm -f evalops.db* && python -m pytest tests/test_phase9_auth_hardening.py -q --tb=short -p no:warnings
+cd apps/api && rm -f evalops.db* && python -m pytest tests/test_phase10_audit_privacy_exports.py -q --tb=short -p no:warnings
+cd apps/api && rm -f evalops.db* && python -m pytest tests/test_phase5_prompts_datasets_experiments.py -q --tb=short -p no:warnings
+cd apps/api && rm -f evalops.db* && python -m pytest tests/test_health.py tests/test_auth_flow.py tests/test_phase1_identity_access.py tests/test_phase2_tracing.py tests/test_phase3_analytics.py tests/test_phase6_feedback_export_usage.py tests/test_phase7_e2e_mvp_flow.py -q --tb=short -p no:warnings
+```
+
+> **Nota de tempo**: os tempos absolutos nesta sessão (100–266s por suíte) são
+> bem maiores que os ~6–16s registrados nas seções anteriores. Hipótese: argon2
+> com cost padrão em CPU diferente / sem cache de `cffi` / Python 3.14.4 (versão
+> mais nova que a do PC original). **Não é regressão funcional**, mas o
+> wall-clock de teste merece um follow-up se virar custo de CI.
+
+### Fase 5 — liberada?
+
+✅ **Sim, liberada**. Critérios:
+
+1. Fase 1 (G-02/G-03/G-04/G-17): 5/5 backend + 13/13 frontend ✓.
+2. Fase 2 (G-01/G-13/G-15/G-16): 14/14 ✓.
+3. Fase 3 (G-05): 8/8 ✓.
+4. Fase 4 (G-06/G-08/G-09/G-10/G-21): 18/18 ✓.
+5. Regressão das suítes legadas: 15/15 ✓.
+6. Frontend compila e empacota sem erros de tipo nem falha de build.
+7. Nenhuma das suítes anteriores regrediu.
+
+Fase 5 pode iniciar conforme o escopo definido em
+`docs/plans/evalops-remediation-roadmap.md`.
+
+### Deploy — bloqueios
+
+🚫 **Deploy de produção continua bloqueado** pelos itens já registrados nas
+seções acima — nenhum deles foi resolvido nesta sessão (apenas validação):
+
+1. **Migração `Trace.deleted_at`** (Fase 4 — bloqueio para DBs existentes).
+   Em produção nova `create_all` resolve; em produção com DB pré-Fase 4,
+   `ALTER TABLE traces ADD COLUMN deleted_at ...` é obrigatório.
+2. **Migração `AuditLog.organization_id NULL`** (Fase 2 — bloqueio para DBs
+   existentes): `ALTER TABLE audit_logs ALTER COLUMN organization_id DROP
+   NOT NULL`.
+3. **Sem Alembic** (Fase 7): migrações continuam manuais.
+4. **Rate limit single-worker in-memory** (Fase 2): proibido escalar para 2+
+   workers até migrar para Redis. Em SLA de prod com 1 worker, aceitável; em
+   horizonte de escala, é blocker.
+5. **`EVALOPS_API_BASE_URL` precisa ser configurado em prod** com URL pública
+   real — não-localhost, não-vazio (G-04 fail-loud só dispara em runtime, não
+   em build).
+6. **`EVALOPS_DEV_MODE` deve estar ausente / != `"1"`** em prod (G-03).
+7. **Vulnerabilidades npm**: 1 moderate, 1 high reportadas por `npm install`.
+   Não foi investigado o pacote afetado nesta sessão (escopo era validação,
+   não correção). `cd apps/web && npm audit` pendente antes de deploy.
+8. **`SQLite` em produção**: `pyproject.toml` traz `sqlalchemy` mas a config
+   atual usa SQLite (`evalops.db`). Para prod, migrar para Postgres (G-25,
+   Fase 6).
+9. **CSS warning autoprefixer** (`app/globals.css:686:3`) — não bloqueante,
+   mas evita ruído visual em DevTools.
+10. **Wall-clock de teste alto** (100–266s/suíte vs. ~6–16s no PC original):
+    não é blocker mas merece investigação se CI tiver budget de minutos
+    apertado.
+
+### Blockers operacionais remanescentes (não fechados nesta sessão)
+
+Resumo único da fila já documentada acima:
+
+| # | Item | Fase de origem | Resolve em |
+|---|---|---|---|
+| 1 | Alembic + migração `deleted_at` | Fase 4 | Fase 7 |
+| 2 | Alembic + migração `audit_logs.organization_id` | Fase 2 | Fase 7 |
+| 3 | Rate limit em Redis (multi-worker) | Fase 2 | Fase 7 |
+| 4 | Cleanup de `RevokedToken` expirados | Fase 2 | Fase 7 |
+| 5 | Trust de `X-Forwarded-For` configurável | Fase 2 | Fase 7 |
+| 6 | Postgres em produção | — | Fase 6 (G-25) |
+| 7 | Worker assíncrono / LLM real em experiments | Fase 3 | Fase 7 |
+| 8 | `GET /v1/audit-logs` (leitura) | Fase 4 | Fase 5 ou 7 |
+| 9 | PII automático por heurística | Fase 4 | fora MVP |
+| 10 | Hard-delete / purge físico de trace | Fase 4 | Fase 7 |
+| 11 | `npm audit` (1 moderate, 1 high) | nova nesta sessão | antes de deploy |
+
+### Conclusão executiva
+
+- Frontend ✅ validado pela primeira vez com Node real (tsc + build + 13
+  testes).
+- Backend ✅ 60/60 testes verdes pós-Fase 4, sem regressão.
+- Fase 5 ✅ liberada para iniciar.
+- Deploy ❌ continua bloqueado pelos itens 1–11 acima (todos pré-existentes,
+  exceto `npm audit` que apareceu agora).
