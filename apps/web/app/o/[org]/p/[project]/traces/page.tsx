@@ -8,7 +8,7 @@ import { formatCost, formatDateTime, formatLatency } from "@/lib/format";
 
 type Props = {
   params: Promise<{ org: string; project: string }>;
-  searchParams: Promise<{ status?: string; environment?: string; name?: string; tab?: string }>;
+  searchParams: Promise<{ status?: string; environment?: string; name?: string; tab?: string; cursor?: string }>;
 };
 
 function StatusBadge({ status }: { status: string }) {
@@ -32,7 +32,6 @@ export default async function TracesListPage({ params, searchParams }: Props) {
 
   const resolved = await resolveProject(org, project);
 
-  // Fetch all traces (with status filter if on a specific tab)
   const statusFilter = tab === "errors" ? "error" : qp.status;
   const traces = await getTraces({
     projectId: resolved.project_id,
@@ -40,15 +39,48 @@ export default async function TracesListPage({ params, searchParams }: Props) {
     environment: qp.environment,
     name: qp.name,
     limit: 50,
+    cursor: qp.cursor,
   });
 
   const rows = traces.data;
   const slowRows = rows.filter((t) => t.duration_ms > 2000);
   const errorRows = rows.filter((t) => t.status === "error");
+  const flaggedRows = rows.filter((t) => t.status === "partial");
+
+  const displayRows =
+    tab === "slow" ? slowRows :
+    tab === "flagged" ? flaggedRows :
+    rows;
 
   const tabBase = `/o/${org}/p/${project}/traces`;
-  const tabHref = (t: string) =>
-    t === "all" ? tabBase : `${tabBase}?tab=${t}`;
+  const currentParams = new URLSearchParams();
+  if (qp.status) currentParams.set("status", qp.status);
+  if (qp.environment) currentParams.set("environment", qp.environment);
+  if (qp.name) currentParams.set("name", qp.name);
+
+  const tabHref = (t: string) => {
+    const p = new URLSearchParams(currentParams);
+    if (t !== "all") p.set("tab", t);
+    const s = p.toString();
+    return s ? `${tabBase}?${s}` : tabBase;
+  };
+
+  const nextPageHref = traces.next_cursor
+    ? (() => {
+        const p = new URLSearchParams(currentParams);
+        if (tab !== "all") p.set("tab", tab);
+        p.set("cursor", traces.next_cursor);
+        return `${tabBase}?${p.toString()}`;
+      })()
+    : null;
+
+  const exportsHref = `/o/${org}/p/${project}/exports`;
+  const refreshHref = (() => {
+    const p = new URLSearchParams(currentParams);
+    if (tab !== "all") p.set("tab", tab);
+    const s = p.toString();
+    return s ? `${tabBase}?${s}` : tabBase;
+  })();
 
   return (
     <div className="evo-page">
@@ -60,12 +92,12 @@ export default async function TracesListPage({ params, searchParams }: Props) {
           </p>
         </div>
         <div className="evo-row">
-          <button type="button" className="evo-btn evo-btn--sm">
+          <Link href={exportsHref} className="evo-btn evo-btn--sm">
             <Download size={13} /> Exportar JSONL
-          </button>
-          <button type="button" className="evo-btn evo-btn--sm">
+          </Link>
+          <Link href={refreshHref} className="evo-btn evo-btn--sm" title="Atualizar lista">
             <RefreshCw size={13} />
-          </button>
+          </Link>
         </div>
       </div>
 
@@ -80,8 +112,8 @@ export default async function TracesListPage({ params, searchParams }: Props) {
           <span className="evo-tab__count">{errorRows.length}</span>
         </Link>
         <Link href={tabHref("flagged")} className={`evo-tab${tab === "flagged" ? " is-active" : ""}`}>
-          <Flag size={12} /> Flagged
-          <span className="evo-tab__count">0</span>
+          <Flag size={12} /> Parciais
+          <span className="evo-tab__count">{flaggedRows.length}</span>
         </Link>
         <Link href={tabHref("slow")} className={`evo-tab${tab === "slow" ? " is-active" : ""}`}>
           <Clock size={12} /> Lentos
@@ -93,11 +125,11 @@ export default async function TracesListPage({ params, searchParams }: Props) {
         initialName={qp.name}
         initialStatus={qp.status}
         initialEnv={qp.environment}
-        count={rows.length}
+        count={displayRows.length}
         total={rows.length}
       />
 
-      {rows.length === 0 ? (
+      {displayRows.length === 0 ? (
         <div className="evo-card" style={{ padding: "48px 24px", textAlign: "center" }}>
           <p style={{ color: "var(--text-muted)", marginBottom: 8, fontWeight: 600 }}>
             Nenhum trace encontrado
@@ -129,26 +161,38 @@ export default async function TracesListPage({ params, searchParams }: Props) {
               <thead>
                 <tr>
                   <th style={{ width: 32 }}>
-                    <input type="checkbox" style={{ accentColor: "var(--accent)" }} />
+                    <input
+                      type="checkbox"
+                      disabled
+                      data-status="planned"
+                      title="Seleção em lote — em breve"
+                      style={{ accentColor: "var(--accent)", opacity: 0.4, cursor: "not-allowed" }}
+                    />
                   </th>
-                  <th className="evo-table__sortable">Nome</th>
+                  <th>Nome</th>
                   <th>Trace ID</th>
                   <th>Status</th>
                   <th>Env</th>
                   <th>Modelo</th>
-                  <th className="evo-table__sortable">Duração</th>
-                  <th className="evo-table__sortable">Tokens</th>
-                  <th className="evo-table__sortable">Custo</th>
+                  <th>Duração</th>
+                  <th>Tokens</th>
+                  <th>Custo</th>
                   <th>Score</th>
-                  <th className="evo-table__sortable">Quando</th>
+                  <th>Quando</th>
                   <th style={{ width: 32 }} />
                 </tr>
               </thead>
               <tbody>
-                {rows.map((trace) => (
+                {displayRows.map((trace) => (
                   <tr key={trace.id} style={{ cursor: "pointer" }}>
                     <td>
-                      <input type="checkbox" style={{ accentColor: "var(--accent)" }} />
+                      <input
+                        type="checkbox"
+                        disabled
+                        data-status="planned"
+                        title="Seleção em lote — em breve"
+                        style={{ accentColor: "var(--accent)", opacity: 0.4, cursor: "not-allowed" }}
+                      />
                     </td>
                     <td>
                       <Link
@@ -222,21 +266,23 @@ export default async function TracesListPage({ params, searchParams }: Props) {
             }}
           >
             <span>
-              Mostrando {rows.length.toLocaleString("pt-BR")} trace
-              {rows.length !== 1 ? "s" : ""}
+              Mostrando {displayRows.length.toLocaleString("pt-BR")} trace
+              {displayRows.length !== 1 ? "s" : ""}
+              {qp.cursor ? " (próxima página)" : ""}
             </span>
             <div className="evo-row">
-              <button type="button" className="evo-btn evo-btn--sm" disabled>
+              <button type="button" className="evo-btn evo-btn--sm" disabled title="Voltar página — em breve" data-status="planned">
                 ‹
               </button>
-              <span className="evo-mono" style={{ fontSize: 12 }}>1</span>
-              <button
-                type="button"
-                className="evo-btn evo-btn--sm"
-                disabled={!traces.next_cursor}
-              >
-                ›
-              </button>
+              {nextPageHref ? (
+                <Link href={nextPageHref} className="evo-btn evo-btn--sm">
+                  ›
+                </Link>
+              ) : (
+                <button type="button" className="evo-btn evo-btn--sm" disabled>
+                  ›
+                </button>
+              )}
             </div>
           </div>
         </>

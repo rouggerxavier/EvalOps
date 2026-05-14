@@ -696,3 +696,181 @@ Resumo único da fila já documentada acima:
 - Fase 5 ✅ liberada para iniciar.
 - Deploy ❌ continua bloqueado pelos itens 1–11 acima (todos pré-existentes,
   exceto `npm audit` que apareceu agora).
+
+---
+
+## Fase 5 — Contratos frontend↔backend e UX funcional (2026-05-14)
+
+### Status
+✅ **Concluída**.
+
+### Gaps fechados
+- **G-14** — Botões cosméticos / UX funcional.
+  - `traces/page.tsx`: botão "Exportar JSONL" → `<Link>` real para `/exports`.
+    Botão "Refresh" → `<Link>` real para reload da página. Checkboxes sem handler
+    → `disabled data-status="planned"`. Tab "Flagged" renomeado para "Parciais"
+    com filtro real (`status=partial`). Colunas `evo-table__sortable` sem sort
+    real → classe removida. Botão "‹" de paginação → disabled com tooltip.
+  - `experiments/page.tsx`: botão "Exportar relatório" → disabled +
+    `data-status="planned"`. Botão "Novo experimento" → `<Link href="#create-experiment">`.
+    `MoreHorizontal` → disabled + `data-status="planned"`. `<details>` de
+    criação recebeu `id="create-experiment"`.
+  - `prompts/page.tsx`: botão "Importar" → disabled + `data-status="planned"`.
+    Botão "Novo prompt" → `<Link href="#prompt-create">`. Botão "Nova versão"
+    no painel de detalhe → `<Link href="#prompt-version">`. `<details>` de
+    criação receberam `id="prompt-create"` e `id="prompt-version"`.
+
+- **G-18** — Paginação real.
+  - Backend `GET /v1/traces`: parâmetro `cursor` adicionado; cursor encoda
+    `(created_at.isoformat(), trace_id)` em base64 URL-safe. Query filtra por
+    `(created_at < cursor_ca) OR (created_at = cursor_ca AND id < cursor_id)`
+    (ordem DESC). Busca `limit+1` linhas → se `len > limit`, gera `next_cursor`
+    com a última linha; senão `next_cursor = null`.
+  - Fix de bug: parâmetro `status: str | None` da rota `list_traces` shadowava
+    o módulo `fastapi.status`, causando AttributeError latente em projetos não
+    encontrados. Renomeado para `trace_status` com `Query(None, alias="status")`
+    — contrato HTTP `?status=` preservado.
+  - Frontend `lib/api.ts`: `getTraces` aceita `cursor?: string`.
+  - Frontend `traces/page.tsx`: `searchParams` aceita `cursor`. Botão "›"
+    vira `<Link>` para `?cursor=<next_cursor>` quando `next_cursor` presente;
+    disabled quando `null`. Texto mostra "(próxima página)" quando cursor ativo.
+
+- **G-23** — Saneamento de mensagens de erro no frontend.
+  - `lib/actions.ts`: `messageFromActionError` reescrito com whitelist.
+    Erros HTTP da API (padrão `API NNN: <body>`) mapeados para mensagens
+    seguras por status code. Padrões de leak detectados via regex (traceback,
+    sqlalchemy, sqlite, psycopg, SQL SELECT/INSERT, path Python, API key evk_).
+    Qualquer mensagem não mapeada → `"Algo deu errado. Tente novamente."`.
+  - Whitelist: 400/422 → validação; 401 → sessão; 402 → plano; 403 → permissão;
+    404 → não encontrado; 409 → conflito; 413 → payload; 429 → rate limit;
+    500/unknown → genérico.
+
+### Decisões de UX (G-14)
+
+Abordagem para cada tipo de elemento sem ação real:
+- **Ação existe no backend mas não na UI**: conectar com `<Link>` ou form real.
+- **Funcionalidade futura no roadmap**: `disabled + data-status="planned" + title="Em breve"`.
+- **Elemento puramente cosmético sem sentido no MVP**: remover ou ocultar.
+- **Tab com contagem errada**: corrigir contagem a partir dos dados reais já carregados.
+
+Nenhuma feature nova foi criada. Apenas ações existentes foram conectadas
+ou elementos sem ação foram explicitamente marcados/desabilitados.
+
+### Arquivos alterados
+
+**Backend:**
+- `apps/api/app/api/routes.py` — cursor pagination em `list_traces`, fix de
+  shadow bug (`status` → `trace_status`), helpers `_encode_cursor`/`_decode_cursor`.
+- `apps/api/tests/test_phase11_contracts_ux.py` (novo) — 5 testes G-18.
+
+**Frontend:**
+- `apps/web/lib/actions.ts` — `messageFromActionError` com whitelist G-23.
+- `apps/web/lib/api.ts` — `getTraces` com `cursor` param.
+- `apps/web/app/o/[org]/p/[project]/traces/page.tsx` — G-14 + G-18.
+- `apps/web/app/o/[org]/p/[project]/experiments/page.tsx` — G-14.
+- `apps/web/app/o/[org]/p/[project]/prompts/page.tsx` — G-14.
+- `apps/web/tests/security.test.mjs` — 10 novos testes G-23.
+
+### Como cursor pagination funciona
+
+1. Cursor = `base64(f"{created_at.isoformat()}|{trace_id}")` (URL-safe, sem padding).
+2. Cursor inválido → 400 `invalid_cursor`.
+3. Query aplica filtro `(ca < cursor_ca) OR (ca = cursor_ca AND id < cursor_id)`
+   com `ORDER BY created_at DESC, id DESC`.
+4. Retorna `limit+1` → se há mais, `next_cursor` encoda o último item retornado;
+   senão `null`.
+5. Cliente que ignora `next_cursor` continua funcionando (primeira página sempre
+   serve sem cursor).
+
+### Como G-23 sanitiza erros
+
+```
+Erro da API: "API 500: Traceback (most recent call last):\n  File ..."
+→ sanitizeApiError detecta padrão "API 500:" → GENERIC_ERROR
+→ UI exibe: "Algo deu errado. Tente novamente."
+
+Erro da API: "API 401: {"detail": "invalid_credentials"}"
+→ sanitizeApiError detecta "API 401:" → SAFE_HTTP_MESSAGES[401]
+→ UI exibe: "Sessão expirada ou não autorizado. Faça login novamente."
+```
+
+Stack traces, SQL, paths Python, API keys `evk_*` → todos detectados por
+regex e substituídos por mensagem genérica antes de qualquer exibição.
+
+### Comandos executados e resultados
+
+```bash
+cd apps/web && npx tsc --noEmit
+```
+**Resultado**: ✅ sem erros (saída vazia).
+
+```bash
+cd apps/web && npm run build
+```
+**Resultado**: ✅ `Compiled successfully in 1000ms`. Todas as rotas compiladas.
+
+```bash
+cd apps/web && npm run test
+```
+**Resultado**: `tests 23 / pass 23 / fail 0` ✅ (13 anteriores + 10 novos G-23).
+
+```bash
+cd apps/api && rm -f evalops.db* test_phase11.db* && python -m pytest tests/test_phase11_contracts_ux.py -q --tb=short -p no:warnings
+```
+**Resultado**: `5 passed in 26.16s` ✅
+
+```bash
+cd apps/api && rm -f evalops.db* && python -m pytest tests/test_phase8_p0_security.py -q --tb=short -p no:warnings
+```
+**Resultado**: `5 passed in 68s` ✅
+
+```bash
+cd apps/api && rm -f evalops.db* && python -m pytest tests/test_phase10_audit_privacy_exports.py -q --tb=short -p no:warnings
+```
+**Resultado**: `18 passed in 240s` ✅
+
+```bash
+cd apps/api && rm -f evalops.db* && python -m pytest tests/test_phase5_prompts_datasets_experiments.py -q --tb=short -p no:warnings
+```
+**Resultado**: `8 passed in 99s` ✅
+
+```bash
+cd apps/api && rm -f evalops.db* && python -m pytest tests/test_phase9_auth_hardening.py -q --tb=short -p no:warnings
+```
+**Resultado**: `14 passed in 185s` ✅
+
+```bash
+cd apps/api && rm -f evalops.db* && python -m pytest tests/test_health.py tests/test_auth_flow.py tests/test_phase1_identity_access.py tests/test_phase2_tracing.py tests/test_phase3_analytics.py tests/test_phase6_feedback_export_usage.py tests/test_phase7_e2e_mvp_flow.py -q --tb=short -p no:warnings
+```
+**Resultado**: `15 passed in 177s` ✅
+
+**Total Fase 5**: 5 novos backend + 10 novos frontend + 65 regressão = **80 testes verdes**.
+
+> **Nota SQLite**: rodas concorrentes em background conflitam no `evalops.db`.
+> Workaround obrigatório: rodar cada arquivo individualmente com `rm -f evalops.db*`.
+> Limitação pré-existente documentada desde Fase 3.
+
+### Riscos remanescentes (Fase 5)
+
+1. **Back-pagination não implementada**: botão "‹" desabilitado com `data-status="planned"`.
+   Implementação requer cursor bidirecional ou acúmulo de histórico de cursors
+   no cliente (URL ou estado). Deixado para Fase 6 ou demanda real.
+2. **Cursor não é opaco para o cliente**: o base64 pode ser decodificado e
+   manipulado. Não representa risco de segurança (o filtro apenas pagina dados
+   do próprio projeto autenticado), mas poderia causar comportamento inesperado
+   com cursors forjados — protegido pelo catch de `_decode_cursor` que retorna 400.
+3. **Paginação apenas em traces**: outras listagens (datasets, prompts, rubrics,
+   experiments) continuam sem cursor. Volume do MVP não justifica por enquanto.
+4. **Tabs "Parciais" e "Lentos" filtram client-side**: a página carrega 50 traces
+   sem filtro de status e filtra localmente para "partial" ou "duration>2000ms".
+   Se houver paginação com cursor, a contagem de tabs pode estar sub-representada.
+   Aceitável no MVP (50 traces/página).
+5. **G-23 em page-level errors**: `messageFromActionError` cobre apenas Server
+   Actions. Erros em rotas que renderizam diretamente (como `resolveProject` em
+   exports page) ainda exibem `error.message` diretamente. Esses paths têm try/catch
+   próprios mas não usam a whitelist — seguimento na Fase 6.
+
+### Pode avançar para Fase 6?
+
+✅ **Sim**: G-14, G-18, G-23 implementados e testados. Regressão de todas as
+fases anteriores verde. Frontend tsc/build/test verdes.

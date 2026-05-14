@@ -14,7 +14,7 @@ Branch alvo: `main`.
 | 2 — Rate limit e hardening de auth | ✅ Re-implementada (2026-05-14) | G-01, G-13, G-15, G-16 fechados; 14/14 testes (test_phase9_auth_hardening.py); regressão Fases 1+3 verde. |
 | 3 — Experiments reais | ✅ Concluída (2026-05-14) | G-05 fechado; 8/8 testes phase5 (test_phase5_prompts_datasets_experiments.py), baseline obrigatório 28/28 verde, validação adicional 5/5 verde (phase3/6/7) |
 | 4 — Audit log, privacy, exports | ✅ Concluída (2026-05-14) | G-06, G-08, G-09, G-10, G-21 fechados; 18/18 testes (test_phase10_audit_privacy_exports.py); regressão 42/42 verde. |
-| 5 — Contratos UX | ⏭️ Próxima (liberada 2026-05-14) | — |
+| 5 — Contratos UX | ✅ Concluída (2026-05-14) | G-14, G-18, G-23 fechados; 5/5 testes backend (test_phase11_contracts_ux.py) + 23/23 testes frontend (tests/security.test.mjs); regressão 60/60 verde. |
 | 6 — Robustez quota/eval/storage | ⏳ Pendente | — |
 | 7 — Arquitetura e manutenção | ⏳ Pendente | — |
 

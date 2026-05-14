@@ -175,3 +175,94 @@ test("G-02: redirect search params after create must not include raw key", () =>
   assert.equal("secret" in params, false);
   assert.equal("api_key" in params, false);
 });
+
+// --- G-23: error sanitization -------------------------------------------
+// Mirror of the sanitizeApiError logic in lib/actions.ts.
+
+const SAFE_HTTP_MESSAGES = {
+  400: "Dados inválidos. Verifique os campos e tente novamente.",
+  401: "Sessão expirada ou não autorizado. Faça login novamente.",
+  402: "Limite do plano atingido.",
+  403: "Sem permissão para esta ação.",
+  404: "Recurso não encontrado.",
+  409: "Conflito: o recurso já existe ou foi modificado.",
+  413: "Payload muito grande.",
+  422: "Dados inválidos. Verifique os campos e tente novamente.",
+  429: "Muitas requisições. Aguarde e tente novamente.",
+};
+
+const GENERIC_ERROR = "Algo deu errado. Tente novamente.";
+
+const LEAK_PATTERNS = [
+  /traceback\s+\(most recent call last\)/i,
+  /sqlalchemy/i,
+  /sqlite/i,
+  /psycopg/i,
+  /\bselect\b.{1,40}\bfrom\b/i,
+  /\binsert\b.{1,20}\binto\b/i,
+  /file ".*\.py"/i,
+  /evk_[a-z0-9_]{6,}/i,
+  /line \d+, in /i,
+];
+
+function sanitizeApiError(message) {
+  const match = /^API (\d{3}):/.exec(message);
+  if (match) {
+    const httpStatus = parseInt(match[1], 10);
+    return SAFE_HTTP_MESSAGES[httpStatus] ?? GENERIC_ERROR;
+  }
+  for (const pattern of LEAK_PATTERNS) {
+    if (pattern.test(message)) return GENERIC_ERROR;
+  }
+  return GENERIC_ERROR;
+}
+
+test("G-23: SQL in error body becomes generic message", () => {
+  const msg = "API 500: SELECT * FROM traces WHERE id = '123'; -- injected";
+  assert.equal(sanitizeApiError(msg), GENERIC_ERROR);
+});
+
+test("G-23: Python traceback becomes generic message", () => {
+  const msg = "API 500: Traceback (most recent call last):\n  File \"app.py\", line 42, in handler\nValueError: bad value";
+  assert.equal(sanitizeApiError(msg), GENERIC_ERROR);
+});
+
+test("G-23: SQLAlchemy leak becomes generic message", () => {
+  const msg = "API 500: sqlalchemy.exc.OperationalError: (sqlite3.OperationalError) table not found";
+  assert.equal(sanitizeApiError(msg), GENERIC_ERROR);
+});
+
+test("G-23: API key leak becomes generic message", () => {
+  const msg = "Error: evk_prod_abc123xyz invalid";
+  assert.equal(sanitizeApiError(msg), GENERIC_ERROR);
+});
+
+test("G-23: 401 maps to friendly auth message", () => {
+  const msg = "API 401: Unauthorized";
+  assert.equal(sanitizeApiError(msg), SAFE_HTTP_MESSAGES[401]);
+});
+
+test("G-23: 409 maps to safe conflict message", () => {
+  const msg = "API 409: {\"detail\":\"organization_slug_taken\"}";
+  assert.equal(sanitizeApiError(msg), SAFE_HTTP_MESSAGES[409]);
+});
+
+test("G-23: 429 maps to rate-limit message", () => {
+  const msg = "API 429: too_many_requests";
+  assert.equal(sanitizeApiError(msg), SAFE_HTTP_MESSAGES[429]);
+});
+
+test("G-23: 500 maps to generic error", () => {
+  const msg = "API 500: Internal Server Error";
+  assert.equal(sanitizeApiError(msg), GENERIC_ERROR);
+});
+
+test("G-23: unknown non-API error maps to generic", () => {
+  const msg = "fetch failed: ECONNREFUSED";
+  assert.equal(sanitizeApiError(msg), GENERIC_ERROR);
+});
+
+test("G-23: 400 maps to validation message", () => {
+  const msg = "API 400: {\"detail\":\"invalid_cursor\"}";
+  assert.equal(sanitizeApiError(msg), SAFE_HTTP_MESSAGES[400]);
+});

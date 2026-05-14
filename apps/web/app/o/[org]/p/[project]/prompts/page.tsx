@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { GitBranch, Plus, Upload } from "lucide-react";
+import { GitBranch, Plus } from "lucide-react";
 
 import { AuthRequiredPanel } from "@/components/AuthRequiredPanel";
 import { createPromptAction, createPromptVersionAction } from "@/lib/actions";
@@ -168,12 +168,19 @@ export default async function PromptsPage({ params, searchParams }: Props) {
           </p>
         </div>
         <div className="evo-row">
-          <button type="button" className="evo-btn evo-btn--sm">
-            <Upload size={13} /> Importar
+          <button
+            type="button"
+            className="evo-btn evo-btn--sm"
+            disabled
+            data-status="planned"
+            title="Importar prompts — em breve"
+            style={{ opacity: 0.5, cursor: "not-allowed" }}
+          >
+            Importar
           </button>
-          <button type="button" className="evo-btn evo-btn--sm evo-btn--primary">
+          <Link href="#prompt-create" className="evo-btn evo-btn--sm evo-btn--primary">
             <Plus size={13} /> Novo prompt
-          </button>
+          </Link>
         </div>
       </div>
 
@@ -326,9 +333,9 @@ export default async function PromptsPage({ params, searchParams }: Props) {
                       atual
                     </span>
                   )}
-                  <button type="button" className="evo-btn evo-btn--sm">
+                  <Link href="#prompt-version" className="evo-btn evo-btn--sm">
                     <GitBranch size={13} /> Nova versão
-                  </button>
+                  </Link>
                 </div>
               </div>
               <div className="evo-card__body" style={{ padding: 0, maxHeight: 400, overflow: "auto" }}>
@@ -392,6 +399,7 @@ export default async function PromptsPage({ params, searchParams }: Props) {
       {/* Create new version (collapsible) — only when prompts exist */}
       {prompts.length > 0 && (
         <details
+          id="prompt-create"
           style={{
             background: "var(--surface-1)",
             border: "1px solid var(--border)",
@@ -441,6 +449,7 @@ export default async function PromptsPage({ params, searchParams }: Props) {
       {/* Add version to selected prompt */}
       {selected && selectedVersions.length > 0 && (
         <details
+          id="prompt-version"
           style={{
             background: "var(--surface-1)",
             border: "1px solid var(--border)",

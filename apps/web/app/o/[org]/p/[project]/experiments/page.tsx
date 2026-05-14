@@ -1,4 +1,5 @@
-import { Download, FlaskConical, MoreHorizontal, Play, Plus, RefreshCw, Rocket } from "lucide-react";
+import Link from "next/link";
+import { FlaskConical, MoreHorizontal, Play, Plus, RefreshCw, Rocket } from "lucide-react";
 
 import { AuthRequiredPanel } from "@/components/AuthRequiredPanel";
 import { createExperimentAction, runExperimentAction } from "@/lib/actions";
@@ -216,12 +217,19 @@ export default async function ExperimentosPage({ params, searchParams }: Props) 
           </p>
         </div>
         <div className="evo-row">
-          <button type="button" className="evo-btn evo-btn--sm">
-            <Download size={13} /> Exportar relatório
+          <button
+            type="button"
+            className="evo-btn evo-btn--sm"
+            disabled
+            data-status="planned"
+            title="Exportar relatório — em breve"
+            style={{ opacity: 0.5, cursor: "not-allowed" }}
+          >
+            <RefreshCw size={13} /> Exportar relatório
           </button>
-          <button type="button" className="evo-btn evo-btn--sm evo-btn--primary">
+          <Link href="#create-experiment" className="evo-btn evo-btn--sm evo-btn--primary">
             <Plus size={13} /> Novo experimento
-          </button>
+          </Link>
         </div>
       </div>
 
@@ -355,7 +363,14 @@ export default async function ExperimentosPage({ params, searchParams }: Props) 
                           <Play size={12} /> Rodar
                         </button>
                       </form>
-                      <button type="button" className="evo-btn evo-btn--ghost evo-btn--sm evo-btn--icon">
+                      <button
+                        type="button"
+                        className="evo-btn evo-btn--ghost evo-btn--sm evo-btn--icon"
+                        disabled
+                        data-status="planned"
+                        title="Ações adicionais — em breve"
+                        style={{ opacity: 0.4, cursor: "not-allowed" }}
+                      >
                         <MoreHorizontal size={14} />
                       </button>
                     </div>
@@ -370,6 +385,7 @@ export default async function ExperimentosPage({ params, searchParams }: Props) 
       {/* Create form (collapsible) */}
       {datasetsRes.data.length > 0 && rubricsRes.data.length > 0 && (
         <details
+          id="create-experiment"
           style={{
             background: "var(--surface-1)",
             border: "1px solid var(--border)",

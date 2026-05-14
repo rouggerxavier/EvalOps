@@ -1,7 +1,10 @@
+import base64
+import json as _json
+from datetime import datetime
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
-from sqlalchemy import func
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from sqlalchemy import func, or_, and_
 from sqlalchemy.orm import Session
 
 from app.config import max_spans_per_trace
@@ -26,6 +29,21 @@ from app.schemas import (
 from app.security import generate_api_key, hash_api_key, new_id
 
 router = APIRouter(prefix="/v1")
+
+
+def _encode_cursor(created_at: datetime, trace_id: str) -> str:
+    raw = f"{created_at.isoformat()}|{trace_id}"
+    return base64.urlsafe_b64encode(raw.encode()).decode().rstrip("=")
+
+
+def _decode_cursor(cursor: str) -> tuple[datetime, str]:
+    try:
+        padded = cursor + "=" * (-len(cursor) % 4)
+        raw = base64.urlsafe_b64decode(padded.encode()).decode()
+        ca_str, trace_id = raw.rsplit("|", 1)
+        return datetime.fromisoformat(ca_str), trace_id
+    except Exception:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="invalid_cursor")
 
 
 @router.get("/me")
@@ -401,10 +419,11 @@ def ingest_traces(
 @router.get("/traces")
 def list_traces(
     project_id: str,
-    status: str | None = None,
+    trace_status: str | None = Query(None, alias="status"),
     environment: str | None = None,
     name: str | None = None,
     limit: int = 50,
+    cursor: str | None = None,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
@@ -413,15 +432,27 @@ def list_traces(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="not_found")
     ensure_org_membership(db, user.id, project.organization_id)
     query = db.query(Trace).filter(Trace.project_id == project_id, Trace.deleted_at.is_(None))
-    if status:
-        query = query.filter(Trace.status == status)
+    if trace_status:
+        query = query.filter(Trace.status == trace_status)
     if environment:
         query = query.filter(Trace.environment == environment)
     if name:
         query = query.filter(Trace.name.ilike(f"%{name}%"))
-    rows = query.order_by(Trace.created_at.desc()).limit(min(max(limit, 1), 200)).all()
+    if cursor:
+        cursor_created_at, cursor_id = _decode_cursor(cursor)
+        query = query.filter(
+            or_(
+                Trace.created_at < cursor_created_at,
+                and_(Trace.created_at == cursor_created_at, Trace.id < cursor_id),
+            )
+        )
+    page_limit = min(max(limit, 1), 200)
+    rows = query.order_by(Trace.created_at.desc(), Trace.id.desc()).limit(page_limit + 1).all()
+    has_more = len(rows) > page_limit
+    rows = rows[:page_limit]
     data = [TraceOut.model_validate(row).model_dump() for row in rows]
-    return {"data": data, "next_cursor": None}
+    next_cursor = _encode_cursor(rows[-1].created_at, rows[-1].id) if has_more and rows else None
+    return {"data": data, "next_cursor": next_cursor}
 
 
 @router.get("/traces/{trace_id}")

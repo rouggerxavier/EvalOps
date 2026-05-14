@@ -76,6 +76,7 @@ export async function getTraces(opts: {
   status?: string;
   environment?: string;
   name?: string;
+  cursor?: string;
 }): Promise<TraceListResponse> {
   const params = new URLSearchParams({
     project_id: opts.projectId,
@@ -84,6 +85,7 @@ export async function getTraces(opts: {
   if (opts.status) params.set("status", opts.status);
   if (opts.environment) params.set("environment", opts.environment);
   if (opts.name) params.set("name", opts.name);
+  if (opts.cursor) params.set("cursor", opts.cursor);
   return fetchJson<TraceListResponse>(`/traces?${params.toString()}`);
 }
 
