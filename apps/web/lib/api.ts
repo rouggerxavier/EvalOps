@@ -20,8 +20,7 @@ import type {
   TraceListResponse,
 } from "./types";
 import { getAuthToken, getSession, hasFallbackToken } from "./auth";
-
-const API_BASE_URL = process.env.EVALOPS_API_BASE_URL ?? "http://localhost:8000/v1";
+import { getApiBaseUrl } from "./config";
 
 async function authHeaders(): Promise<HeadersInit> {
   const token = await getAuthToken();
@@ -35,7 +34,7 @@ async function fetchJson<T>(path: string): Promise<T> {
 
 async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
   const auth = await authHeaders();
-  const res = await fetch(`${API_BASE_URL}${path}`, {
+  const res = await fetch(`${getApiBaseUrl()}${path}`, {
     method: init?.method ?? "GET",
     headers: {
       "Content-Type": "application/json",
@@ -127,7 +126,7 @@ export async function createApiKey(projectId: string, payload: {
 }
 
 export async function revokeApiKey(projectId: string, keyId: string): Promise<void> {
-  const res = await fetch(`${API_BASE_URL}/projects/${projectId}/api-keys/${keyId}/revoke`, {
+  const res = await fetch(`${getApiBaseUrl()}/projects/${projectId}/api-keys/${keyId}/revoke`, {
     method: "POST",
     headers: await authHeaders(),
     cache: "no-store",

@@ -4,42 +4,54 @@ import styles from "@/app/publicMarketingPages.module.css";
 import LightPillar from "@/components/LightPillar";
 import { MarketingFooter } from "@/components/MarketingFooter";
 import { MarketingNav } from "@/components/MarketingNav";
+import { getApiBaseUrl } from "@/lib/config";
 
-const RAW_API_BASE = process.env.EVALOPS_API_BASE_URL ?? "http://localhost:8000/v1";
-const API_ROOT = RAW_API_BASE.endsWith("/v1") ? RAW_API_BASE.slice(0, -3) : RAW_API_BASE;
-
-const cards = [
-  {
-    title: "Refer\u00EAncia da API",
-    description: "Abra a documenta\u00E7\u00E3o FastAPI de todos os endpoints do EvalOps.",
-    href: `${API_ROOT}/docs`,
-    Icon: BookOpen,
-    external: true,
-  },
-  {
-    title: "OpenAPI JSON",
-    description: "Use o schema bruto para gera\u00E7\u00E3o de c\u00F3digo, testes ou SDKs.",
-    href: `${API_ROOT}/openapi.json`,
-    Icon: FileJson,
-    external: true,
-  },
-  {
-    title: "Quickstart do SDK Python",
-    description: "Instrumente agentes com traces, spans e upload em background.",
-    href: "https://github.com/rouggerxavier/EvalOps/tree/main/packages/sdk-python",
-    Icon: Code2,
-    external: true,
-  },
-  {
-    title: "Especifica\u00E7\u00F5es do produto",
-    description: "Leia as especifica\u00E7\u00F5es e o plano de implementa\u00E7\u00E3o do reposit\u00F3rio.",
-    href: "https://github.com/rouggerxavier/EvalOps/tree/main/docs",
-    Icon: Github,
-    external: true,
-  },
-];
+function buildCards() {
+  // Best-effort: a misconfigured prod env throws here. Surface the link list
+  // with a placeholder rather than crashing the entire docs page render,
+  // because the real fail-loud surface lives in lib/api.ts (the actual API
+  // call). Bad config is still flagged to the user via a banner.
+  let apiRoot = "#";
+  try {
+    const base = getApiBaseUrl();
+    apiRoot = base.endsWith("/v1") ? base.slice(0, -3) : base;
+  } catch {
+    apiRoot = "#";
+  }
+  return [
+    {
+      title: "Refer\u00EAncia da API",
+      description: "Abra a documenta\u00E7\u00E3o FastAPI de todos os endpoints do EvalOps.",
+      href: `${apiRoot}/docs`,
+      Icon: BookOpen,
+      external: true,
+    },
+    {
+      title: "OpenAPI JSON",
+      description: "Use o schema bruto para gera\u00E7\u00E3o de c\u00F3digo, testes ou SDKs.",
+      href: `${apiRoot}/openapi.json`,
+      Icon: FileJson,
+      external: true,
+    },
+    {
+      title: "Quickstart do SDK Python",
+      description: "Instrumente agentes com traces, spans e upload em background.",
+      href: "https://github.com/rouggerxavier/EvalOps/tree/main/packages/sdk-python",
+      Icon: Code2,
+      external: true,
+    },
+    {
+      title: "Especifica\u00E7\u00F5es do produto",
+      description: "Leia as especifica\u00E7\u00F5es e o plano de implementa\u00E7\u00E3o do reposit\u00F3rio.",
+      href: "https://github.com/rouggerxavier/EvalOps/tree/main/docs",
+      Icon: Github,
+      external: true,
+    },
+  ];
+}
 
 export default function DocsPage() {
+  const cards = buildCards();
   return (
     <div className="mk-shell">
       <div className="bg-stage">

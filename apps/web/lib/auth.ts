@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 
-const API_BASE_URL = process.env.EVALOPS_API_BASE_URL ?? "http://localhost:8000/v1";
+import { getApiBaseUrl, isDevMode } from "./config";
+
 const FALLBACK_TOKEN = process.env.EVALOPS_DASHBOARD_BEARER_TOKEN;
 
 export const SESSION_COOKIE = "evalops_session";
@@ -43,6 +44,7 @@ type AuthResponseBody = {
 export async function getAuthToken(): Promise<string | null> {
   const sessionToken = await getSessionCookieToken();
   if (sessionToken) return sessionToken;
+  if (!isDevMode()) return null;
   return FALLBACK_TOKEN ?? null;
 }
 
@@ -54,7 +56,7 @@ async function getSessionCookieToken(): Promise<string | null> {
 }
 
 export function hasFallbackToken(): boolean {
-  return Boolean(FALLBACK_TOKEN);
+  return isDevMode() && Boolean(FALLBACK_TOKEN);
 }
 
 async function setSessionCookie(token: string): Promise<void> {
@@ -84,7 +86,7 @@ export async function clearSessionCookie(): Promise<void> {
 }
 
 async function callAuth(path: string, payload: unknown): Promise<AuthResponseBody> {
-  const res = await fetch(`${API_BASE_URL}${path}`, {
+  const res = await fetch(`${getApiBaseUrl()}${path}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
@@ -142,7 +144,7 @@ export async function getSession(): Promise<AuthSession | null> {
   const token = await getSessionCookieToken();
   if (!token) return null;
   try {
-    const res = await fetch(`${API_BASE_URL}/auth/session`, {
+    const res = await fetch(`${getApiBaseUrl()}/auth/session`, {
       headers: { Authorization: `Bearer ${token}` },
       cache: "no-store",
     });

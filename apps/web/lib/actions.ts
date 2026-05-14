@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { isRedirectError } from "next/dist/client/components/redirect-error";
 
+import { setApiKeyFlash } from "@/lib/flash";
 import {
   buildDatasetFromTraces,
   createApiKey,
@@ -59,7 +60,8 @@ export async function createApiKeyAction(formData: FormData): Promise<void> {
     errorMsg = messageFromActionError(error, "Failed to create API key");
   }
   if (result) {
-    redirectWithMessage(path, { created: "1", key: result.key, prefix: result.prefix });
+    await setApiKeyFlash({ key: result.key, prefix: result.prefix });
+    redirectWithMessage(path, { created: "1" });
   } else {
     redirectWithMessage(path, { error: errorMsg ?? "Failed to create API key" });
   }

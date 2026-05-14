@@ -19,7 +19,17 @@ import {
 
 import { AuthRequiredPanel } from "@/components/AuthRequiredPanel";
 import { getOverview, getTraces, hasAuthToken, resolveProject } from "@/lib/api";
+import { getApiBaseUrl } from "@/lib/config";
 import type { OverviewResponse, Trace } from "@/lib/types";
+
+function apiRoot(): string {
+  try {
+    const base = getApiBaseUrl();
+    return base.endsWith("/v1") ? base.slice(0, -3) : base;
+  } catch {
+    return "#";
+  }
+}
 
 type Props = {
   params: Promise<{ org: string; project: string }>;
@@ -27,9 +37,6 @@ type Props = {
 };
 
 type ChartPoint = { label: string; v: number };
-
-const RAW_API_BASE = process.env.EVALOPS_API_BASE_URL ?? "http://localhost:8000/v1";
-const API_ROOT = RAW_API_BASE.endsWith("/v1") ? RAW_API_BASE.slice(0, -3) : RAW_API_BASE;
 
 function fmtNumber(n: number): string {
   return new Intl.NumberFormat("pt-BR", { notation: n >= 10000 ? "compact" : "standard", maximumFractionDigits: 1 }).format(n);
@@ -363,7 +370,7 @@ export default async function ProjectOverviewPage({ params, searchParams }: Prop
               <span>(c) 2026 EvalOps Studio</span>
               <span className="evo-spacer" />
               <a href="/docs">Documentação</a>
-              <a href={`${API_ROOT}/health/readiness`} target="_blank" rel="noreferrer">Status</a>
+              <a href={`${apiRoot()}/health/readiness`} target="_blank" rel="noreferrer">Status</a>
               <span className="evo-ops"><Check size={12} /> Sistemas operando</span>
             </footer>
     </div>

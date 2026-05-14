@@ -2,7 +2,7 @@
 
 Data: 2026-05-13
 Fonte: `docs/audits/evalops-important-rules-audit.md`
-Status: Fases 0, 1, 2 e 3 concluídas. Demais em planejamento.
+Status: Fases 0, 1 e 3 concluídas. Fase 2 pendente (refazer). Demais em planejamento.
 Branch alvo: `main`.
 
 ## Status por fase
@@ -10,8 +10,8 @@ Branch alvo: `main`.
 | Fase | Estado | Evidência |
 |---|---|---|
 | 0 — Baseline | ✅ Concluída (2026-05-13) | `docs/plans/baseline.md` |
-| 1 — P0 segurança/configuração | ✅ Concluída (2026-05-13) | G-02, G-03, G-04, G-17 fechados; 5/5 testes novos (test_phase8_p0_security.py), 11/11 testes web (env.test.mjs), baseline obrigatório 10/10 verde |
-| 2 — Rate limit e hardening de auth | ✅ Concluída (2026-05-14) | G-01, G-13, G-15, G-16 fechados; 13/13 testes novos (test_phase9_auth_hardening.py), baseline obrigatório 15/15 verde, validação adicional 8/8 verde (phase3/5/6/7) |
+| 1 — P0 segurança/configuração | ✅ Re-implementada (2026-05-14) | G-02, G-03, G-04, G-17 fechados; 5/5 testes backend (test_phase8_p0_security.py) + 13/13 testes web (tests/security.test.mjs); regressão backend 10/10 verde. Frontend tsc/build não executado nesta sessão (Node ausente — ver baseline.md). |
+| 2 — Rate limit e hardening de auth | ⚠️ Pendente (refazer) | Marcada como concluída no histórico antigo, mas código G-01/G-13/G-15/G-16 não presente neste checkout. Bloqueia Fase 4. |
 | 3 — Experiments reais | ✅ Concluída (2026-05-14) | G-05 fechado; 8/8 testes phase5 (test_phase5_prompts_datasets_experiments.py), baseline obrigatório 28/28 verde, validação adicional 5/5 verde (phase3/6/7) |
 | 4 — Audit log, privacy, exports | ⏳ Pendente | — |
 | 5 — Contratos UX | ⏳ Pendente | — |

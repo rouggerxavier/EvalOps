@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.config import max_spans_per_trace
 from app.db import get_db
 from app.deps import ensure_org_membership, get_current_user, get_project_from_api_key
 from app.domain.services.usage_service import enforce_quota, increment_usage
@@ -232,6 +233,22 @@ def ingest_traces(
     db: Session = Depends(get_db),
 ) -> dict:
     enforce_quota(db, project, "traces_ingested", len(payload.traces))
+
+    spans_cap = max_spans_per_trace()
+    for idx, trace_in in enumerate(payload.traces):
+        span_count = len(trace_in.spans)
+        if span_count > spans_cap:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={
+                    "error": "too_many_spans",
+                    "trace_index": idx,
+                    "client_trace_id": trace_in.client_trace_id,
+                    "spans": span_count,
+                    "limit": spans_cap,
+                },
+            )
+
     results: list[dict] = []
     errors: list[dict] = []
 

@@ -5,6 +5,7 @@ import { AuthRequiredPanel } from "@/components/AuthRequiredPanel";
 import { CopyTextButton } from "@/components/CopyTextButton";
 import { createApiKeyAction, revokeApiKeyAction } from "@/lib/actions";
 import { getApiKeys, hasAuthToken, resolveProject } from "@/lib/api";
+import { consumeApiKeyFlash } from "@/lib/flash";
 import { formatDateTime } from "@/lib/format";
 
 type Props = {
@@ -13,8 +14,6 @@ type Props = {
     tab?: string;
     created?: string;
     revoked?: string;
-    key?: string;
-    prefix?: string;
     error?: string;
   }>;
 };
@@ -109,6 +108,7 @@ export default async function KeysPage({ params, searchParams }: Props) {
 
   const basePath = `/o/${org}/p/${project}/keys`;
   const tab = qp.tab ?? "all";
+  const flash = qp.created ? await consumeApiKeyFlash() : null;
 
   const resolved = await resolveProject(org, project);
   let keys: Awaited<ReturnType<typeof getApiKeys>>["data"] = [];
@@ -179,14 +179,14 @@ export default async function KeysPage({ params, searchParams }: Props) {
       )}
       {qp.revoked && <div style={alertStyle("ok")}>Chave API revogada com sucesso.</div>}
 
-      {qp.key && (
+      {flash && (
         <section className="evo-card" style={{ marginBottom: 12 }}>
           <div className="evo-card__header">
             <div>
               <h3 className="evo-card__title">Nova chave criada</h3>
               <div className="evo-card__subtitle">Segredo exibido apenas nesta resposta de criacao.</div>
             </div>
-            {qp.prefix ? <span className="evo-badge evo-badge--info"><span className="evo-badge__dot" />{qp.prefix}</span> : null}
+            <span className="evo-badge evo-badge--info"><span className="evo-badge__dot" />{flash.prefix}</span>
           </div>
           <div className="evo-card__body" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             <div style={KEY_SECRET_WARNING_STYLE}>
@@ -206,10 +206,10 @@ export default async function KeysPage({ params, searchParams }: Props) {
                 overflowX: "auto",
               }}
             >
-              {qp.key}
+              {flash.key}
             </pre>
             <div className="evo-row">
-              <CopyTextButton text={qp.key} label="Copiar segredo" copiedLabel="Segredo copiado" />
+              <CopyTextButton text={flash.key} label="Copiar segredo" copiedLabel="Segredo copiado" />
               <span className="evo-faint" style={{ fontSize: 12 }}>
                 Nao compartilhe este valor em logs, tickets ou commits.
               </span>
