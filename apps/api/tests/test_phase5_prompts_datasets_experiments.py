@@ -231,3 +231,280 @@ evaluators:
     assert "by_variant" in run_data
     assert "control" in run_data["by_variant"]
     assert "candidate" in run_data["by_variant"]
+    assert "comparisons" in run_data
+    assert "criteria_failures" in run_data
+
+
+def _seed_prompt_version(headers: dict[str, str], project_id: str, slug: str, template: str) -> None:
+    resp = client.post(
+        f"/v1/projects/{project_id}/prompts",
+        headers=headers,
+        json={
+            "slug": slug,
+            "description": slug,
+            "template": template,
+            "variables": {"user_message": {"type": "string", "required": True}},
+            "metadata": {},
+            "changelog": "v1",
+        },
+    )
+    assert resp.status_code == 201
+
+
+def _keyword_rubric_yaml() -> str:
+    return """
+slug: kw-presence
+name: Keyword Presence
+description: Pass when 'hello' appears in assistant output
+threshold: 0.5
+aggregate: weighted_mean
+evaluators:
+  - id: kw_hello
+    type: keyword_presence
+    weight: 1.0
+    config:
+      target: trace.output.assistant_message
+      keywords: ["hello"]
+      require: any
+"""
+
+
+def _bootstrap_experiment_pieces(
+    headers: dict[str, str], project_id: str
+) -> tuple[str, str]:
+    api_key = _create_api_key(headers, project_id)
+    _ingest_trace(api_key)
+    rubric = client.post(
+        f"/v1/projects/{project_id}/rubrics",
+        headers=headers,
+        json={"yaml_source": _keyword_rubric_yaml()},
+    )
+    assert rubric.status_code == 201
+    rubric_id = rubric.json()["rubric"]["id"]
+
+    dataset = client.post(
+        f"/v1/projects/{project_id}/datasets",
+        headers=headers,
+        json={"slug": "ds-exp", "description": "exp set", "source": "traces"},
+    )
+    assert dataset.status_code == 201
+    dataset_id = dataset.json()["id"]
+
+    built = client.post(
+        f"/v1/datasets/{dataset_id}/build-from-traces",
+        headers=headers,
+        json={"environment": "prod", "limit": 10},
+    )
+    assert built.status_code == 202
+    return rubric_id, dataset_id
+
+
+def test_distinct_variants_produce_distinct_results() -> None:
+    headers, _, project_id = _bootstrap()
+    rubric_id, dataset_id = _bootstrap_experiment_pieces(headers, project_id)
+
+    _seed_prompt_version(headers, project_id, "with-hello", "hello {{ user_message }}")
+    _seed_prompt_version(headers, project_id, "without-hello", "bye {{ user_message }}")
+
+    experiment = client.post(
+        f"/v1/projects/{project_id}/experiments",
+        headers=headers,
+        json={
+            "name": "prompt-divergence",
+            "dataset_id": dataset_id,
+            "rubric_id": rubric_id,
+            "variants": [
+                {"name": "control", "prompt_version_ref": "with-hello@1"},
+                {"name": "candidate", "prompt_version_ref": "without-hello@1"},
+            ],
+            "baseline_variant": "control",
+        },
+    )
+    assert experiment.status_code == 201
+    experiment_id = experiment.json()["id"]
+
+    run = client.post(
+        f"/v1/experiments/{experiment_id}/run",
+        headers=headers,
+        json={"triggered_by": "api"},
+    )
+    assert run.status_code == 202
+    run_id = run.json()["run_id"]
+
+    detail = client.get(
+        f"/v1/experiments/{experiment_id}/runs/{run_id}", headers=headers
+    )
+    assert detail.status_code == 200
+    run_data = detail.json()["run"]
+    assert run_data["status"] == "completed"
+    by_variant = run_data["by_variant"]
+    assert by_variant["control"]["pass_rate"] == 1.0
+    assert by_variant["candidate"]["pass_rate"] == 0.0
+    comparisons = run_data["comparisons"]
+    delta = comparisons["candidate_vs_control"]["delta_pass_rate"]
+    assert delta != 0
+    assert delta == -1.0
+
+
+def test_identical_variants_produce_identical_results() -> None:
+    headers, _, project_id = _bootstrap()
+    rubric_id, dataset_id = _bootstrap_experiment_pieces(headers, project_id)
+
+    _seed_prompt_version(headers, project_id, "twin", "hello {{ user_message }}")
+
+    experiment = client.post(
+        f"/v1/projects/{project_id}/experiments",
+        headers=headers,
+        json={
+            "name": "twin-variants",
+            "dataset_id": dataset_id,
+            "rubric_id": rubric_id,
+            "variants": [
+                {
+                    "name": "alpha",
+                    "prompt_version_ref": "twin@1",
+                    "model": "openai/gpt-4o-mini",
+                    "params": {"temperature": 0.2},
+                },
+                {
+                    "name": "beta",
+                    "prompt_version_ref": "twin@1",
+                    "model": "openai/gpt-4o-mini",
+                    "params": {"temperature": 0.2},
+                },
+            ],
+            "baseline_variant": "alpha",
+        },
+    )
+    assert experiment.status_code == 201
+    experiment_id = experiment.json()["id"]
+
+    run = client.post(
+        f"/v1/experiments/{experiment_id}/run",
+        headers=headers,
+        json={"triggered_by": "api"},
+    )
+    assert run.status_code == 202
+    run_id = run.json()["run_id"]
+
+    detail = client.get(
+        f"/v1/experiments/{experiment_id}/runs/{run_id}", headers=headers
+    )
+    assert detail.status_code == 200
+    run_data = detail.json()["run"]
+    assert run_data["status"] == "completed"
+    by_variant = run_data["by_variant"]
+    assert by_variant["alpha"]["pass_rate"] == by_variant["beta"]["pass_rate"]
+    assert by_variant["alpha"]["avg_score"] == by_variant["beta"]["avg_score"]
+    assert run_data["comparisons"]["beta_vs_alpha"]["delta_pass_rate"] == 0
+
+
+def test_invalid_baseline_variant_returns_422() -> None:
+    headers, _, project_id = _bootstrap()
+    rubric_id, dataset_id = _bootstrap_experiment_pieces(headers, project_id)
+
+    resp = client.post(
+        f"/v1/projects/{project_id}/experiments",
+        headers=headers,
+        json={
+            "name": "bad-baseline",
+            "dataset_id": dataset_id,
+            "rubric_id": rubric_id,
+            "variants": [
+                {"name": "control", "model": "x"},
+                {"name": "candidate", "model": "y"},
+            ],
+            "baseline_variant": "does-not-exist",
+        },
+    )
+    assert resp.status_code == 422
+    assert "baseline" in resp.json()["detail"].lower()
+
+
+def test_experiment_response_format_preserved() -> None:
+    headers, _, project_id = _bootstrap()
+    rubric_id, dataset_id = _bootstrap_experiment_pieces(headers, project_id)
+
+    experiment = client.post(
+        f"/v1/projects/{project_id}/experiments",
+        headers=headers,
+        json={
+            "name": "shape-check",
+            "dataset_id": dataset_id,
+            "rubric_id": rubric_id,
+            "variants": [
+                {"name": "alpha", "model": "m1"},
+                {"name": "beta", "model": "m2"},
+            ],
+            "baseline_variant": "alpha",
+            "pass_criteria": {"min_pass_rate": 0.0},
+        },
+    )
+    assert experiment.status_code == 201
+    experiment_id = experiment.json()["id"]
+
+    run = client.post(
+        f"/v1/experiments/{experiment_id}/run",
+        headers=headers,
+        json={"triggered_by": "api"},
+    )
+    assert run.status_code == 202
+    run_id = run.json()["run_id"]
+
+    detail = client.get(
+        f"/v1/experiments/{experiment_id}/runs/{run_id}", headers=headers
+    )
+    run_data = detail.json()["run"]
+    for key in ("by_variant", "comparisons", "criteria_failures", "run_metadata"):
+        assert key in run_data
+    for variant_name in ("alpha", "beta"):
+        bv = run_data["by_variant"][variant_name]
+        for metric in (
+            "pass_rate",
+            "avg_score",
+            "avg_latency_ms",
+            "total_cost_usd",
+            "avg_cost_usd_per_item",
+            "total_items",
+        ):
+            assert metric in bv
+    assert "beta_vs_alpha" in run_data["comparisons"]
+    cmp_ = run_data["comparisons"]["beta_vs_alpha"]
+    for k in ("delta_pass_rate", "delta_cost", "regression"):
+        assert k in cmp_
+
+
+def test_invalid_prompt_version_ref_marks_run_as_error() -> None:
+    headers, _, project_id = _bootstrap()
+    rubric_id, dataset_id = _bootstrap_experiment_pieces(headers, project_id)
+
+    experiment = client.post(
+        f"/v1/projects/{project_id}/experiments",
+        headers=headers,
+        json={
+            "name": "bad-prompt-ref",
+            "dataset_id": dataset_id,
+            "rubric_id": rubric_id,
+            "variants": [
+                {"name": "control", "prompt_version_ref": "no-such-prompt@1"},
+                {"name": "candidate", "model": "m"},
+            ],
+            "baseline_variant": "control",
+        },
+    )
+    assert experiment.status_code == 201
+    experiment_id = experiment.json()["id"]
+
+    run = client.post(
+        f"/v1/experiments/{experiment_id}/run",
+        headers=headers,
+        json={"triggered_by": "api"},
+    )
+    assert run.status_code == 202
+    detail = client.get(
+        f"/v1/experiments/{experiment_id}/runs/{run.json()['run_id']}",
+        headers=headers,
+    )
+    run_data = detail.json()["run"]
+    assert run_data["status"] == "error"
+    assert "prompt_version_ref_invalid" in run_data["run_metadata"]["error"]
