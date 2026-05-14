@@ -1,15 +1,17 @@
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.config import max_spans_per_trace
 from app.db import get_db
 from app.deps import ensure_org_membership, get_current_user, get_project_from_api_key
+from app.domain.services.audit_service import record_audit
+from app.domain.services.redaction_service import should_redact
 from app.domain.services.usage_service import enforce_quota, increment_usage
 from app.infra.llm.pricing import compute_cost_usd
-from app.models import ApiKey, Event, HumanFeedback, Membership, Organization, Project, Span, Trace, User
+from app.models import ApiKey, AuditLog, Event, HumanFeedback, Membership, Organization, Project, Span, Trace, User, utcnow
 from app.schemas import (
     ApiKeyCreate,
     ApiKeyCreateOut,
@@ -189,6 +191,14 @@ def create_api_key(
         rate_limit_per_minute=60,
     )
     db.add(row)
+    record_audit(
+        db, "api_key.created",
+        organization_id=project.organization_id,
+        actor_user_id=user.id,
+        target_type="api_key",
+        target_id=row.id,
+        payload={"project_id": project_id, "key_name": payload.name, "environment": payload.environment},
+    )
     db.commit()
     db.refresh(row)
     return ApiKeyCreateOut(
@@ -219,20 +229,28 @@ def revoke_api_key(
     if not key or key.project_id != project_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="not_found")
     if key.revoked_at is None:
-        from app.models import utcnow
-
         key.revoked_at = utcnow()
         db.add(key)
+        record_audit(
+            db, "api_key.revoked",
+            organization_id=project.organization_id,
+            actor_user_id=user.id,
+            target_type="api_key",
+            target_id=key.id,
+            payload={"project_id": project_id, "key_name": key.name},
+        )
         db.commit()
 
 
 @router.post("/traces", status_code=status.HTTP_202_ACCEPTED)
 def ingest_traces(
+    request: Request,
     payload: TraceBatchIn,
     project: Project = Depends(get_project_from_api_key),
     db: Session = Depends(get_db),
 ) -> dict:
     enforce_quota(db, project, "traces_ingested", len(payload.traces))
+    redact_header = request.headers.get("X-EvalOps-Redact")
 
     spans_cap = max_spans_per_trace()
     for idx, trace_in in enumerate(payload.traces):
@@ -270,6 +288,7 @@ def ingest_traces(
                     results.append({"client_trace_id": trace_in.client_trace_id, "trace_id": existing.id})
                     continue
 
+            do_redact = should_redact(trace_in.tags, redact_header)
             trace_id = new_id("tr")
             duration_ms = int((trace_in.ended_at - trace_in.started_at).total_seconds() * 1000)
             trace_row = Trace(
@@ -287,7 +306,7 @@ def ingest_traces(
                 tags=trace_in.tags,
                 user_ref=trace_in.user_ref,
                 metadata_json=trace_in.metadata,
-                redacted=False,
+                redacted=do_redact,
             )
             db.add(trace_row)
             db.flush()
@@ -322,15 +341,15 @@ def ingest_traces(
                     provider=span_in.provider,
                     model=span_in.model,
                     prompt_version_ref=span_in.prompt_version_ref,
-                    messages_in=span_in.messages_in,
-                    messages_out=span_in.messages_out,
+                    messages_in=None if do_redact else span_in.messages_in,
+                    messages_out=None if do_redact else span_in.messages_out,
                     tools=span_in.tools,
                     tokens_in=span_in.tokens_in,
                     tokens_out=span_in.tokens_out,
                     cost_usd=float(cost),
                     fallback_from_span_id=None,
-                    input=span_in.input,
-                    output=span_in.output,
+                    input=None if do_redact else span_in.input,
+                    output=None if do_redact else span_in.output,
                     error=span_in.error,
                     metadata_json=span_in.metadata,
                 )
@@ -393,7 +412,7 @@ def list_traces(
     if not project or project.archived_at is not None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="not_found")
     ensure_org_membership(db, user.id, project.organization_id)
-    query = db.query(Trace).filter(Trace.project_id == project_id)
+    query = db.query(Trace).filter(Trace.project_id == project_id, Trace.deleted_at.is_(None))
     if status:
         query = query.filter(Trace.status == status)
     if environment:
@@ -412,7 +431,7 @@ def get_trace(
     db: Session = Depends(get_db),
 ) -> dict:
     trace = db.get(Trace, trace_id)
-    if not trace:
+    if not trace or trace.deleted_at is not None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="not_found")
     ensure_org_membership(db, user.id, trace.organization_id)
     spans = db.query(Span).filter(Span.trace_id == trace_id).all()
@@ -490,10 +509,19 @@ def delete_trace(
     db: Session = Depends(get_db),
 ) -> None:
     trace = db.get(Trace, trace_id)
-    if not trace:
+    if not trace or trace.deleted_at is not None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="not_found")
     ensure_org_membership(db, user.id, trace.organization_id)
-    db.delete(trace)
+    trace.deleted_at = utcnow()
+    db.add(trace)
+    record_audit(
+        db, "trace.deleted",
+        organization_id=trace.organization_id,
+        actor_user_id=user.id,
+        target_type="trace",
+        target_id=trace.id,
+        payload={"project_id": trace.project_id, "trace_name": trace.name},
+    )
     db.commit()
 
 
@@ -510,7 +538,7 @@ def analytics_overview(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="not_found")
     ensure_org_membership(db, user.id, project.organization_id)
 
-    base_query = db.query(Trace).filter(Trace.project_id == project_id)
+    base_query = db.query(Trace).filter(Trace.project_id == project_id, Trace.deleted_at.is_(None))
     if environment:
         base_query = base_query.filter(Trace.environment == environment)
     rows = base_query.all()
@@ -540,7 +568,7 @@ def analytics_overview(
             func.sum(Trace.total_cost_usd).label("total_cost"),
             func.count(Trace.id).label("traces_count"),
         )
-        .filter(Trace.project_id == project_id)
+        .filter(Trace.project_id == project_id, Trace.deleted_at.is_(None))
         .group_by(func.date(Trace.created_at))
         .order_by(func.date(Trace.created_at).desc())
         .limit(max(1, min(limit_days, 90)))
@@ -558,7 +586,7 @@ def analytics_overview(
             func.count(Span.id).label("calls"),
         )
         .join(Trace, Span.trace_id == Trace.id)
-        .filter(Trace.project_id == project_id, Span.type == "llm_call")
+        .filter(Trace.project_id == project_id, Trace.deleted_at.is_(None), Span.type == "llm_call")
         .group_by(Span.provider, Span.model)
         .order_by(func.sum(Span.cost_usd).desc())
         .all()
@@ -566,7 +594,7 @@ def analytics_overview(
 
     flagged = (
         db.query(Trace)
-        .filter(Trace.project_id == project_id)
+        .filter(Trace.project_id == project_id, Trace.deleted_at.is_(None))
         .filter(Trace.status.in_(["error", "partial"]))
         .order_by(Trace.created_at.desc())
         .limit(10)

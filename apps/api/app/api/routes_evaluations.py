@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.deps import ensure_org_membership, get_current_user
+from app.domain.services.audit_service import record_audit
 from app.domain.services.usage_service import enforce_quota, increment_usage
 from app.domain.services.eval_service import run_evaluation
 from app.models import EvaluationRun, EvaluationScore, Project, Rubric, Trace, User
@@ -51,6 +52,19 @@ def trigger_evaluation(
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
     increment_usage(db, trace.organization_id, evals=1, cost_usd=float(run.cost_usd or 0))
+    record_audit(
+        db, "evaluation.run",
+        organization_id=trace.organization_id,
+        actor_user_id=user.id,
+        target_type="evaluation_run",
+        target_id=run.id,
+        payload={
+            "trace_id": run.trace_id,
+            "rubric_id": run.rubric_id,
+            "status": run.status,
+            "passed": bool(run.passed) if run.passed is not None else None,
+        },
+    )
     db.commit()
 
     return {"run": _run_detail(run, db)}

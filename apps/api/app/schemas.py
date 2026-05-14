@@ -127,6 +127,7 @@ class TraceOut(BaseModel):
     tags: dict
     user_ref: str | None = None
     metadata: dict = Field(alias="metadata_json")
+    redacted: bool = False
     created_at: datetime
 
 

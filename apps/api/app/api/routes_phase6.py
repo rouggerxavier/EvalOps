@@ -5,8 +5,10 @@ from datetime import timedelta
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
+from app.config import exports_dir
 from app.db import get_db
 from app.deps import ensure_org_membership, get_current_user
 from app.domain.services.usage_service import (
@@ -124,8 +126,7 @@ def create_export(
             query = query.filter(Trace.name.ilike(f"%{filters['name_contains']}%"))
         traces = query.order_by(Trace.created_at.asc()).all()
 
-        out_dir = Path("apps/api/storage/exports")
-        out_dir.mkdir(parents=True, exist_ok=True)
+        out_dir = exports_dir()
         out_path = out_dir / f"{job.id}.jsonl"
         row_count = 0
         with out_path.open("w", encoding="utf-8") as fh:
@@ -160,7 +161,7 @@ def create_export(
                 fh.write(json.dumps(item, ensure_ascii=False) + "\n")
                 row_count += 1
         job.status = "completed"
-        job.file_path = str(out_path.as_posix())
+        job.file_path = str(out_path)
         job.row_count = row_count
         job.expires_at = utcnow() + timedelta(days=7)
         job.completed_at = utcnow()
@@ -203,6 +204,47 @@ def get_export(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="not_found")
     ensure_org_membership(db, user.id, project.organization_id)
     return ExportJobOut.model_validate(job)
+
+
+@router.get("/exports/{export_id}/download")
+def download_export(
+    export_id: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> FileResponse:
+    """Download the JSONL/NDJSON file for a completed export (G-09)."""
+    job = db.get(ExportJob, export_id)
+    if not job:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="not_found")
+    project = db.get(Project, job.project_id)
+    if not project:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="not_found")
+    ensure_org_membership(db, user.id, project.organization_id)
+
+    if job.expires_at is not None:
+        exp = job.expires_at
+        now = utcnow()
+        # SQLite may return naive datetimes; normalise before comparing.
+        if exp.tzinfo is None:
+            now = now.replace(tzinfo=None)
+        if now > exp:
+            raise HTTPException(status_code=status.HTTP_410_GONE, detail="export_expired")
+
+    if job.status != "completed" or not job.file_path:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="export_not_ready",
+        )
+
+    file_path = Path(job.file_path)
+    if not file_path.exists():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="export_file_missing")
+
+    return FileResponse(
+        path=str(file_path),
+        media_type="application/x-ndjson",
+        filename=f"export-{export_id}.jsonl",
+    )
 
 
 @router.get("/organizations/{org_id}/subscription")

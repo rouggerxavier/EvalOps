@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from app.db import get_db
 from app.deps import ensure_org_membership, get_current_user
 from app.domain.rubrics.parser import parse_rubric_yaml
+from app.domain.services.audit_service import record_audit
 from app.models import EvaluatorRow, Project, Rubric, RubricVersion, User
 from app.schemas import RubricCreate, RubricOut, RubricVersionCreate, RubricVersionOut
 from app.security import new_id
@@ -94,6 +95,22 @@ def create_rubric(
     db.flush()
 
     _persist_evaluators(db, rubric_ver.id, parsed_dict)
+    record_audit(
+        db, "rubric.created",
+        organization_id=project.organization_id,
+        actor_user_id=user.id,
+        target_type="rubric",
+        target_id=rubric.id,
+        payload={"slug": rubric.slug, "project_id": project_id},
+    )
+    record_audit(
+        db, "rubric_version.created",
+        organization_id=project.organization_id,
+        actor_user_id=user.id,
+        target_type="rubric_version",
+        target_id=rubric_ver.id,
+        payload={"rubric_id": rubric.id, "rubric_slug": rubric.slug, "version": 1},
+    )
     db.commit()
     db.refresh(rubric)
     db.refresh(rubric_ver)
@@ -196,6 +213,14 @@ def create_rubric_version(
     rubric.current_version = new_version_num
     rubric.threshold = spec.threshold
     db.add(rubric)
+    record_audit(
+        db, "rubric_version.created",
+        organization_id=project.organization_id,
+        actor_user_id=user.id,
+        target_type="rubric_version",
+        target_id=rubric_ver.id,
+        payload={"rubric_id": rubric_id, "version": new_version_num},
+    )
     db.commit()
     db.refresh(rubric_ver)
 

@@ -420,8 +420,126 @@ cd apps/api && rm -f evalops.db* && python -m pytest tests/test_phase3_analytics
 ✅ **Sim, do ponto de vista da Fase 3**: implementação presente, testes verdes,
 contrato de resposta preservado, sem regressão nas suítes adjacentes.
 
-⚠️ **Ressalva**: antes de iniciar a Fase 4 vale recuperar os testes
-`test_phase8` e `test_phase9` ausentes — caso contrário a matriz de regressão
-da Fase 4 também ficará incompleta. Não é bloqueante para a Fase 3, mas é
-bloqueante para garantir que as Fases 1 e 2 continuam verdes durante o
-desenvolvimento da Fase 4.
+---
+
+## Fase 4 — Audit log, privacy e exports (2026-05-14)
+
+### Status
+✅ **Concluída**.
+
+### Gaps fechados
+- **G-06** — audit log em ações sensíveis. Helper `record_audit()` em
+  `apps/api/app/domain/services/audit_service.py`. Reusa tabela `AuditLog`
+  existente. Auditado: `api_key.created`, `api_key.revoked`, `rubric.created`,
+  `rubric_version.created`, `prompt_version.created`, `dataset.created`,
+  `experiment.run`, `evaluation.run`, `trace.deleted`. Não derruba a operação
+  principal se audit falhar (try/except interno). Não registra secrets/tokens.
+- **G-08** — redaction opt-in. `redaction_service.should_redact(tags, header)`
+  ativa quando `tags.pii=true` **ou** header `X-EvalOps-Redact` presente.
+  Spans têm `messages_in`, `messages_out`, `input`, `output` setados como
+  `None` antes da persistência. `Trace.redacted=True` é persistido. GET
+  trace não expõe conteúdo bruto (campos já são `None` no DB). `TraceOut`
+  expõe campo `redacted: bool`.
+- **G-09** — endpoint de download. `GET /v1/exports/{id}/download` em
+  `routes_phase6.py`. Verifica ownership, `expires_at` (→ 410), status
+  `completed` (→ 409), existência do arquivo em disco (→ 404). Retorna
+  `FileResponse` com `media_type=application/x-ndjson`. Filename no header
+  `Content-Disposition` é `export-{id}.jsonl` sem expor path interno.
+- **G-10** — path absoluto de exports. `exports_dir()` em
+  `apps/api/app/config.py`. Padrão: `Path(__file__).parent.parent / "storage"
+  / "exports"` (absoluto, independente de CWD). Override via
+  `EVALOPS_EXPORTS_DIR`. Cria diretório se não existir. `create_export` usa
+  `exports_dir()` em vez de `Path("apps/api/storage/exports")` relativo.
+- **G-21** — soft delete de traces + audit. `Trace.deleted_at: datetime | None`
+  adicionado ao modelo. `DELETE /v1/traces/{id}` seta `deleted_at` em vez de
+  `db.delete()`, registra `trace.deleted` no audit, retorna 204. GET/list
+  filtram por `deleted_at IS NULL`. DELETE repetido retorna 404. Ingest com
+  mesmo `client_trace_id` de trace deletado retorna o `trace_id` existente
+  (comportamento idempotente seguro).
+
+### Nota de migração de schema (G-21)
+`Trace.deleted_at` é coluna nova. Bancos de dados existentes precisam de
+migração manual:
+```sql
+-- SQLite
+ALTER TABLE traces ADD COLUMN deleted_at DATETIME;
+-- PostgreSQL
+ALTER TABLE traces ADD COLUMN deleted_at TIMESTAMP WITH TIME ZONE;
+```
+Sem a migração, queries com `Trace.deleted_at.is_(None)` falharão em SQLite
+3.x (coluna inexistente). Em produção nova o `create_all` cria a coluna
+automaticamente. Migração formal via Alembic na Fase 7.
+
+### Arquivos alterados
+- `apps/api/app/config.py` — adicionado `exports_dir()`.
+- `apps/api/app/models.py` — `Trace.deleted_at` nullable.
+- `apps/api/app/schemas.py` — `TraceOut.redacted: bool`.
+- `apps/api/app/domain/services/audit_service.py` (novo).
+- `apps/api/app/domain/services/redaction_service.py` (novo).
+- `apps/api/app/api/routes.py` — redaction em ingest, soft delete, audit para
+  api_key.created/revoked e trace.deleted, filtro `deleted_at` em list/get/analytics.
+- `apps/api/app/api/routes_rubrics.py` — audit rubric.created/rubric_version.created.
+- `apps/api/app/api/routes_evaluations.py` — audit evaluation.run.
+- `apps/api/app/api/routes_phase5.py` — audit prompt_version.created/dataset.created/experiment.run.
+- `apps/api/app/api/routes_phase6.py` — `exports_dir()`, download endpoint,
+  fix de timezone naive/aware na comparação de `expires_at`.
+- `apps/api/tests/test_phase10_audit_privacy_exports.py` (novo) — 18 testes.
+
+### Comandos executados e resultados
+
+```bash
+cd apps/api && rm -f evalops.db* && .venv/Scripts/python.exe -m pytest tests/test_phase10_audit_privacy_exports.py -q --tb=short -p no:warnings
+```
+**Resultado**: `18 passed in 16.54s` ✅
+
+```bash
+cd apps/api && rm -f evalops.db* && .venv/Scripts/python.exe -m pytest tests/test_phase8_p0_security.py -q --tb=short -p no:warnings
+```
+**Resultado**: `5 passed in 6.15s` ✅
+
+```bash
+cd apps/api && rm -f evalops.db* && .venv/Scripts/python.exe -m pytest tests/test_phase9_auth_hardening.py -q --tb=short -p no:warnings
+```
+**Resultado**: `14 passed in 18.08s` ✅
+
+```bash
+cd apps/api && rm -f evalops.db* && .venv/Scripts/python.exe -m pytest tests/test_phase5_prompts_datasets_experiments.py -q --tb=short -p no:warnings
+```
+**Resultado**: `8 passed in 8.86s` ✅
+
+```bash
+cd apps/api && rm -f evalops.db* && .venv/Scripts/python.exe -m pytest tests/test_health.py tests/test_auth_flow.py tests/test_phase1_identity_access.py tests/test_phase2_tracing.py tests/test_phase3_analytics.py tests/test_phase6_feedback_export_usage.py tests/test_phase7_e2e_mvp_flow.py -q --tb=short -p no:warnings
+```
+**Resultado**: `15 passed in 12.27s` ✅
+
+**Total Fase 4**: 18 novos + 42 regressão = **60 passed**.
+
+### Riscos remanescentes (Fase 4)
+
+1. **Migração de schema manual**: `Trace.deleted_at` exige ALTER TABLE em
+   DBs existentes. Sem Alembic, esta coluna faltará em qualquer DB criado
+   antes desta fase. Impacto: queries de list/analytics em DB antigo falham
+   se SQLAlchemy não lidar com coluna ausente graciosamente (em SQLite, a
+   coluna não existe, mas queries `IS NULL` falhariam). Solução: re-criar o
+   DB ou rodar a SQL de migração acima.
+2. **Timezone naive/aware em SQLite**: a comparação de `expires_at` em
+   `download_export` normaliza tzinfo antes de comparar. Se houver outro
+   trecho que compare datetimes com `utcnow()`, pode apresentar o mesmo
+   bug. Follow-up: standardizar toda comparação de datetime.
+3. **Redaction por heurística**: a redaction atual é opt-in (tag ou header).
+   Dados sensíveis sem `pii=true` continuam sendo armazenados. PII automático
+   por regex/heurística fica fora de escopo.
+4. **Export path em Windows vs Linux**: `str(out_path)` usa separador do OS.
+   Se o servidor for Linux, os paths gravados em `file_path` serão com `/`.
+   No FileResponse, o path é passado a `open()` — funcionará em ambos. Se
+   o DB for migrado entre OSes, `Path(job.file_path)` pode não existir. Risco
+   baixo em MVP (deploy mono-OS).
+5. **`deleted_at` não limpa dados**: trace deletado continua com spans, eventos
+   e feedback no DB. Hard-delete ou purge físico fica para a Fase 7.
+6. **Sem `GET /v1/audit-logs`**: audit logs criados mas não acessíveis via API.
+   Endpoint de leitura fica para Fase 5 ou 7.
+
+### Pode avançar para Fase 5?
+
+✅ **Sim**: todos os critérios de aceite passaram. Fase 4 concluída com 18/18
+novos testes e 42/42 de regressão verdes.

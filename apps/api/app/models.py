@@ -95,6 +95,9 @@ class Trace(Base):
     metadata_json: Mapped[dict] = mapped_column("metadata", JSON, default=dict)
     redacted: Mapped[bool] = mapped_column(default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    # G-21: soft delete — set instead of hard DELETE; NULL means active.
+    # Migration for existing DBs: ALTER TABLE traces ADD COLUMN deleted_at DATETIME;
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
 
 
 class Span(Base):

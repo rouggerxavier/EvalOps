@@ -1,0 +1,408 @@
+"""Phase 4 tests: G-06 audit log, G-08 redaction, G-09/G-10 exports, G-21 soft delete."""
+from __future__ import annotations
+
+import json
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+
+import pytest
+from fastapi.testclient import TestClient
+
+from app.db import Base, SessionLocal, engine
+from app.main import app
+from app.models import AuditLog, ExportJob, Span, Trace, User
+from app.security import create_access_token
+
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+def _client() -> TestClient:
+    return TestClient(app)
+
+
+def _auth_header(user_id: str = "usr_p10", email: str = "p10@example.com") -> dict[str, str]:
+    token = create_access_token(sub=user_id, email=email, name="Phase10")
+    return {"Authorization": f"Bearer {token}"}
+
+
+def _bootstrap(client: TestClient) -> tuple[str, str, str, dict]:
+    """Return (org_id, project_id, api_key, auth_headers)."""
+    with SessionLocal() as db:
+        db.add(User(id="usr_p10", email="p10@example.com", name="Phase10"))
+        db.commit()
+    headers = _auth_header()
+    org = client.post(
+        "/v1/organizations", headers=headers,
+        json={"name": "AuditOrg", "slug": "audit-org"},
+    ).json()
+    project = client.post(
+        "/v1/projects", headers=headers,
+        json={"organization_id": org["id"], "name": "AuditProj", "slug": "audit-proj"},
+    ).json()
+    key_resp = client.post(
+        f"/v1/projects/{project['id']}/api-keys", headers=headers,
+        json={"name": "ingest", "environment": "prod", "scopes": ["ingest", "read"]},
+    ).json()
+    return org["id"], project["id"], key_resp["key"], headers
+
+
+def _ts() -> tuple[str, str]:
+    t0 = datetime.now(timezone.utc)
+    t1 = t0 + timedelta(seconds=1)
+    return t0.isoformat(), t1.isoformat()
+
+
+def _ingest(client: TestClient, api_key: str, client_trace_id: str, tags: dict | None = None,
+            spans: list | None = None, extra_headers: dict | None = None) -> dict:
+    t0, t1 = _ts()
+    if spans is None:
+        spans = [{
+            "client_span_id": "sp1",
+            "type": "llm_call",
+            "name": "test-span",
+            "started_at": t0,
+            "ended_at": t1,
+            "status": "ok",
+            "messages_in": [{"role": "user", "content": "hello"}],
+            "messages_out": [{"role": "assistant", "content": "world"}],
+            "input": {"text": "hello"},
+            "output": {"text": "world"},
+        }]
+    payload = {
+        "traces": [{
+            "client_trace_id": client_trace_id,
+            "name": "test.trace",
+            "environment": "prod",
+            "started_at": t0,
+            "ended_at": t1,
+            "status": "ok",
+            "tags": tags or {},
+            "spans": spans,
+        }]
+    }
+    headers = {"X-EvalOps-Key": api_key}
+    if extra_headers:
+        headers.update(extra_headers)
+    return client.post("/v1/traces", headers=headers, json=payload).json()
+
+
+def _audit_logs(action: str | None = None) -> list[dict]:
+    with SessionLocal() as db:
+        q = db.query(AuditLog)
+        if action:
+            q = q.filter(AuditLog.action == action)
+        return [
+            {"action": a.action, "target_type": a.target_type, "target_id": a.target_id, "payload": a.payload}
+            for a in q.all()
+        ]
+
+
+RUBRIC_YAML = """
+slug: audit-rubric
+name: Audit Test Rubric
+description: Rubric for Phase 4 audit tests
+threshold: 0.5
+evaluators:
+  - id: len-check
+    type: length_bounds
+    config: {}
+"""
+
+
+@pytest.fixture(autouse=True)
+def _reset_db():
+    Base.metadata.drop_all(bind=engine)
+    Base.metadata.create_all(bind=engine)
+    yield
+    Base.metadata.drop_all(bind=engine)
+
+
+# ── G-06: Audit log ───────────────────────────────────────────────────────────
+
+def test_create_api_key_generates_audit() -> None:
+    client = _client()
+    _, project_id, _, headers = _bootstrap(client)
+    # bootstrap already creates one key; create a second
+    res = client.post(
+        f"/v1/projects/{project_id}/api-keys", headers=headers,
+        json={"name": "extra-key", "environment": "dev", "scopes": ["ingest"]},
+    )
+    assert res.status_code == 201, res.text
+    logs = _audit_logs("api_key.created")
+    assert len(logs) >= 1
+    assert logs[-1]["target_type"] == "api_key"
+    assert logs[-1]["payload"]["project_id"] == project_id
+
+
+def test_revoke_api_key_generates_audit() -> None:
+    client = _client()
+    _, project_id, _, headers = _bootstrap(client)
+    key_resp = client.post(
+        f"/v1/projects/{project_id}/api-keys", headers=headers,
+        json={"name": "to-revoke", "environment": "dev", "scopes": ["ingest"]},
+    ).json()
+    key_id = key_resp["id"]
+    res = client.post(f"/v1/projects/{project_id}/api-keys/{key_id}/revoke", headers=headers)
+    assert res.status_code == 204, res.text
+    logs = _audit_logs("api_key.revoked")
+    assert len(logs) >= 1
+    assert logs[-1]["target_id"] == key_id
+
+
+def test_create_rubric_generates_audit() -> None:
+    client = _client()
+    _, project_id, _, headers = _bootstrap(client)
+    res = client.post(
+        f"/v1/projects/{project_id}/rubrics", headers=headers,
+        json={"yaml_source": RUBRIC_YAML},
+    )
+    assert res.status_code == 201, res.text
+    rubric_id = res.json()["rubric"]["id"]
+    assert len(_audit_logs("rubric.created")) >= 1
+    assert _audit_logs("rubric.created")[-1]["target_id"] == rubric_id
+    assert len(_audit_logs("rubric_version.created")) >= 1
+
+
+def test_run_evaluation_generates_audit() -> None:
+    client = _client()
+    _, project_id, api_key, headers = _bootstrap(client)
+    ingest = _ingest(client, api_key, "ct-eval")
+    trace_id = ingest["results"][0]["trace_id"]
+    rubric_id = client.post(
+        f"/v1/projects/{project_id}/rubrics", headers=headers,
+        json={"yaml_source": RUBRIC_YAML},
+    ).json()["rubric"]["id"]
+    res = client.post(
+        "/v1/evaluations/run", headers=headers,
+        json={"trace_id": trace_id, "rubric_id": rubric_id, "triggered_by": "test"},
+    )
+    assert res.status_code == 201, res.text
+    run_id = res.json()["run"]["id"]
+    logs = _audit_logs("evaluation.run")
+    assert len(logs) >= 1
+    assert logs[-1]["target_id"] == run_id
+    assert logs[-1]["payload"]["trace_id"] == trace_id
+
+
+def test_run_experiment_generates_audit() -> None:
+    client = _client()
+    _, project_id, _, headers = _bootstrap(client)
+    ds_id = client.post(
+        f"/v1/projects/{project_id}/datasets", headers=headers,
+        json={"slug": "audit-ds", "description": "test", "source": "manual"},
+    ).json()["id"]
+    client.post(
+        f"/v1/datasets/{ds_id}/items", headers=headers,
+        json={"items": [{"input": {"text": "hello"}, "expected_output": {"text": "hello"}}]},
+    )
+    rubric_id = client.post(
+        f"/v1/projects/{project_id}/rubrics", headers=headers,
+        json={"yaml_source": RUBRIC_YAML},
+    ).json()["rubric"]["id"]
+    exp_res = client.post(
+        f"/v1/projects/{project_id}/experiments", headers=headers,
+        json={
+            "name": "Audit Exp",
+            "dataset_id": ds_id,
+            "rubric_id": rubric_id,
+            "variants": [{"name": "variant-a", "params": {}}],
+            "pass_criteria": {},
+        },
+    )
+    assert exp_res.status_code == 201, exp_res.text
+    exp_id = exp_res.json()["id"]
+    res = client.post(f"/v1/experiments/{exp_id}/run", headers=headers, json={"triggered_by": "test"})
+    assert res.status_code == 202, res.text
+    logs = _audit_logs("experiment.run")
+    assert len(logs) >= 1
+    assert logs[-1]["payload"]["experiment_id"] == exp_id
+
+
+def test_delete_trace_generates_audit() -> None:
+    client = _client()
+    _, project_id, api_key, headers = _bootstrap(client)
+    ingest = _ingest(client, api_key, "ct-del-audit")
+    trace_id = ingest["results"][0]["trace_id"]
+    res = client.delete(f"/v1/traces/{trace_id}", headers=headers)
+    assert res.status_code == 204, res.text
+    logs = _audit_logs("trace.deleted")
+    assert len(logs) >= 1
+    assert logs[-1]["target_id"] == trace_id
+    assert logs[-1]["target_type"] == "trace"
+
+
+# ── G-08: Redaction ───────────────────────────────────────────────────────────
+
+def test_ingest_without_redaction_preserves_messages() -> None:
+    client = _client()
+    _, _proj, api_key, _ = _bootstrap(client)
+    ingest = _ingest(client, api_key, "ct-normal")
+    trace_id = ingest["results"][0]["trace_id"]
+    with SessionLocal() as db:
+        t = db.get(Trace, trace_id)
+        assert not t.redacted
+        spans = db.query(Span).filter(Span.trace_id == trace_id).all()
+        assert any(sp.messages_in is not None for sp in spans)
+
+
+def test_ingest_with_pii_tag_redacts() -> None:
+    client = _client()
+    _, _proj, api_key, _ = _bootstrap(client)
+    ingest = _ingest(client, api_key, "ct-pii", tags={"pii": True})
+    assert ingest["ingested"] == 1
+    trace_id = ingest["results"][0]["trace_id"]
+    with SessionLocal() as db:
+        t = db.get(Trace, trace_id)
+        assert t.redacted
+        spans = db.query(Span).filter(Span.trace_id == trace_id).all()
+        for sp in spans:
+            assert sp.messages_in is None
+            assert sp.messages_out is None
+            assert sp.input is None
+            assert sp.output is None
+
+
+def test_ingest_with_redact_header_redacts() -> None:
+    client = _client()
+    _, _proj, api_key, _ = _bootstrap(client)
+    ingest = _ingest(client, api_key, "ct-hdr-redact", extra_headers={"X-EvalOps-Redact": "1"})
+    assert ingest["ingested"] == 1
+    trace_id = ingest["results"][0]["trace_id"]
+    with SessionLocal() as db:
+        t = db.get(Trace, trace_id)
+        assert t.redacted
+        spans = db.query(Span).filter(Span.trace_id == trace_id).all()
+        for sp in spans:
+            assert sp.messages_in is None
+
+
+def test_get_redacted_trace_does_not_expose_messages() -> None:
+    client = _client()
+    _, _proj, api_key, headers = _bootstrap(client)
+    ingest = _ingest(client, api_key, "ct-get-redact", tags={"pii": True})
+    trace_id = ingest["results"][0]["trace_id"]
+    detail = client.get(f"/v1/traces/{trace_id}", headers=headers).json()
+    assert detail["trace"]["redacted"] is True
+    for sp in detail["spans"]:
+        assert sp["messages_in"] is None
+        assert sp["messages_out"] is None
+
+
+# ── G-09 / G-10: Export download + absolute path ─────────────────────────────
+
+def test_create_and_download_export() -> None:
+    client = _client()
+    _, project_id, api_key, headers = _bootstrap(client)
+    _ingest(client, api_key, "ct-export-dl")
+    exp_res = client.post(
+        "/v1/exports", headers=headers,
+        json={"project_id": project_id, "format": "jsonl", "filters": {}},
+    )
+    assert exp_res.status_code == 202, exp_res.text
+    export_id = exp_res.json()["export_id"]
+    dl_res = client.get(f"/v1/exports/{export_id}/download", headers=headers)
+    assert dl_res.status_code == 200, dl_res.text
+    ct = dl_res.headers.get("content-type", "")
+    assert "ndjson" in ct or "json" in ct
+    lines = [ln for ln in dl_res.text.strip().split("\n") if ln]
+    assert len(lines) >= 1
+    data = json.loads(lines[0])
+    assert "id" in data
+
+
+def test_download_expired_export_returns_410() -> None:
+    client = _client()
+    _, project_id, _, headers = _bootstrap(client)
+    exp_res = client.post(
+        "/v1/exports", headers=headers,
+        json={"project_id": project_id, "format": "jsonl", "filters": {}},
+    )
+    export_id = exp_res.json()["export_id"]
+    with SessionLocal() as db:
+        job = db.get(ExportJob, export_id)
+        job.expires_at = datetime.now(timezone.utc) - timedelta(days=1)
+        db.commit()
+    dl_res = client.get(f"/v1/exports/{export_id}/download", headers=headers)
+    assert dl_res.status_code == 410, dl_res.text
+
+
+def test_export_path_is_absolute(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("EVALOPS_EXPORTS_DIR", str(tmp_path / "exports"))
+    client = _client()
+    _, project_id, _, headers = _bootstrap(client)
+    exp_res = client.post(
+        "/v1/exports", headers=headers,
+        json={"project_id": project_id, "format": "jsonl", "filters": {}},
+    )
+    assert exp_res.status_code == 202, exp_res.text
+    export_id = exp_res.json()["export_id"]
+    with SessionLocal() as db:
+        job = db.get(ExportJob, export_id)
+        p = Path(job.file_path)
+        assert p.is_absolute(), f"file_path not absolute: {job.file_path}"
+        assert p.exists(), f"export file not found: {job.file_path}"
+        assert str(tmp_path) in str(p)
+
+
+def test_download_does_not_expose_local_path() -> None:
+    client = _client()
+    _, project_id, _, headers = _bootstrap(client)
+    exp_res = client.post(
+        "/v1/exports", headers=headers,
+        json={"project_id": project_id, "format": "jsonl", "filters": {}},
+    )
+    export_id = exp_res.json()["export_id"]
+    dl_res = client.get(f"/v1/exports/{export_id}/download", headers=headers)
+    assert dl_res.status_code == 200
+    cd = dl_res.headers.get("content-disposition", "")
+    assert "storage" not in cd
+    assert "\\" not in cd
+    assert "/" not in cd or "export-" in cd  # only the safe filename
+
+
+# ── G-21: Soft delete ─────────────────────────────────────────────────────────
+
+def test_soft_delete_sets_deleted_at() -> None:
+    client = _client()
+    _, _proj, api_key, headers = _bootstrap(client)
+    ingest = _ingest(client, api_key, "ct-softdel")
+    trace_id = ingest["results"][0]["trace_id"]
+    res = client.delete(f"/v1/traces/{trace_id}", headers=headers)
+    assert res.status_code == 204
+    with SessionLocal() as db:
+        t = db.get(Trace, trace_id)
+        assert t is not None, "row must still exist (soft delete)"
+        assert t.deleted_at is not None
+
+
+def test_list_traces_excludes_deleted() -> None:
+    client = _client()
+    _, project_id, api_key, headers = _bootstrap(client)
+    ingest = _ingest(client, api_key, "ct-list-excl")
+    trace_id = ingest["results"][0]["trace_id"]
+    client.delete(f"/v1/traces/{trace_id}", headers=headers)
+    list_res = client.get(f"/v1/traces?project_id={project_id}", headers=headers)
+    assert list_res.status_code == 200
+    ids = [t["id"] for t in list_res.json()["data"]]
+    assert trace_id not in ids
+
+
+def test_get_deleted_trace_returns_404() -> None:
+    client = _client()
+    _, _proj, api_key, headers = _bootstrap(client)
+    ingest = _ingest(client, api_key, "ct-get-del")
+    trace_id = ingest["results"][0]["trace_id"]
+    client.delete(f"/v1/traces/{trace_id}", headers=headers)
+    get_res = client.get(f"/v1/traces/{trace_id}", headers=headers)
+    assert get_res.status_code == 404
+
+
+def test_double_delete_returns_404() -> None:
+    client = _client()
+    _, _proj, api_key, headers = _bootstrap(client)
+    ingest = _ingest(client, api_key, "ct-double-del")
+    trace_id = ingest["results"][0]["trace_id"]
+    first = client.delete(f"/v1/traces/{trace_id}", headers=headers)
+    assert first.status_code == 204
+    second = client.delete(f"/v1/traces/{trace_id}", headers=headers)
+    assert second.status_code == 404

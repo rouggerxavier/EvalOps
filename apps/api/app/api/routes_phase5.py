@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.deps import ensure_org_membership, get_current_user
+from app.domain.services.audit_service import record_audit
 from app.domain.services.experiment_service import (
     ExperimentValidationError,
     execute_experiment,
@@ -103,7 +104,7 @@ def create_prompt(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
-    _project_or_404(project_id, user.id, db)
+    project = _project_or_404(project_id, user.id, db)
     existing = (
         db.query(Prompt)
         .filter(Prompt.project_id == project_id, Prompt.slug == payload.slug)
@@ -133,6 +134,14 @@ def create_prompt(
         created_by=user.id,
     )
     db.add(version)
+    record_audit(
+        db, "prompt_version.created",
+        organization_id=project.organization_id,
+        actor_user_id=user.id,
+        target_type="prompt_version",
+        target_id=version.id,
+        payload={"prompt_id": prompt.id, "prompt_slug": prompt.slug, "version": 1},
+    )
     db.commit()
     db.refresh(prompt)
     db.refresh(version)
@@ -190,6 +199,15 @@ def create_prompt_version(
     db.add(row)
     prompt.current_version = version_num
     db.add(prompt)
+    _pv_project = db.get(Project, prompt.project_id)
+    record_audit(
+        db, "prompt_version.created",
+        organization_id=_pv_project.organization_id if _pv_project else None,
+        actor_user_id=user.id,
+        target_type="prompt_version",
+        target_id=row.id,
+        payload={"prompt_id": prompt.id, "version": version_num},
+    )
     db.commit()
     db.refresh(row)
     return {"version": PromptVersionOut.model_validate(row).model_dump(), "prompt_version": version_num}
@@ -213,7 +231,7 @@ def create_dataset(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> DatasetOut:
-    _project_or_404(project_id, user.id, db)
+    ds_project = _project_or_404(project_id, user.id, db)
     existing = (
         db.query(Dataset)
         .filter(Dataset.project_id == project_id, Dataset.slug == payload.slug)
@@ -229,6 +247,14 @@ def create_dataset(
         source=payload.source,
     )
     db.add(row)
+    record_audit(
+        db, "dataset.created",
+        organization_id=ds_project.organization_id,
+        actor_user_id=user.id,
+        target_type="dataset",
+        target_id=row.id,
+        payload={"slug": payload.slug, "project_id": project_id},
+    )
     db.commit()
     db.refresh(row)
     return DatasetOut.model_validate(row)
@@ -416,6 +442,15 @@ def run_experiment(
         run.run_metadata = {"error": str(exc)}
     run.completed_at = utcnow()
     db.add(run)
+    _exp_project = db.get(Project, experiment.project_id)
+    record_audit(
+        db, "experiment.run",
+        organization_id=_exp_project.organization_id if _exp_project else None,
+        actor_user_id=user.id,
+        target_type="experiment_run",
+        target_id=run.id,
+        payload={"experiment_id": experiment.id, "status": run.status, "passed": run.passed},
+    )
     db.commit()
     db.refresh(run)
     return {"run_id": run.id, "status": run.status, "passed": run.passed}
