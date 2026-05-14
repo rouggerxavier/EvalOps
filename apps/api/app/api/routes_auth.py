@@ -8,16 +8,24 @@ created so the user lands directly in a usable workspace.
 from __future__ import annotations
 
 import re
+from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.deps import get_current_user
-from app.models import Membership, Organization, Project, User
+from app.domain.services.rate_limit_service import (
+    check_login_rate_limit,
+    record_login_failure,
+    reset_login_failures,
+)
+from app.models import AuditLog, Membership, Organization, Project, RevokedToken, User
 from app.security import (
     create_session_token,
+    decode_access_token,
     hash_password,
     new_id,
     verify_password,
@@ -52,6 +60,28 @@ def _unique_slug(db: Session, *, kind: str, base: str, org_id: str | None = None
             return candidate
         candidate = f"{base}-{suffix}"
         suffix += 1
+
+
+def _client_ip(request: Request) -> str:
+    if request.client and request.client.host:
+        return request.client.host
+    return "unknown"
+
+
+def _audit_failed_login(db: Session, email: str, ip: str, reason: str) -> None:
+    """G-16: record a minimal audit row for every failed credential check."""
+    db.add(
+        AuditLog(
+            id=new_id("aud"),
+            organization_id=None,
+            actor_user_id=None,
+            action="auth.failed_login",
+            target_type="user",
+            target_id=None,
+            payload={"email": email, "ip": ip, "reason": reason},
+        )
+    )
+    db.commit()
 
 
 EMAIL_RE_PATTERN = r"^[^@\s]+@[^@\s]+\.[^@\s]+$"
@@ -171,14 +201,76 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)) -> AuthRes
 
 
 @router.post("/login", response_model=AuthResponse)
-def login(payload: LoginRequest, db: Session = Depends(get_db)) -> AuthResponse:
+def login(
+    payload: LoginRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> AuthResponse:
     email = payload.email.lower().strip()
+    ip = _client_ip(request)
+
+    retry_after = check_login_rate_limit(email, ip)
+    if retry_after is not None:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="too_many_attempts",
+            headers={"Retry-After": str(retry_after)},
+        )
+
     user = db.query(User).filter(User.email == email).first()
     if user is None or not user.password_hash or not verify_password(payload.password, user.password_hash):
+        record_login_failure(email, ip)
+        _audit_failed_login(db, email, ip, "invalid_credentials")
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid_credentials")
+
+    reset_login_failures(email, ip)
     token = create_session_token(sub=user.id, email=user.email, name=user.name)
     workspace = _default_workspace_for_user(db, user)
     return AuthResponse(token=token, user=_user_dict(user), workspace=workspace)
+
+
+@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+def logout(
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+) -> Response:
+    """G-15: idempotent server-side revoke of the current JWT.
+
+    Behaviour:
+      * No / malformed Authorization header → 204 (no-op).
+      * Token cannot be decoded → 204 (already useless).
+      * Token has no ``jti`` (issued before Phase 2 rollout) → 204; token
+        will continue to work until its natural ``exp``. Document.
+      * Token has ``jti`` → insert into ``revoked_tokens``; subsequent
+        ``get_current_user`` calls reject it. Re-logout is a no-op.
+    """
+    if not authorization or not authorization.startswith("Bearer "):
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+    token = authorization.removeprefix("Bearer ").strip()
+    try:
+        claims = decode_access_token(token)
+    except Exception:  # noqa: BLE001
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+    jti = claims.get("jti")
+    exp = claims.get("exp")
+    if not jti or not exp:
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+    if db.get(RevokedToken, jti) is None:
+        try:
+            db.add(
+                RevokedToken(
+                    jti=jti,
+                    expires_at=datetime.fromtimestamp(int(exp), tz=timezone.utc),
+                )
+            )
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/session", response_model=AuthResponse)

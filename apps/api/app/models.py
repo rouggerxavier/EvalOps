@@ -400,10 +400,33 @@ class AuditLog(Base):
     __tablename__ = "audit_logs"
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
-    organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), index=True)
+    # Nullable since Phase 2 (G-16): auth.failed_login has no org context.
+    # Prod databases created before this change need a manual
+    # `ALTER TABLE audit_logs ALTER COLUMN organization_id DROP NOT NULL;`
+    # (Alembic adoption is Phase 7 — until then, drop+recreate in dev only.)
+    organization_id: Mapped[str | None] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        index=True,
+        nullable=True,
+    )
     actor_user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     action: Mapped[str] = mapped_column(String(128), index=True)
     target_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
     target_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     payload: Mapped[dict] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class RevokedToken(Base):
+    """JWT denylist for server-side logout (G-15).
+
+    Tokens issued *before* this rollout have no ``jti`` and continue to
+    work until their natural ``exp``. Tokens issued after carry a ``jti``
+    that lands here on logout; ``get_current_user`` rejects matches.
+    """
+
+    __tablename__ = "revoked_tokens"
+
+    jti: Mapped[str] = mapped_column(String(64), primary_key=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    revoked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

@@ -166,13 +166,149 @@ antes de mergear / fazer deploy de qualquer ambiente real.
 5. **`/docs` e dashboard com `apiRoot()=#`** quando env inválida: silenciosamente
    renderiza links broken. Bandeira de UX, não de segurança.
 
-### Fase 2 — continua ausente e bloqueia Fase 4
+---
 
-G-01 (rate limit API key), G-13 (rate limit /login), G-15 (logout server-side),
-G-16 (audit `auth.failed_login`) **não estão implementados** neste checkout.
-Roadmap antigo (`1c57ae0`) afirmava conclusão sem evidência no código. Não
-foi escopo desta sessão refazer Fase 2. **Não é seguro avançar para Fase 4
-até Fase 2 ser refeita** (pré-requisito de hardening de auth + audit base).
+## Fase 2 — Rate limit e hardening de auth (re-implementação 2026-05-14)
+
+### Status
+✅ **Re-implementada**. Fase 4 agora **liberada** como próxima.
+
+### Gaps fechados
+- **G-01** — rate limit por API key.
+  `apps/api/app/domain/services/rate_limit_service.py:check_api_key_rate_limit`.
+  Sliding window de 60s, ceiling = `ApiKey.rate_limit_per_minute` (default 60
+  se nulo/zero). Aplicado em `deps.get_project_from_api_key` **após** validar
+  a key e o escopo `ingest`. 429 com `Retry-After` ao exceder.
+- **G-13** — rate limit em `/login`. Bucket `email|ip`, janela 300s, máximo
+  5 falhas. `routes_auth.login` pre-check via `check_login_rate_limit`;
+  falha registra via `record_login_failure`; sucesso limpa via
+  `reset_login_failures`. 429 com `Retry-After`. Mensagem 401 continua
+  genérica (`invalid_credentials`) para não vazar existência de email.
+- **G-15** — logout server-side. Novo modelo `RevokedToken(jti pk, expires_at,
+  revoked_at)`. JWTs novos carregam `jti` (`security.create_access_token`).
+  `POST /v1/auth/logout` insere `jti` na denylist. `deps.get_current_user`
+  rejeita tokens com `jti` revogado (401). Logout idempotente; sem token →
+  204 no-op; token malformado → 204 no-op.
+- **G-16** — audit `auth.failed_login`. Cada 401 em `/login` cria um
+  `AuditLog(action="auth.failed_login", organization_id=NULL,
+  payload={email, ip, reason})`. Schema: `AuditLog.organization_id` virou
+  **nullable** — prod DBs criados antes disso precisam de
+  `ALTER TABLE audit_logs ALTER COLUMN organization_id DROP NOT NULL;`
+  manual até Fase 7 (Alembic).
+
+### Como o rate limit por API key funciona
+1. Request com `X-EvalOps-Key`.
+2. `get_project_from_api_key` valida hash → confirma scope `ingest`.
+3. `check_api_key_rate_limit(key.id, key.rate_limit_per_minute)`:
+   - lê `deque[float]` da key, descarta entradas < `now - 60s`.
+   - se `len(bucket) >= limit` → retorna `retry_after = (60 - idade_mais_antiga) + 1`.
+   - senão: `bucket.append(now)` → retorna `None`.
+4. `None` → segue. Caso contrário → `HTTPException(429, "too_many_requests")`
+   com header `Retry-After`.
+5. **Limitação single-worker** (in-memory): múltiplos workers multiplicam o
+   limite efetivo. Restart limpa estado. Migração para Redis na Fase 7.
+
+### Como o rate limit de login funciona
+1. `POST /v1/auth/login` extrai `email.lower().strip()` e `request.client.host`.
+2. `check_login_rate_limit(email, ip)` — se `len(bucket) >= 5` em janela
+   de 300s → 429 com `Retry-After`. Pre-check ANTES de verificar credenciais
+   (não rola argon2 quando bloqueado, economiza CPU em ataques).
+3. Credenciais inválidas: `record_login_failure(email, ip)` + audit + 401
+   `invalid_credentials`. Mesma resposta para email inexistente e senha
+   errada (não revela existência).
+4. Credenciais válidas: `reset_login_failures(email, ip)` zera bucket →
+   gera JWT → 200.
+
+### Como o logout invalida token
+1. `POST /v1/auth/logout` com `Authorization: Bearer <jwt>`.
+2. Sem header / malformado / não-decodificável / sem `jti`+`exp` → 204
+   sem efeito (idempotente).
+3. Token decodificado com `jti`+`exp` → se não está em `RevokedToken`,
+   insere row `(jti, expires_at=fromtimestamp(exp))`. Se já existir →
+   no-op silencioso (idempotente).
+4. Sempre 204.
+5. `get_current_user` (todas as rotas autenticadas): após decode, se
+   `claims.jti` está em `RevokedToken` → 401.
+6. **Comportamento de tokens legados**: JWTs emitidos antes do rollout
+   da Fase 2 não têm `jti` → `get_current_user` os aceita até expirar.
+   Validado em `test_legacy_token_without_jti_still_works_until_exp`.
+
+### Como o audit de failed_login foi implementado
+- Helper `_audit_failed_login(db, email, ip, reason)` em `routes_auth.py`:
+  cria `AuditLog(id=new_id("aud"), organization_id=None, actor_user_id=None,
+  action="auth.failed_login", target_type="user", target_id=None,
+  payload={"email", "ip", "reason"})` e commita.
+- Acionado **dentro** do branch de falha de credencial em `login()`,
+  cobrindo tanto email inexistente quanto senha errada.
+- **Nunca** inclui senha ou token no `payload`.
+- `organization_id` nullable porque login falho não tem contexto de org.
+
+### Arquivos alterados
+- `apps/api/app/models.py` — `AuditLog.organization_id` nullable; novo
+  `RevokedToken`.
+- `apps/api/app/security.py` — `create_access_token` agora emite `jti`.
+- `apps/api/app/deps.py` — `get_current_user` consulta denylist;
+  `get_project_from_api_key` aplica rate limit por key.
+- `apps/api/app/domain/services/rate_limit_service.py` (novo).
+- `apps/api/app/api/routes_auth.py` — login com rate limit + audit;
+  novo `POST /v1/auth/logout`.
+- `apps/api/tests/test_phase9_auth_hardening.py` (novo) — 14 testes.
+
+### Comandos executados e resultados
+
+```bash
+cd apps/api && rm -f evalops.db* && python -m pytest tests/test_phase9_auth_hardening.py -q --tb=short -p no:warnings
+```
+**Resultado**: `14 passed in 15.36s` ✅
+
+```bash
+cd apps/api && rm -f evalops.db* && python -m pytest tests/test_phase8_p0_security.py -q --tb=short -p no:warnings
+```
+**Resultado**: `5 passed in 6.26s` ✅ (Fase 1 não regrediu)
+
+```bash
+cd apps/api && rm -f evalops.db* && python -m pytest tests/test_health.py tests/test_auth_flow.py tests/test_phase1_identity_access.py tests/test_phase2_tracing.py -q --tb=short -p no:warnings
+```
+**Resultado**: `10 passed in 8.04s` ✅
+
+```bash
+cd apps/api && rm -f evalops.db* && python -m pytest tests/test_phase5_prompts_datasets_experiments.py -q --tb=short -p no:warnings
+```
+**Resultado**: `8 passed in 9.14s` ✅ (Fase 3 não regrediu)
+
+```bash
+cd apps/api && rm -f evalops.db* && python -m pytest tests/test_phase3_analytics.py tests/test_phase6_feedback_export_usage.py tests/test_phase7_e2e_mvp_flow.py -q --tb=short -p no:warnings
+```
+**Resultado**: `5 passed in 6.69s` ✅
+
+**Total**: 14 + 5 + 10 + 8 + 5 = **42 passed**.
+
+### Frontend
+Não tocado nesta fase. Não foi necessário rodar build/test frontend.
+
+### Riscos remanescentes (Fase 2)
+
+1. **Rate limit in-memory single-process**: múltiplos workers multiplicam
+   o limite efetivo; restart zera. Migração para Redis na Fase 7.
+2. **`AuditLog.organization_id` virou nullable**: prod DBs antigos precisam
+   `ALTER TABLE audit_logs ALTER COLUMN organization_id DROP NOT NULL;`
+   manual. Migração formal via Alembic na Fase 7.
+3. **Tokens legados sem `jti`**: continuam válidos até `exp`. Comportamento
+   documentado e testado. Não é vulnerabilidade — só sinal de que o
+   logout só protege tokens novos.
+4. **IP de cliente sem proxy-trust**: `request.client.host` retorna o peer
+   direto. Atrás de proxy/CF, todos os logins chegam com o mesmo IP. Como
+   o bucket é `email|ip`, ataque distribuído rotacionando email contorna
+   o limit. Adicionar trust de `X-Forwarded-For` configurável fica para
+   Fase 7 (não é regressão — comportamento sempre foi assim).
+5. **Sem cleanup de `RevokedToken` expirados**: tabela cresce. Job de
+   limpeza fica para Fase 7. Volume baixo no MVP — risco baixo.
+
+### Fase 4 — liberada
+
+Com Fase 1 + Fase 2 + Fase 3 verdes, **a Fase 4 (audit log universal,
+redaction/PII, export download, soft delete) pode iniciar**. Ver
+roadmap para escopo detalhado.
 
 ---
 

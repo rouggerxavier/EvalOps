@@ -67,6 +67,7 @@ def create_access_token(*, sub: str, email: str, name: str, expires_minutes: int
         "name": name,
         "iat": int(now.timestamp()),
         "exp": int((now + timedelta(minutes=minutes)).timestamp()),
+        "jti": secrets.token_hex(16),
     }
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 

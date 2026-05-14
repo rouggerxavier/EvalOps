@@ -4,7 +4,8 @@ from fastapi import Depends, Header, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.models import ApiKey, Membership, Project, User
+from app.domain.services.rate_limit_service import check_api_key_rate_limit
+from app.models import ApiKey, Membership, Project, RevokedToken, User
 from app.security import decode_access_token, verify_api_key
 
 
@@ -20,6 +21,10 @@ def get_current_user(
         user_id = claims["sub"]
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="unauthorized") from exc
+
+    jti = claims.get("jti")
+    if jti and db.get(RevokedToken, jti) is not None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="unauthorized")
 
     user = db.get(User, user_id)
     if not user:
@@ -56,6 +61,15 @@ def get_project_from_api_key(
     scopes = {s for s in selected.scopes.split(",") if s}
     if "ingest" not in scopes:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="forbidden")
+
+    retry_after = check_api_key_rate_limit(selected.id, selected.rate_limit_per_minute)
+    if retry_after is not None:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="too_many_requests",
+            headers={"Retry-After": str(retry_after)},
+        )
+
     selected.last_used_at = datetime.now(timezone.utc)
     db.add(selected)
     db.commit()

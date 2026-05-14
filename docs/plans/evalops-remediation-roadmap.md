@@ -2,7 +2,7 @@
 
 Data: 2026-05-13
 Fonte: `docs/audits/evalops-important-rules-audit.md`
-Status: Fases 0, 1 e 3 concluídas. Fase 2 pendente (refazer). Demais em planejamento.
+Status: Fases 0, 1, 2 e 3 concluídas. Fase 4 liberada como próxima. Demais em planejamento.
 Branch alvo: `main`.
 
 ## Status por fase
@@ -11,9 +11,9 @@ Branch alvo: `main`.
 |---|---|---|
 | 0 — Baseline | ✅ Concluída (2026-05-13) | `docs/plans/baseline.md` |
 | 1 — P0 segurança/configuração | ✅ Re-implementada (2026-05-14) | G-02, G-03, G-04, G-17 fechados; 5/5 testes backend (test_phase8_p0_security.py) + 13/13 testes web (tests/security.test.mjs); regressão backend 10/10 verde. Frontend tsc/build não executado nesta sessão (Node ausente — ver baseline.md). |
-| 2 — Rate limit e hardening de auth | ⚠️ Pendente (refazer) | Marcada como concluída no histórico antigo, mas código G-01/G-13/G-15/G-16 não presente neste checkout. Bloqueia Fase 4. |
+| 2 — Rate limit e hardening de auth | ✅ Re-implementada (2026-05-14) | G-01, G-13, G-15, G-16 fechados; 14/14 testes (test_phase9_auth_hardening.py); regressão Fases 1+3 verde. |
 | 3 — Experiments reais | ✅ Concluída (2026-05-14) | G-05 fechado; 8/8 testes phase5 (test_phase5_prompts_datasets_experiments.py), baseline obrigatório 28/28 verde, validação adicional 5/5 verde (phase3/6/7) |
-| 4 — Audit log, privacy, exports | ⏳ Pendente | — |
+| 4 — Audit log, privacy, exports | ⏭️ Próxima (liberada 2026-05-14) | — |
 | 5 — Contratos UX | ⏳ Pendente | — |
 | 6 — Robustez quota/eval/storage | ⏳ Pendente | — |
 | 7 — Arquitetura e manutenção | ⏳ Pendente | — |
