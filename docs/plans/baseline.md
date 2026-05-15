@@ -1911,3 +1911,163 @@ e a regressão ampliada (2ª execução); cada suíte-alvo rodou exatamente 2x.
 ✅ **Sim** — entrega restrita à Fix-7B.5 (A-08 P1); nenhuma outra subfase
 Fix-7B foi implementada. Regressões de Fix-7B.1/.2/.4 e duplicate-409
 continuam verdes.
+
+---
+
+## Fix-7B.8 — Deploy/Alembic/npm audit (2026-05-15)
+
+### Escopo
+
+Subfase restrita aos achados:
+
+- **A-10 P1** — `npm audit` com advisories em Next/PostCSS.
+- **A-11 P1** — `docker-compose.prod.yml` desalinhado com Alembic.
+
+Não houve alteração de lógica de negócio backend, soft delete, logout,
+quota/concurrency, judge budget, SDK, Redis, cleanup jobs ou redesign de UI.
+
+### Estratégia de Alembic/deploy
+
+`docker-compose.prod.yml` agora usa um job separado `migrate`:
+
+1. `postgres` sobe com healthcheck.
+2. `migrate` aguarda Postgres saudável, instala o pacote API + `psycopg` e
+   executa `alembic upgrade head`.
+3. `api` depende de `migrate: service_completed_successfully`, então uma
+   migration com erro impede a API de iniciar.
+4. `api` também recebe `EVALOPS_USE_ALEMBIC=1` como guardrail para não cair no
+   caminho `create_all` em produção.
+
+Para DBs legados criados antes do Alembic, o runbook permanece: validar schema
+Phase 1-6, rodar `alembic stamp 0001_baseline` uma vez e só depois usar o
+compose com `upgrade head` automático.
+
+Docs atualizadas:
+
+- `README.md` — notas de deploy/migration.
+- `docs/ops/database-migrations.md` — descreve `migrate` service e fallback de
+  stamp para DB legado.
+- `.env.example` — documenta `EVALOPS_USE_ALEMBIC`, `EVALOPS_EXPORTS_DIR` e
+  limits já usados pelo backend.
+
+### npm audit / frontend
+
+Estado inicial:
+
+```bash
+cd apps/web && timeout 300 npm audit --omit=dev
+```
+❌ `2 vulnerabilities (1 moderate, 1 high)`:
+`next@15.3.9` com advisories high e `postcss@8.4.31` com advisory moderate.
+
+```bash
+cd apps/web && timeout 300 npm audit
+```
+❌ mesmo resultado: `next` high + `postcss <8.5.10` moderate.
+
+Correção controlada, sem `npm audit fix`:
+
+- `next`: `15.3.9` → `15.5.18`.
+- `postcss`: `8.4.31` → `8.5.14` via `overrides.postcss`, porque
+  `next@15.5.18` ainda declara `postcss: 8.4.31` como dependência transitiva.
+
+Validação pós-upgrade:
+
+```bash
+cd apps/web && timeout 300 npm audit --omit=dev
+```
+✅ `found 0 vulnerabilities`
+
+```bash
+cd apps/web && timeout 300 npm audit
+```
+✅ `found 0 vulnerabilities`
+
+```bash
+cd apps/web && npm ls next postcss
+```
+✅ `next@15.5.18` com `postcss@8.5.14 overridden`.
+
+### Build/test/typecheck frontend
+
+```bash
+cd apps/web && timeout 600 npm run test
+```
+✅ `29 pass`, `0 fail`.
+
+```bash
+cd apps/web && timeout 600 npm run build
+```
+✅ build Next.js 15.5.18 concluído. Observação não bloqueante:
+`app/globals.css` ainda emite warning autoprefixer em `end` vs `flex-end`
+(pré-existente/estético, não corrigido nesta subfase para evitar mudança de UI).
+
+```bash
+cd apps/web && timeout 600 npx tsc --noEmit
+```
+✅ typecheck sem erros.
+
+`next build` regenerou `apps/web/next-env.d.ts` adicionando a referência
+`./.next/types/routes.d.ts`; nenhum componente, página, layout ou microcopy foi
+alterado.
+
+### Alembic smoke
+
+```bash
+cd apps/api
+rm -f tmp_fix7b_alembic.db
+timeout 300 env DATABASE_URL=sqlite:///./tmp_fix7b_alembic.db \
+  .venv/bin/alembic upgrade head
+```
+✅ SQLite efêmero migrou até `0001_baseline`:
+`Running upgrade  -> 0001_baseline, baseline schema (Phase 1-6 consolidated).`
+
+O arquivo temporário `tmp_fix7b_alembic.db` foi removido após o smoke.
+
+### Docker Compose config
+
+```bash
+docker compose -f docker-compose.prod.yml config
+```
+⏳ Pendente neste host: `docker` não existe neste WSL2.
+
+```bash
+docker-compose -f docker-compose.prod.yml config
+```
+⏳ Pendente neste host: `docker-compose` também não existe neste WSL2.
+
+Nenhum Docker/Compose foi instalado. A validação estrutural por Compose precisa
+ser rodada em ambiente com Docker Desktop/Compose habilitado antes de deploy
+real.
+
+Validação complementar sem Docker:
+
+```bash
+python3 -c "import yaml, pathlib; data=yaml.safe_load(pathlib.Path('docker-compose.prod.yml').read_text()); print(','.join(sorted(data['services'].keys())))"
+```
+✅ YAML parseou e listou `api,migrate,postgres`.
+
+### Regressão backend
+
+Não foi rodada suíte backend adicional porque esta subfase não alterou
+`app/config.py`, `app/db.py`, `apps/api/alembic/` ou lógica backend. A validação
+backend executada foi o smoke Alembic obrigatório em SQLite efêmero.
+
+### Riscos remanescentes
+
+1. **Compose não validado localmente**: Docker/Compose indisponível neste WSL2.
+   Rodar `POSTGRES_PASSWORD=... JWT_SECRET=... docker compose -f docker-compose.prod.yml config`
+   no ambiente de deploy.
+2. **Postgres real não migrado nesta sessão**: não houve deploy real nem smoke
+   contra Postgres. Para DB legado, `alembic stamp 0001_baseline` continua
+   obrigatório uma única vez antes do compose automático.
+3. **API ainda usa imagem Python + install em runtime neste compose**: mantido
+   como padrão existente para não ampliar escopo. Produção real deve preferir
+   imagem API já buildada.
+4. **Autoprefixer warning em CSS**: build passa; a alteração de CSS foi evitada
+   por não ser necessária ao fix de audit/deploy.
+
+### Pode avançar para Fix-7B.6 ou Fix-7B.7?
+
+✅ **Sim** — Fix-7B.8 ficou isolada em deploy/Alembic/npm audit; nenhuma outra
+subfase Fix-7B foi implementada.

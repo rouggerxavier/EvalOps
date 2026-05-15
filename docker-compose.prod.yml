@@ -1,22 +1,36 @@
 # Production-flavoured compose for EvalOps API + Postgres.
 #
-# Status: documented and validated structurally. Not validated end-to-end on
-# this checkout because Docker is not available in the local environment used
-# by Phase 6 (validation pendente — see docs/plans/baseline.md).
+# Status: documented production-flavoured compose. Validate with
+# `docker compose -f docker-compose.prod.yml config` in the Docker-enabled
+# deployment environment before any real deploy.
 #
 # Differences from `docker-compose.yml` (dev):
 #  * Postgres 16 with explicit volume + healthcheck (instead of default).
 #  * Synchronous SQLAlchemy URL (`postgresql+psycopg`); the API uses sync
 #    SQLAlchemy and `app/db.py` already normalises async URLs to psycopg.
 #  * No web service (Next.js is deployed separately in prod).
+#  * Dedicated `migrate` job runs `alembic upgrade head` before the API starts.
 #  * Conservative restart policies and explicit env contract.
 #  * `EVALOPS_API_BASE_URL` / `EVALOPS_DEV_MODE` documented as required by the
 #    web layer but NOT defined here — they belong to the web deployment.
-#
-# IMPORTANT: Alembic is NOT yet adopted (Phase 7 scope). Until then, schema is
-# created by SQLAlchemy `Base.metadata.create_all` on first boot. For an
-# existing Postgres database, apply the manual migrations listed in
-# docs/plans/baseline.md before starting this compose.
+
+x-api-base: &api-base
+  image: python:3.12-slim
+  working_dir: /workspace
+  volumes:
+    - ./apps/api:/workspace
+  environment:
+    APP_ENV: production
+    LOG_LEVEL: INFO
+    # Sync SQLAlchemy with psycopg driver — see app/db.py
+    DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-evalops}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-evalops}
+    EVALOPS_USE_ALEMBIC: "1"
+    EVALOPS_EXPORTS_DIR: ${EVALOPS_EXPORTS_DIR:-/workspace/storage/exports}
+    EVALOPS_MAX_BODY_BYTES: ${EVALOPS_MAX_BODY_BYTES:-8388608}
+    EVALOPS_MAX_SPANS_PER_TRACE: ${EVALOPS_MAX_SPANS_PER_TRACE:-500}
+    JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET}
+    API_HOST: 0.0.0.0
+    API_PORT: 8000
 
 services:
   postgres:
@@ -34,22 +48,20 @@ services:
       timeout: 3s
       retries: 10
 
+  migrate:
+    <<: *api-base
+    restart: "no"
+    command: >
+      sh -c "pip install --no-cache-dir -e '.' &&
+             pip install --no-cache-dir 'psycopg[binary]>=3.2' &&
+             alembic upgrade head"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   api:
-    image: python:3.12-slim
+    <<: *api-base
     restart: unless-stopped
-    working_dir: /workspace
-    volumes:
-      - ./apps/api:/workspace
-    environment:
-      APP_ENV: production
-      LOG_LEVEL: INFO
-      # Sync SQLAlchemy with psycopg driver — see app/db.py
-      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-evalops}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-evalops}
-      EVALOPS_MAX_BODY_BYTES: ${EVALOPS_MAX_BODY_BYTES:-8388608}
-      EVALOPS_MAX_SPANS_PER_TRACE: ${EVALOPS_MAX_SPANS_PER_TRACE:-500}
-      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET}
-      API_HOST: 0.0.0.0
-      API_PORT: 8000
     command: >
       sh -c "pip install --no-cache-dir -e '.' &&
              pip install --no-cache-dir 'psycopg[binary]>=3.2' &&
@@ -57,6 +69,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     ports:
       - "8000:8000"
 
