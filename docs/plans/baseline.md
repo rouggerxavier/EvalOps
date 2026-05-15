@@ -15,19 +15,28 @@ do roadmap (`docs/plans/evalops-remediation-roadmap.md`).
 
 ## Workaround SQLite (obrigatório em todas as execuções backend)
 
-A suíte completa `pytest apps/api/tests -q` apresenta falhas intermitentes por
-**SQLite database is locked** quando rodada sem reset do arquivo entre arquivos
-de teste. Workaround obrigatório:
+> **Atualização Fix-7B.3 (2026-05-15) — workaround não é mais obrigatório.**
+> `apps/api/tests/conftest.py` agora reata `app.db` (engine/`SessionLocal`/
+> `DATABASE_URL`) a um SQLite temporário por execução, em diretório de OS
+> único, usando `NullPool`. Sem conexões paradas em pool, `drop_all`/
+> `create_all` sempre obtêm o lock exclusivo do SQLite, eliminando o
+> `database is locked`. Validação: `cd apps/api && .venv/bin/python -m pytest
+> tests -q --tb=short -p no:warnings` → **131 passed** em 3 execuções
+> consecutivas sem `rm -f` entre elas. O bloco abaixo fica registrado apenas
+> como **fallback histórico**.
+
+A suíte completa `pytest apps/api/tests -q` apresentava falhas intermitentes
+por **SQLite database is locked** quando rodada sem reset do arquivo entre
+arquivos de teste. Workaround histórico (não mais necessário):
 
 ```bash
 cd apps/api && rm -f evalops.db* && python -m pytest <alvos> -q --tb=short -p no:warnings
 ```
 
-Sempre apagar `evalops.db*` antes de cada invocação do `pytest`. Executar
-arquivos em grupos pequenos (≤ 8 arquivos por chamada) para mitigar o lock.
-A suíte completa em uma única chamada **ainda não é confiável** — esta
-limitação fica registrada como dívida até a Fase 6 (G-25, Postgres em prod) ou
-Fase 7 (isolamento de DB por worker / fixtures).
+Antes do Fix-7B.3 era obrigatório apagar `evalops.db*` antes de cada invocação
+do `pytest` e executar arquivos em grupos pequenos (≤ 8 arquivos por chamada)
+para mitigar o lock. A suíte completa numa única chamada **não era confiável**.
+Resolvido em Fix-7B.3 via isolamento de engine test-only no `conftest.py`.
 
 ---
 
