@@ -1597,3 +1597,90 @@ sem `rm -f evalops.db*`.
 ✅ **Sim** — A-01/A-03/A-04/A-05 fechados, suíte completa verde,
 nenhum escopo proibido tocado (sem hard delete, sem endpoint admin,
 sem restore, sem mudança de schema/migration, sem frontend/SDK).
+
+---
+
+## Fix-7B.2 — Logout real no frontend
+
+Objetivo desta subfase: fechar o achado **A-02**, garantindo revogação
+server-side (`POST /v1/auth/logout`) antes de limpar sessão local.
+
+### Arquivos alterados
+
+- `apps/web/lib/auth.ts`
+- `apps/web/lib/auth-actions.ts`
+- `apps/web/tests/security.test.mjs`
+- `docs/plans/baseline.md`
+
+### Fluxo de logout após Fix-7B.2
+
+1. `logoutAction()` tenta obter o JWT atual da sessão via cookie HttpOnly
+   (`getSessionCookieToken()`).
+2. Se existir token, chama `logoutWithApi(token)`:
+   `POST ${API_BASE_URL}/auth/logout` com header
+   `Authorization: Bearer <token>`.
+3. Independente de sucesso/erro da revogação remota, executa
+   `clearSessionCookie()`.
+4. Redireciona para `/`.
+
+### Comportamento em falha de backend/rede
+
+- Falha na chamada de logout remoto é tratada como **best effort**:
+  exceção é absorvida em `logoutAction()`.
+- Sessão local é sempre limpa (cookie invalidado com `maxAge: 0`).
+- Não há exposição de stack, token, path interno ou detalhe sensível na UI.
+
+### Testes web adicionados (contrato)
+
+Arquivo: `apps/web/tests/security.test.mjs`
+
+- `Fix-7B.2: logout calls POST /auth/logout with Authorization bearer`
+- `Fix-7B.2: logout clears local session after revoke attempt`
+- `Fix-7B.2: backend logout failure still clears local session`
+- `Fix-7B.2: logout without token is idempotent and does not call backend`
+- `Fix-7B.2: source contract has logout helper using POST + bearer`
+- `Fix-7B.2: source contract tries revoke before local clear`
+
+### Regressão backend (contrato existente)
+
+`tests/test_phase9_auth_hardening.py` permaneceu verde, incluindo:
+
+- invalidação de token após logout,
+- persistência de `jti` em denylist,
+- idempotência de logout,
+- logout sem token/invalid token retornando 204.
+
+### Comandos executados e resultados
+
+```bash
+cd apps/web && npm run test
+```
+✅ `29 passed`
+
+```bash
+cd apps/web && npx tsc --noEmit
+```
+✅ passou (observação: uma execução concorrente inicial falhou por referências
+temporárias de `.next/types`; reexecução após `next build` ficou verde).
+
+```bash
+cd apps/web && npm run build
+```
+✅ build Next.js concluído com sucesso.
+
+```bash
+cd apps/api && .venv/bin/python -m pytest tests/test_phase9_auth_hardening.py -q --tb=short -p no:warnings
+```
+✅ `14 passed`
+
+Regressão opcional executada:
+
+```bash
+cd apps/api && .venv/bin/python -m pytest tests/test_phase8_p0_security.py tests/test_phase10_audit_privacy_exports.py tests/test_phase11_contracts_ux.py tests/test_phase12_quota_eval_storage.py -q --tb=short -p no:warnings
+```
+✅ `46 passed`
+
+### Pode avançar para Fix-7B.4?
+
+✅ **Sim** — Fix-7B.2 foi implementada isoladamente; nenhuma outra subfase
+Fix-7B foi executada neste trabalho.

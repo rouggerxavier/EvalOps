@@ -8,6 +8,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 // --- mirror of lib/config.ts ------------------------------------------------
 
@@ -265,4 +266,120 @@ test("G-23: unknown non-API error maps to generic", () => {
 test("G-23: 400 maps to validation message", () => {
   const msg = "API 400: {\"detail\":\"invalid_cursor\"}";
   assert.equal(sanitizeApiError(msg), SAFE_HTTP_MESSAGES[400]);
+});
+
+// --- A-02 / Fix-7B.2: frontend logout contract ----------------------------
+// Next.js server actions are TS + runtime-bound, and node --test here runs
+// plain JS. We validate the expected contract shape mirrored from
+// lib/auth.ts + lib/auth-actions.ts.
+
+async function logoutWithApiFor(baseUrl, token, fetchImpl) {
+  const res = await fetchImpl(`${baseUrl}/auth/logout`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    cache: "no-store",
+  });
+  if (!res.ok) {
+    throw new Error(`logout_failed_${res.status}`);
+  }
+}
+
+async function logoutActionFlowFor({ token, baseUrl, fetchImpl, clearLocal }) {
+  try {
+    if (token) {
+      await logoutWithApiFor(baseUrl, token, fetchImpl);
+    }
+  } catch {
+    // local logout must still happen
+  }
+  await clearLocal();
+}
+
+test("Fix-7B.2: logout calls POST /auth/logout with Authorization bearer", async () => {
+  const calls = [];
+  await logoutActionFlowFor({
+    token: "jwt_abc",
+    baseUrl: "https://api.evalops.example.com/v1",
+    fetchImpl: async (url, init) => {
+      calls.push([url, init]);
+      return { ok: true, status: 204 };
+    },
+    clearLocal: async () => {},
+  });
+
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0][0], "https://api.evalops.example.com/v1/auth/logout");
+  assert.equal(calls[0][1].method, "POST");
+  assert.equal(calls[0][1].headers.Authorization, "Bearer jwt_abc");
+});
+
+test("Fix-7B.2: logout clears local session after revoke attempt", async () => {
+  const steps = [];
+  await logoutActionFlowFor({
+    token: "jwt_abc",
+    baseUrl: "https://api.evalops.example.com/v1",
+    fetchImpl: async () => {
+      steps.push("revoke");
+      return { ok: true, status: 204 };
+    },
+    clearLocal: async () => {
+      steps.push("clear");
+    },
+  });
+
+  assert.deepEqual(steps, ["revoke", "clear"]);
+});
+
+test("Fix-7B.2: backend logout failure still clears local session", async () => {
+  const steps = [];
+  await logoutActionFlowFor({
+    token: "jwt_abc",
+    baseUrl: "https://api.evalops.example.com/v1",
+    fetchImpl: async () => {
+      steps.push("revoke");
+      throw new Error("network_down");
+    },
+    clearLocal: async () => {
+      steps.push("clear");
+    },
+  });
+
+  assert.deepEqual(steps, ["revoke", "clear"]);
+});
+
+test("Fix-7B.2: logout without token is idempotent and does not call backend", async () => {
+  let called = false;
+  let cleared = false;
+  await logoutActionFlowFor({
+    token: null,
+    baseUrl: "https://api.evalops.example.com/v1",
+    fetchImpl: async () => {
+      called = true;
+      return { ok: true, status: 204 };
+    },
+    clearLocal: async () => {
+      cleared = true;
+    },
+  });
+
+  assert.equal(called, false);
+  assert.equal(cleared, true);
+});
+
+test("Fix-7B.2: source contract has logout helper using POST + bearer", () => {
+  const src = readFileSync(new URL("../lib/auth.ts", import.meta.url), "utf8");
+  assert.match(src, /getApiBaseUrl\(\)\}\/auth\/logout/);
+  assert.match(src, /method:\s*"POST"/);
+  assert.match(src, /Authorization:\s*`Bearer \$\{token\}`/);
+});
+
+test("Fix-7B.2: source contract tries revoke before local clear", () => {
+  const src = readFileSync(new URL("../lib/auth-actions.ts", import.meta.url), "utf8");
+  assert.match(src, /if \(sessionToken\)/);
+  assert.match(src, /await logoutWithApi\(sessionToken\)/);
+  assert.match(src, /await clearSessionCookie\(\)/);
+
+  const revokeIdx = src.indexOf("await logoutWithApi(sessionToken);");
+  const clearIdx = src.indexOf("await clearSessionCookie();");
+  assert.ok(revokeIdx !== -1 && clearIdx > revokeIdx);
 });
