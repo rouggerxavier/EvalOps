@@ -7,6 +7,7 @@ import { createApiKeyAction, revokeApiKeyAction } from "@/lib/actions";
 import { getApiKeys, hasAuthToken, resolveProject } from "@/lib/api";
 import { consumeApiKeyFlash } from "@/lib/flash";
 import { formatDateTime } from "@/lib/format";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 type Props = {
   params: Promise<{ org: string; project: string }>;
@@ -118,7 +119,7 @@ export default async function KeysPage({ params, searchParams }: Props) {
     const response = await getApiKeys(resolved.project_id);
     keys = response.data;
   } catch (error) {
-    loadError = error instanceof Error ? error.message : "Falha ao carregar chaves API.";
+    loadError = safeErrorMessage(error, "Falha ao carregar chaves API.");
   }
 
   if (loadError) {

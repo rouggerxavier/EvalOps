@@ -12,6 +12,7 @@ import {
   resolveProject,
 } from "@/lib/api";
 import { formatCost, formatCount, formatDateTime } from "@/lib/format";
+import { safeErrorMessage } from "@/lib/safe-error";
 import type { ExportJob } from "@/lib/types";
 
 type Props = {
@@ -155,7 +156,7 @@ export default async function ExportsPage({ params, searchParams }: Props) {
   try {
     resolvedProject = await resolveProject(org, project);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Falha ao resolver projeto.";
+    const message = safeErrorMessage(error, "Falha ao resolver projeto.");
     return (
       <div className="evo-page">
         <div className="evo-page-header">
@@ -178,17 +179,17 @@ export default async function ExportsPage({ params, searchParams }: Props) {
   const [usageResult, subResult, exportRows] = await Promise.all([
     getOrganizationUsage(resolvedProject.org_id)
       .then((usage) => ({ usage, error: null as string | null }))
-      .catch((error) => ({ usage: null, error: error instanceof Error ? error.message : "Falha ao carregar uso." })),
+      .catch((error) => ({ usage: null, error: safeErrorMessage(error, "Falha ao carregar uso.") })),
     getOrganizationSubscription(resolvedProject.org_id)
       .then((subscription) => ({ subscription, error: null as string | null }))
-      .catch((error) => ({ subscription: null, error: error instanceof Error ? error.message : "Falha ao carregar plano." })),
+      .catch((error) => ({ subscription: null, error: safeErrorMessage(error, "Falha ao carregar plano.") })),
     Promise.all(
       knownIds.map(async (id): Promise<ExportRow> => {
         try {
           const job = await getExport(id);
           return { id, job, error: null };
         } catch (error) {
-          return { id, job: null, error: error instanceof Error ? error.message : "Falha ao consultar export." };
+          return { id, job: null, error: safeErrorMessage(error, "Falha ao consultar export.") };
         }
       }),
     ),

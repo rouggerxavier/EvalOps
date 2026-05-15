@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { isRedirectError } from "next/dist/client/components/redirect-error";
 
 import { setApiKeyFlash } from "@/lib/flash";
+import { sanitizeApiError } from "@/lib/safe-error";
 import {
   buildDatasetFromTraces,
   createApiKey,
@@ -29,44 +30,6 @@ function projectPath(org: string, project: string, section: string): string {
 function redirectWithMessage(path: string, params: Record<string, string>): never {
   const search = new URLSearchParams(params);
   redirect(`${path}?${search.toString()}`);
-}
-
-const SAFE_HTTP_MESSAGES: Record<number, string> = {
-  400: "Dados inválidos. Verifique os campos e tente novamente.",
-  401: "Sessão expirada ou não autorizado. Faça login novamente.",
-  402: "Limite do plano atingido.",
-  403: "Sem permissão para esta ação.",
-  404: "Recurso não encontrado.",
-  409: "Conflito: o recurso já existe ou foi modificado.",
-  413: "Payload muito grande.",
-  422: "Dados inválidos. Verifique os campos e tente novamente.",
-  429: "Muitas requisições. Aguarde e tente novamente.",
-};
-
-const GENERIC_ERROR = "Algo deu errado. Tente novamente.";
-
-const LEAK_PATTERNS = [
-  /traceback\s+\(most recent call last\)/i,
-  /sqlalchemy/i,
-  /sqlite/i,
-  /psycopg/i,
-  /\bselect\b.{1,40}\bfrom\b/i,
-  /\binsert\b.{1,20}\binto\b/i,
-  /file ".*\.py"/i,
-  /evk_[a-z0-9_]{6,}/i,
-  /line \d+, in /i,
-];
-
-function sanitizeApiError(message: string): string {
-  const match = /^API (\d{3}):/.exec(message);
-  if (match) {
-    const httpStatus = parseInt(match[1], 10);
-    return SAFE_HTTP_MESSAGES[httpStatus] ?? GENERIC_ERROR;
-  }
-  for (const pattern of LEAK_PATTERNS) {
-    if (pattern.test(message)) return GENERIC_ERROR;
-  }
-  return GENERIC_ERROR;
 }
 
 function messageFromActionError(error: unknown, fallback: string): string {

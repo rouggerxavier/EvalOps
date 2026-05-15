@@ -12,6 +12,7 @@ from app.domain.evaluators.registry import REGISTRY
 from app.domain.rubrics.resolver import build_trace_context
 from app.domain.services.usage_service import judge_budget_for_org
 from app.models import EvaluationRun, EvaluationScore, EvaluatorRow, Project, Rubric, RubricVersion, Span, Trace
+from app.safe_errors import safe_message
 from app.security import new_id
 
 # Legacy fallback retained for callers without an org context.
@@ -185,11 +186,14 @@ def run_evaluation(
             any_succeeded = True
             all_failed = False
         except Exception as exc:  # noqa: BLE001
+            safe = safe_message(
+                exc, fallback="evaluator_failed", context=f"evaluator:{ev_row.type}"
+            )
             result = EvaluatorResult(
                 score=0.0,
                 passed=False,
-                reasoning=f"Evaluator error: {exc}",
-                raw_output={"error": str(exc)},
+                reasoning=f"Evaluator error: {safe}",
+                raw_output={"error": safe},
             )
 
         score_rec = EvaluationScore(

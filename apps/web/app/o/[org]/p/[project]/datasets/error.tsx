@@ -2,6 +2,8 @@
 
 import { RefreshCw } from "lucide-react";
 
+import { safeErrorMessage } from "@/lib/safe-error";
+
 type Props = {
   error: Error & { digest?: string };
   reset: () => void;
@@ -19,7 +21,7 @@ export default function Error({ error, reset }: Props) {
       <div className="evo-card">
         <div className="evo-card__body" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           <p style={{ margin: 0, color: "var(--err)", fontSize: 13 }}>
-            Erro: {error.message || "falha inesperada"}
+            Erro: {safeErrorMessage(error, "falha inesperada")}
           </p>
           <button type="button" className="evo-btn evo-btn--sm" onClick={reset} style={{ alignSelf: "flex-start" }}>
             <RefreshCw size={13} />

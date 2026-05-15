@@ -17,6 +17,7 @@ from app.config import exports_dir
 from app.domain.services.audit_service import record_audit
 from app.domain.services.usage_service import apply_usage_with_quota, enforce_quota
 from app.models import ExportJob, HumanFeedback, Project, Trace, utcnow
+from app.safe_errors import safe_message
 from app.schemas import ExportJobCreate
 from app.security import new_id
 
@@ -116,7 +117,7 @@ def create_jsonl_export(
         db.commit()
     except Exception as exc:  # noqa: BLE001
         job.status = "error"
-        job.error = str(exc)
+        job.error = safe_message(exc, fallback="export_failed", context="create_jsonl_export")
         job.completed_at = utcnow()
         db.add(job)
         db.commit()

@@ -13,6 +13,7 @@ from app.domain.services.eval_service import (
 from app.domain.services.usage_service import apply_usage_with_quota, increment_usage
 from app.models import EvaluationRun, EvaluationScore, Rubric, RubricVersion, Trace, User
 from app.ownership import load_project, load_trace
+from app.safe_errors import safe_message
 from app.schemas import EvaluationRunOut, EvaluationRunRequest, EvaluationScoreOut
 
 router = APIRouter(prefix="/v1")
@@ -132,7 +133,8 @@ def trigger_evaluation(
     except ValueError as exc:
         db.rollback()
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=safe_message(exc, fallback="invalid_evaluation", context="run_evaluation"),
         ) from exc
     except IntegrityError as exc:
         # G-11: race condition safety net — another request created the row

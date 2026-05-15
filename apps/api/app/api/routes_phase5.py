@@ -52,6 +52,7 @@ from app.schemas import (
     PromptVersionCreate,
     PromptVersionOut,
 )
+from app.safe_errors import safe_message
 from app.security import new_id
 
 router = APIRouter(prefix="/v1")
@@ -381,7 +382,8 @@ def create_experiment(
         validate_variants(variants_dump, payload.baseline_variant)
     except ExperimentValidationError as exc:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=safe_message(exc, fallback="invalid_experiment", context="validate_variants"),
         )
     row = Experiment(
         id=new_id("exp"),
@@ -464,7 +466,9 @@ def run_experiment(
         # "judge_budget_exhausted" — safe to surface, no stack/SQL/path.
         run.status = "error"
         run.passed = False
-        run.run_metadata = {"error": str(exc)}
+        run.run_metadata = {
+            "error": safe_message(exc, fallback="experiment_failed", context="experiment_run")
+        }
     run.completed_at = utcnow()
     db.add(run)
     _exp_project = db.get(Project, experiment.project_id)

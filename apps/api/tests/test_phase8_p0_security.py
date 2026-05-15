@@ -160,3 +160,56 @@ def test_default_body_size_permits_normal_payload() -> None:
     res = client.post("/v1/traces", headers={"X-EvalOps-Key": api_key}, json=payload)
     assert res.status_code == 202, res.text
     assert res.json()["ingested"] == 1
+
+
+# ── A-12: public error sanitization (app.safe_errors.safe_message) ────────────
+
+@pytest.mark.parametrize(
+    "leak",
+    [
+        "(sqlite3.OperationalError) no such table: traces",
+        "sqlalchemy.exc.IntegrityError: UNIQUE constraint failed",
+        "Traceback (most recent call last):\n  File \"/app/x.py\", line 4, in run",
+        'File "/home/app/.venv/lib/svc.py", line 12, in handler',
+        "SELECT secret FROM users WHERE id = '1'",
+        "psycopg2.errors.UndefinedColumn: column does not exist",
+        "no such table: traces",
+        "UNIQUE constraint failed: users.email",
+        'relation "traces" does not exist',
+        "auth failed for bearer eyJhbGciOiJ.eyJzdWIiOiIx.sig",
+        "leaked api key evk_prod_abcdef123456",
+        "provider key sk-proj-abc123456789xyz leaked",
+        "C:\\Users\\svc\\app\\db.py crashed",
+        "password=hunter2 in connection string",
+        "x" * 250,
+    ],
+)
+def test_safe_message_collapses_leaky_strings(leak: str) -> None:
+    from app.safe_errors import GENERIC_ERROR, safe_message
+
+    assert safe_message(Exception(leak), fallback="op_failed") == "op_failed"
+    assert safe_message(leak) == GENERIC_ERROR
+    assert leak not in safe_message(Exception(leak), fallback="op_failed")
+
+
+@pytest.mark.parametrize(
+    "safe",
+    [
+        "ended_at must be >= started_at",
+        "unknown top-level fields: ['foo']",
+        "rubric_slug_taken",
+        "baseline variant must exist in variants",
+    ],
+)
+def test_safe_message_passes_through_vetted_validation_text(safe: str) -> None:
+    from app.safe_errors import safe_message
+
+    assert safe_message(ValueError(safe), fallback="invalid") == safe
+
+
+def test_is_safe_public_text_rejects_empty_and_long() -> None:
+    from app.safe_errors import is_safe_public_text
+
+    assert is_safe_public_text("short and clean") is True
+    assert is_safe_public_text("") is False
+    assert is_safe_public_text("a" * 201) is False

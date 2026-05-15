@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 
 from app.db import Base, SessionLocal, engine
 from app.main import app
-from app.models import AuditLog, ExportJob, Span, Trace, User
+from app.models import AuditLog, Event, ExportJob, Span, Trace, User
 from app.security import create_access_token
 
 
@@ -479,3 +479,142 @@ def test_reingest_active_client_trace_id_still_idempotent() -> None:
     first = _ingest(client, api_key, "ct-reingest-active")["results"][0]["trace_id"]
     second = _ingest(client, api_key, "ct-reingest-active")["results"][0]["trace_id"]
     assert first == second
+
+
+# ── A-13: redaction opt-in extended PII surface ──────────────────────────────
+
+def _rich_payload(client_trace_id: str, tags: dict) -> dict:
+    t0, t1 = _ts()
+    return {
+        "traces": [{
+            "client_trace_id": client_trace_id,
+            "name": "rich.trace",
+            "environment": "prod",
+            "started_at": t0,
+            "ended_at": t1,
+            "status": "ok",
+            "tags": tags,
+            "user_ref": "user@example.com",
+            "metadata": {"ssn": "123-45-6789"},
+            "spans": [{
+                "client_span_id": "sp1",
+                "type": "llm_call",
+                "name": "span",
+                "started_at": t0,
+                "ended_at": t1,
+                "status": "ok",
+                "messages_in": [{"role": "user", "content": "card 4111111111111111"}],
+                "messages_out": [{"role": "assistant", "content": "ok"}],
+                "input": {"text": "pii in"},
+                "output": {"text": "pii out"},
+                "error": {"detail": "boom with internal info"},
+                "metadata": {"customer_email": "c@acme.com"},
+                "events": [{
+                    "type": "log",
+                    "occurred_at": t0,
+                    "payload": {"email": "leak@acme.com"},
+                }],
+            }],
+        }]
+    }
+
+
+def test_redaction_clears_extended_pii_surface() -> None:
+    client = _client()
+    _, _proj, api_key, _ = _bootstrap(client)
+    payload = _rich_payload("ct-rich-pii", tags={"pii": True, "customer": "acme"})
+    resp = client.post("/v1/traces", headers={"X-EvalOps-Key": api_key}, json=payload).json()
+    assert resp["ingested"] == 1
+    trace_id = resp["results"][0]["trace_id"]
+    with SessionLocal() as db:
+        t = db.get(Trace, trace_id)
+        assert t.redacted is True
+        assert t.tags == {}
+        assert t.user_ref is None
+        assert t.metadata_json == {}
+        spans = db.query(Span).filter(Span.trace_id == trace_id).all()
+        assert spans
+        for sp in spans:
+            assert sp.messages_in is None
+            assert sp.messages_out is None
+            assert sp.input is None
+            assert sp.output is None
+            assert sp.error is None
+            assert sp.metadata_json == {}
+            for ev in db.query(Event).filter(Event.span_id == sp.id).all():
+                assert ev.payload == {}
+
+
+def test_no_redaction_preserves_extended_fields() -> None:
+    client = _client()
+    _, _proj, api_key, _ = _bootstrap(client)
+    payload = _rich_payload("ct-rich-plain", tags={"customer": "acme"})
+    resp = client.post("/v1/traces", headers={"X-EvalOps-Key": api_key}, json=payload).json()
+    trace_id = resp["results"][0]["trace_id"]
+    with SessionLocal() as db:
+        t = db.get(Trace, trace_id)
+        assert t.redacted is False
+        assert t.user_ref == "user@example.com"
+        assert t.metadata_json == {"ssn": "123-45-6789"}
+        assert t.tags == {"customer": "acme"}
+        sp = db.query(Span).filter(Span.trace_id == trace_id).first()
+        assert sp.messages_in is not None
+        assert sp.error == {"detail": "boom with internal info"}
+        assert sp.metadata_json == {"customer_email": "c@acme.com"}
+        ev = db.query(Event).join(Span).filter(Span.trace_id == trace_id).first()
+        assert ev.payload == {"email": "leak@acme.com"}
+
+
+# ── A-12: internal errors never leak through public responses ────────────────
+
+_LEAK = (
+    "(sqlite3.OperationalError) no such table [SQL: SELECT * FROM traces] "
+    "/home/app/.venv/x.py token eyJabc12345.def67890ZZ.sig key evk_prod_deadbeef"
+)
+
+
+def test_ingest_internal_error_is_sanitized(monkeypatch) -> None:
+    client = _client()
+    _, _proj, api_key, _ = _bootstrap(client)
+
+    import app.domain.services.trace_ingest_service as svc
+
+    def _boom(*_a, **_k):
+        raise RuntimeError(_LEAK)
+
+    monkeypatch.setattr(svc, "_persist_trace", _boom)
+    res = client.post(
+        "/v1/traces", headers={"X-EvalOps-Key": api_key},
+        json=_rich_payload("ct-boom", tags={}),
+    )
+    assert res.status_code == 202, res.text
+    body = res.json()
+    assert body["ingested"] == 0
+    assert body["errors"][0]["message"] == "ingest_failed"
+    blob = res.text
+    for needle in ("sqlite3", "SELECT", ".venv", "eyJabc", "evk_prod"):
+        assert needle not in blob
+
+
+def test_export_internal_error_is_sanitized(monkeypatch) -> None:
+    client = _client()
+    _, project_id, api_key, headers = _bootstrap(client)
+    _ingest(client, api_key, "ct-exp-boom")
+
+    import app.domain.services.export_service as svc
+
+    def _boom(*_a, **_k):
+        raise RuntimeError(_LEAK)
+
+    monkeypatch.setattr(svc, "_filter_traces", _boom)
+    res = client.post(
+        "/v1/exports", headers=headers,
+        json={"project_id": project_id, "format": "jsonl", "filters": {}},
+    )
+    assert res.status_code == 500
+    assert res.json()["detail"] == "export_failed"
+    assert "sqlite3" not in res.text and "evk_prod" not in res.text
+    with SessionLocal() as db:
+        job = db.query(ExportJob).filter(ExportJob.project_id == project_id).one()
+        assert job.status == "error"
+        assert job.error == "export_failed"

@@ -17,10 +17,16 @@ from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.config import max_spans_per_trace
-from app.domain.services.redaction_service import should_redact
+from app.domain.services.redaction_service import (
+    redact_event,
+    redact_span,
+    redact_trace,
+    should_redact,
+)
 from app.domain.services.usage_service import apply_usage_with_quota, enforce_quota
 from app.infra.llm.pricing import compute_cost_usd
 from app.models import Event, Project, Span, Trace
+from app.safe_errors import safe_message
 from app.schemas import TraceBatchIn
 from app.security import new_id
 
@@ -111,6 +117,8 @@ def _persist_trace(
         metadata_json=trace_in.metadata,
         redacted=do_redact,
     )
+    if do_redact:
+        redact_trace(trace_row)
     db.add(trace_row)
     db.flush()
 
@@ -144,18 +152,20 @@ def _persist_trace(
             provider=span_in.provider,
             model=span_in.model,
             prompt_version_ref=span_in.prompt_version_ref,
-            messages_in=None if do_redact else span_in.messages_in,
-            messages_out=None if do_redact else span_in.messages_out,
+            messages_in=span_in.messages_in,
+            messages_out=span_in.messages_out,
             tools=span_in.tools,
             tokens_in=span_in.tokens_in,
             tokens_out=span_in.tokens_out,
             cost_usd=float(cost),
             fallback_from_span_id=None,
-            input=None if do_redact else span_in.input,
-            output=None if do_redact else span_in.output,
+            input=span_in.input,
+            output=span_in.output,
             error=span_in.error,
             metadata_json=span_in.metadata,
         )
+        if do_redact:
+            redact_span(row)
         db.add(row)
         if span_in.parent_client_span_id:
             parent_refs.append((row, span_in.parent_client_span_id))
@@ -165,15 +175,16 @@ def _persist_trace(
         total_out += span_in.tokens_out or 0
         total_cost += cost
         for event_in in span_in.events:
-            db.add(
-                Event(
-                    id=new_id("ev"),
-                    span_id=span_id,
-                    type=event_in.type,
-                    occurred_at=event_in.occurred_at,
-                    payload=event_in.payload,
-                )
+            event_row = Event(
+                id=new_id("ev"),
+                span_id=span_id,
+                type=event_in.type,
+                occurred_at=event_in.occurred_at,
+                payload=event_in.payload,
             )
+            if do_redact:
+                redact_event(event_row)
+            db.add(event_row)
 
     for span_row, parent_client_id in parent_refs:
         parent_id = client_to_span.get(parent_client_id)
@@ -231,6 +242,10 @@ def ingest_trace_batch(
             raise
         except Exception as exc:  # noqa: BLE001
             db.rollback()
-            errors.append({"index": idx, "client_trace_id": trace_in.client_trace_id, "message": str(exc)})
+            errors.append({
+                "index": idx,
+                "client_trace_id": trace_in.client_trace_id,
+                "message": safe_message(exc, fallback="ingest_failed", context="ingest_trace"),
+            })
 
     return {"ingested": len(results), "results": results, "errors": errors}

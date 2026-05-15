@@ -199,11 +199,22 @@ const LEAK_PATTERNS = [
   /sqlalchemy/i,
   /sqlite/i,
   /psycopg/i,
-  /\bselect\b.{1,40}\bfrom\b/i,
-  /\binsert\b.{1,20}\binto\b/i,
+  /postgres/i,
+  /\b(?:IntegrityError|OperationalError|ProgrammingError)\b/,
+  /\b(?:no such table|database is locked|constraint failed|unique constraint failed|foreign key constraint failed)\b/i,
+  /\b(?:relation|column|table)\s+['"]?[\w.]+['"]?\s+does not exist\b/i,
+  /\b(?:select|insert|update|delete)\b.{1,80}\b(?:from|into|set|where|values)\b/is,
   /file ".*\.py"/i,
-  /evk_[a-z0-9_]{6,}/i,
   /line \d+, in /i,
+  /(?:^|[\s'"(=])(?:\/(?:home|users|var|tmp|etc|root|opt|mnt)\/|[A-Za-z]:\\)/i,
+  /\.venv[\\/]/i,
+  / object at 0x[0-9a-fA-F]+/i,
+  /eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/,
+  /\bevk_[a-z0-9_]{4,}/i,
+  /\bsk-[A-Za-z0-9_-]{8,}/,
+  /\bbearer\s+\S{6,}/i,
+  /\bset-cookie\b/i,
+  /\b(?:password|secret|api[_-]?key|access[_-]?token|refresh[_-]?token|authorization)\b\s*[=:]\s*\S/i,
 ];
 
 function sanitizeApiError(message) {
@@ -383,3 +394,71 @@ test("Fix-7B.2: source contract tries revoke before local clear", () => {
   const clearIdx = src.indexOf("await clearSessionCookie();");
   assert.ok(revokeIdx !== -1 && clearIdx > revokeIdx);
 });
+
+// --- A-12 / Fix-7B.6: page-level error sanitization -----------------------
+// `lib/safe-error.ts` is the shared, client-safe sanitizer. Mirror its
+// `safeErrorMessage` wrapper (reusing the G-23 sanitizeApiError mirror
+// above) and assert the page/error boundaries route through it instead
+// of rendering raw `error.message`.
+
+function safeErrorMessageFor(error, fallback) {
+  if (error instanceof Error) return sanitizeApiError(error.message);
+  if (typeof error === "string") return sanitizeApiError(error);
+  return fallback;
+}
+
+test("Fix-7B.6: safeErrorMessage scrubs Error carrying SQL", () => {
+  const e = new Error("API 500: SELECT * FROM users; -- secret");
+  assert.equal(safeErrorMessageFor(e, "fallback"), GENERIC_ERROR);
+});
+
+test("Fix-7B.6: safeErrorMessage scrubs raw traceback string", () => {
+  assert.equal(
+    safeErrorMessageFor('Traceback (most recent call last): File "a.py"', "fb"),
+    GENERIC_ERROR,
+  );
+});
+
+test("Fix-7B.6: safeErrorMessage maps known HTTP status to friendly text", () => {
+  assert.equal(
+    safeErrorMessageFor(new Error("API 404: not_found"), "fb"),
+    SAFE_HTTP_MESSAGES[404],
+  );
+});
+
+test("Fix-7B.6: safeErrorMessage uses fallback for non-Error/non-string", () => {
+  assert.equal(safeErrorMessageFor({ weird: true }, "Falha ao carregar."), "Falha ao carregar.");
+});
+
+test("Fix-7B.6: shared sanitizer module is client-safe (no use server)", () => {
+  const src = readFileSync(new URL("../lib/safe-error.ts", import.meta.url), "utf8");
+  assert.equal(/["']use server["']/.test(src), false);
+  assert.match(src, /export function sanitizeApiError/);
+  assert.match(src, /export function safeErrorMessage/);
+});
+
+test("Fix-7B.6: actions.ts reuses shared sanitizer (no duplicate copy)", () => {
+  const src = readFileSync(new URL("../lib/actions.ts", import.meta.url), "utf8");
+  assert.match(src, /from "@\/lib\/safe-error"/);
+  assert.equal(/const LEAK_PATTERNS = \[/.test(src), false);
+});
+
+for (const section of ["datasets", "exports", "keys"]) {
+  test(`Fix-7B.6: ${section}/page.tsx sanitizes load errors`, () => {
+    const src = readFileSync(
+      new URL(`../app/o/[org]/p/[project]/${section}/page.tsx`, import.meta.url),
+      "utf8",
+    );
+    assert.match(src, /safeErrorMessage\(/);
+    assert.equal(/error instanceof Error \? error\.message/.test(src), false);
+  });
+
+  test(`Fix-7B.6: ${section}/error.tsx does not render raw error.message`, () => {
+    const src = readFileSync(
+      new URL(`../app/o/[org]/p/[project]/${section}/error.tsx`, import.meta.url),
+      "utf8",
+    );
+    assert.match(src, /safeErrorMessage\(error,/);
+    assert.equal(/\{error\.message/.test(src), false);
+  });
+}

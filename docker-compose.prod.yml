@@ -9,7 +9,8 @@
 #  * Synchronous SQLAlchemy URL (`postgresql+psycopg`); the API uses sync
 #    SQLAlchemy and `app/db.py` already normalises async URLs to psycopg.
 #  * No web service (Next.js is deployed separately in prod).
-#  * Dedicated `migrate` job runs `alembic upgrade head` before the API starts.
+#  * Phase 7 Alembic path: dedicated `migrate` job runs
+#    `alembic upgrade head` before the API starts.
 #  * Conservative restart policies and explicit env contract.
 #  * `EVALOPS_API_BASE_URL` / `EVALOPS_DEV_MODE` documented as required by the
 #    web layer but NOT defined here — they belong to the web deployment.
