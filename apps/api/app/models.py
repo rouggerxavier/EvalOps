@@ -371,6 +371,14 @@ class Plan(Base):
     monthly_trace_limit: Mapped[int] = mapped_column(Integer, default=1000)
     monthly_eval_limit: Mapped[int] = mapped_column(Integer, default=500)
     monthly_export_limit: Mapped[int] = mapped_column(Integer, default=10)
+    # Phase 6 (G-07): per-plan span/token quotas. Migration for existing DBs:
+    #   ALTER TABLE plans ADD COLUMN monthly_span_limit INTEGER NOT NULL DEFAULT 50000;
+    #   ALTER TABLE plans ADD COLUMN monthly_token_limit BIGINT NOT NULL DEFAULT 5000000;
+    monthly_span_limit: Mapped[int] = mapped_column(Integer, default=50000)
+    monthly_token_limit: Mapped[int] = mapped_column(Integer, default=5_000_000)
+    # Phase 6 (G-12): per-plan judge budget cap. Migration for existing DBs:
+    #   ALTER TABLE plans ADD COLUMN monthly_judge_budget_usd NUMERIC(12,6) NOT NULL DEFAULT 20;
+    monthly_judge_budget_usd: Mapped[float] = mapped_column(Numeric(12, 6), default=20)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
@@ -396,6 +404,11 @@ class UsageCounter(Base):
     evaluations_run: Mapped[int] = mapped_column(Integer, default=0)
     exports_created: Mapped[int] = mapped_column(Integer, default=0)
     cost_usd: Mapped[float] = mapped_column(Numeric(12, 6), default=0)
+    # Phase 6 (G-07): track spans/tokens monthly. Migration for existing DBs:
+    #   ALTER TABLE usage_counters ADD COLUMN spans_ingested INTEGER NOT NULL DEFAULT 0;
+    #   ALTER TABLE usage_counters ADD COLUMN tokens_ingested BIGINT NOT NULL DEFAULT 0;
+    spans_ingested: Mapped[int] = mapped_column(Integer, default=0)
+    tokens_ingested: Mapped[int] = mapped_column(Integer, default=0)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
 

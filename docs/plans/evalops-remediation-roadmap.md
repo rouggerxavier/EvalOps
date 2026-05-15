@@ -2,7 +2,7 @@
 
 Data: 2026-05-13
 Fonte: `docs/audits/evalops-important-rules-audit.md`
-Status: Fases 0, 1, 2, 3 e 4 concluídas. Fase 5 liberada como próxima. Demais em planejamento.
+Status: Fases 0–6 concluídas. Fase 7 liberada como próxima.
 Branch alvo: `main`.
 
 ## Status por fase
@@ -15,8 +15,8 @@ Branch alvo: `main`.
 | 3 — Experiments reais | ✅ Concluída (2026-05-14) | G-05 fechado; 8/8 testes phase5 (test_phase5_prompts_datasets_experiments.py), baseline obrigatório 28/28 verde, validação adicional 5/5 verde (phase3/6/7) |
 | 4 — Audit log, privacy, exports | ✅ Concluída (2026-05-14) | G-06, G-08, G-09, G-10, G-21 fechados; 18/18 testes (test_phase10_audit_privacy_exports.py); regressão 42/42 verde. |
 | 5 — Contratos UX | ✅ Concluída (2026-05-14) | G-14, G-18, G-23 fechados; 5/5 testes backend (test_phase11_contracts_ux.py) + 23/23 testes frontend (tests/security.test.mjs); regressão 60/60 verde. |
-| 6 — Robustez quota/eval/storage | ⏳ Pendente | — |
-| 7 — Arquitetura e manutenção | ⏳ Pendente | — |
+| 6 — Robustez quota/eval/storage | ✅ Concluída (2026-05-14) | G-07, G-11, G-12, G-20, G-25 fechados; 15/15 testes (test_phase12_quota_eval_storage.py); regressão 65/65 verde. Postgres validado estruturalmente (Docker indisponível localmente). |
+| 7 — Arquitetura e manutenção | ⏭️ Próxima | — |
 
 ---
 

@@ -1,0 +1,64 @@
+# Production-flavoured compose for EvalOps API + Postgres.
+#
+# Status: documented and validated structurally. Not validated end-to-end on
+# this checkout because Docker is not available in the local environment used
+# by Phase 6 (validation pendente — see docs/plans/baseline.md).
+#
+# Differences from `docker-compose.yml` (dev):
+#  * Postgres 16 with explicit volume + healthcheck (instead of default).
+#  * Synchronous SQLAlchemy URL (`postgresql+psycopg`); the API uses sync
+#    SQLAlchemy and `app/db.py` already normalises async URLs to psycopg.
+#  * No web service (Next.js is deployed separately in prod).
+#  * Conservative restart policies and explicit env contract.
+#  * `EVALOPS_API_BASE_URL` / `EVALOPS_DEV_MODE` documented as required by the
+#    web layer but NOT defined here — they belong to the web deployment.
+#
+# IMPORTANT: Alembic is NOT yet adopted (Phase 7 scope). Until then, schema is
+# created by SQLAlchemy `Base.metadata.create_all` on first boot. For an
+# existing Postgres database, apply the manual migrations listed in
+# docs/plans/baseline.md before starting this compose.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-evalops}
+      POSTGRES_USER: ${POSTGRES_USER:-evalops}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-evalops} -d ${POSTGRES_DB:-evalops}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    image: python:3.12-slim
+    restart: unless-stopped
+    working_dir: /workspace
+    volumes:
+      - ./apps/api:/workspace
+    environment:
+      APP_ENV: production
+      LOG_LEVEL: INFO
+      # Sync SQLAlchemy with psycopg driver — see app/db.py
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-evalops}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-evalops}
+      EVALOPS_MAX_BODY_BYTES: ${EVALOPS_MAX_BODY_BYTES:-8388608}
+      EVALOPS_MAX_SPANS_PER_TRACE: ${EVALOPS_MAX_SPANS_PER_TRACE:-500}
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET}
+      API_HOST: 0.0.0.0
+      API_PORT: 8000
+    command: >
+      sh -c "pip install --no-cache-dir -e '.' &&
+             pip install --no-cache-dir 'psycopg[binary]>=3.2' &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+
+volumes:
+  pgdata:

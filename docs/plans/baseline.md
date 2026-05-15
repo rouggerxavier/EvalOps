@@ -874,3 +874,323 @@ cd apps/api && rm -f evalops.db* && python -m pytest tests/test_health.py tests/
 
 ✅ **Sim**: G-14, G-18, G-23 implementados e testados. Regressão de todas as
 fases anteriores verde. Frontend tsc/build/test verdes.
+
+---
+
+## Fase 6 — Robustez de quota/evaluation/storage (2026-05-14)
+
+### Status
+✅ **Concluída**.
+
+### Gaps fechados
+
+- **G-07** — Quota mensal por spans/tokens.
+  - `Plan.monthly_span_limit` e `Plan.monthly_token_limit` adicionados
+    (defaults 50 000 spans / 5 000 000 tokens para o plano Free).
+  - `UsageCounter.spans_ingested` e `UsageCounter.tokens_ingested` adicionados.
+  - `enforce_quota()` em `usage_service.py` agora aceita os novos `field`s e
+    devolve `detail = {"error": "quota_exceeded", "field": ..., "limit": ...}`
+    em 402.
+  - `POST /v1/traces` faz **pre-check atômico** dos três limites (traces,
+    spans, tokens) antes de qualquer escrita: batch sobre limite é rejeitado
+    integralmente sem deixar contador parcial.
+  - Tokens são somados a partir de `span.tokens_in + span.tokens_out`. Spans
+    sem tokens contribuem 0 (decisão segura: nunca estimamos para cima).
+  - `increment_usage()` recebe novos kwargs `spans=` e `tokens=`.
+
+- **G-11** — Duplicate evaluation retorna 409 (não 500).
+  - `EvaluationRun` já tinha `UniqueConstraint("trace_id","rubric_id","rubric_version")`.
+  - `routes_evaluations.trigger_evaluation` agora faz **pre-check** dessa
+    tripla antes de rodar a rubric: 409 com
+    `detail = {"error":"evaluation_run_duplicate","existing_run_id":<id>}`.
+  - Como rede de segurança contra race, o `try/except IntegrityError` envolve
+    `run_evaluation()` e devolve o mesmo 409 estruturado (com rollback).
+  - Mensagens de erro nunca contêm SQL/stack/path Python (validado por teste).
+
+- **G-12** — Judge budget por plano.
+  - `Plan.monthly_judge_budget_usd` adicionado (default 20 USD).
+  - `usage_service.judge_budget_for_org()` resolve plano da org → budget;
+    fallback seguro para 20 USD quando: org sem subscription, plano sem
+    coluna, valor `None`/`0`/inválido.
+  - `eval_service._check_judge_budget()` agora consulta esse budget por
+    projeto/org em vez da constante global (constante mantida só como
+    fallback para callers sem contexto de org).
+  - `routes_evaluations.trigger_evaluation` faz pre-check em 402 quando a
+    rubric usa `llm_judge` E o budget já está esgotado:
+    `detail = {"error":"judge_budget_exhausted","spent_usd":...,"budget_usd":...}`.
+  - Rubrics que não usam `llm_judge` ignoram a checagem (não pagam o custo).
+
+- **G-20** — Lock pessimista no usage counter.
+  - `get_or_create_counter(..., lock=True)` aplica `with_for_update()` quando
+    o dialeto é Postgres (helper `_is_postgres(db)` em `usage_service.py`).
+  - SQLite ignora silenciosamente o `FOR UPDATE` — comportamento documentado.
+  - `increment_usage()` agora chama com `lock=True`, então toda incremento
+    pega lock pessimista em Postgres (read-modify-write serializado).
+  - Em SQLite, o file-lock interno do próprio SQLite serializa writes —
+    teste de concorrência multi-thread em SQLite é intencionalmente omitido
+    por instabilidade de timing; teste pinning sequencial cobre o invariante.
+
+- **G-25** — Postgres preparado para produção.
+  - `apps/api/app/db.py` documenta os 3 formatos de URL aceitos (sqlite, sync
+    psycopg, async-psycopg-rewritten). `is_postgres()` / `is_sqlite()`
+    helpers expostos.
+  - `docker-compose.prod.yml` (novo) traz Postgres 16 + healthcheck +
+    `postgresql+psycopg` driver + restart policy + env contract explícito
+    (`POSTGRES_PASSWORD` e `JWT_SECRET` obrigatórios via `${VAR:?}`).
+  - SQLite continua o default em dev/test — nenhum teste muda DB.
+  - **Validação Docker pendente**: o ambiente local desta sessão não tem
+    Docker. A validação foi estrutural (yaml well-formed + alusão a Alembic
+    + driver psycopg sync) via `test_g25_*`. Smoke real fica para o primeiro
+    deploy de staging.
+
+### Notas de migração de schema
+
+Bancos existentes (Postgres ou SQLite com dados) precisam aplicar
+**manualmente** as migrações abaixo até a Fase 7 (Alembic):
+
+```sql
+-- Plan: limites e budget
+ALTER TABLE plans ADD COLUMN monthly_span_limit INTEGER NOT NULL DEFAULT 50000;
+ALTER TABLE plans ADD COLUMN monthly_token_limit BIGINT NOT NULL DEFAULT 5000000;
+ALTER TABLE plans ADD COLUMN monthly_judge_budget_usd NUMERIC(12,6) NOT NULL DEFAULT 20;
+
+-- UsageCounter: spans/tokens contadores
+ALTER TABLE usage_counters ADD COLUMN spans_ingested INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE usage_counters ADD COLUMN tokens_ingested BIGINT NOT NULL DEFAULT 0;
+```
+
+Em DBs novos (`Base.metadata.create_all`) as colunas vêm com os defaults
+acima. **DBs já em produção precisam rodar o SQL acima antes de subir esta
+versão**, senão queries vão falhar com `column does not exist`.
+
+### Limitações documentadas
+
+- **SQLite vs Postgres** para G-20: `SELECT ... FOR UPDATE` é silenciosamente
+  ignorado por SQLite. O lock pessimista só protege Postgres. SQLite confia
+  no file-lock global (single-writer semantics) — adequado para dev/test, não
+  para concorrência real em produção. Migrar prod para Postgres é blocker
+  separado (este gap só prepara o caminho).
+- **Docker compose prod não foi validado end-to-end**: estrutura validada
+  por teste; smoke real depende de máquina com Docker. Não é blocker desta
+  fase, mas é blocker antes de qualquer deploy real.
+- **Suite completa `pytest tests/` continua não confiável** por SQLite lock
+  inter-arquivo — workaround `rm -f evalops.db*` por arquivo continua válido.
+
+### Arquivos alterados
+
+**Backend (modelos):**
+- `apps/api/app/models.py` — Plan ganhou `monthly_span_limit`,
+  `monthly_token_limit`, `monthly_judge_budget_usd`. UsageCounter ganhou
+  `spans_ingested`, `tokens_ingested`.
+
+**Backend (services):**
+- `apps/api/app/domain/services/usage_service.py` — `ensure_subscription`
+  popula novos campos; `get_or_create_counter(lock=)`; `enforce_quota`
+  cobre novos fields e usa detail estruturado; `increment_usage` aceita
+  `spans=`/`tokens=` + `lock=True`; helper `_is_postgres`; nova função
+  `judge_budget_for_org`.
+- `apps/api/app/domain/services/eval_service.py` — `_judge_spent_this_month`
+  + `_budget_for_project` + `_check_judge_budget` consultam plan; novo helper
+  `judge_budget_status` e `rubric_uses_llm_judge` para o pre-check no router.
+
+**Backend (routes):**
+- `apps/api/app/api/routes.py:ingest_traces` — pre-check atômico de
+  spans/tokens; `increment_usage` com spans/tokens reais.
+- `apps/api/app/api/routes_evaluations.py` — `_existing_run` helper;
+  pre-check 409 antes de rodar; pre-check 402 de judge budget;
+  `IntegrityError → 409` como rede de segurança; rubric_version resolvido
+  uma vez no router.
+- `apps/api/app/api/routes_phase6.py` — endpoint `/subscription` retorna
+  novos campos do plano; endpoint `/usage` retorna `spans_ingested` e
+  `tokens_ingested`.
+
+**Backend (config / DB / docker):**
+- `apps/api/app/db.py` — docstring detalhada de URLs suportados; helpers
+  `is_postgres()`/`is_sqlite()` expostos.
+- `docker-compose.prod.yml` (novo) — Postgres 16 + API com `psycopg` sync.
+
+**Backend (testes):**
+- `apps/api/tests/test_phase12_quota_eval_storage.py` (novo) — 15 testes
+  cobrindo G-07 (4), G-11 (3), G-12 (3), G-20 (2), G-25 (3).
+- `apps/api/tests/test_phase6_feedback_export_usage.py` — atualizado para
+  o novo formato estruturado de `detail` em `quota_exceeded` (extensão
+  intencional do contrato; old behavior `detail == "quota_exceeded"` foi
+  preservado em texto: o campo `error` dentro do dict mantém o slug).
+
+**Documentação:**
+- `docs/plans/baseline.md` — esta seção.
+- `docs/plans/evalops-remediation-roadmap.md` — Fase 6 marcada concluída.
+
+### Como spans/tokens funcionam (G-07)
+
+Pre-check em `POST /v1/traces`:
+
+```
+batch_traces  = len(payload.traces)
+batch_spans   = sum(len(t.spans) for t in payload.traces)
+batch_tokens  = sum((sp.tokens_in or 0) + (sp.tokens_out or 0)
+                    for t in payload.traces for sp in t.spans)
+
+enforce_quota(traces_ingested, batch_traces)    # 402 se exceder
+enforce_quota(spans_ingested,  batch_spans)     # 402 se exceder
+enforce_quota(tokens_ingested, batch_tokens)    # 402 se exceder
+```
+
+Se qualquer check 402, a função retorna **antes** de qualquer `db.add` —
+contador permanece intacto. Após o ingest bem-sucedido, `increment_usage`
+incrementa todos os contadores em uma única transação.
+
+### Como duplicate eval vira 409 (G-11)
+
+```
+POST /v1/evaluations/run {trace_id, rubric_id, rubric_version?}
+
+→ resolve rubric_version (422 se inexistente)
+→ pre-check: SELECT EvaluationRun WHERE (trace,rubric,version) match
+   → encontrou: 409 com {"error":"evaluation_run_duplicate","existing_run_id":<id>}
+   → não encontrou: enforce_quota → run_evaluation
+                    → IntegrityError? 409 com mesmo detail (race fallback)
+```
+
+Cliente recebe 409 estruturado; pode chamar `GET /v1/evaluations/{existing_run_id}`
+sem reprocessar.
+
+### Como judge budget por plano funciona (G-12)
+
+`judge_budget_for_org(db, org_id) → float`:
+1. Busca `Subscription` da org → `Plan` → `monthly_judge_budget_usd`.
+2. Se org/plano/coluna ausentes ou valor `<= 0`/inválido → fallback `20.0`.
+
+Em `trigger_evaluation`:
+- Se a `RubricVersion` tem ao menos um evaluator `llm_judge` enabled:
+  - Soma `EvaluationRun.cost_usd` do mês atual para o projeto.
+  - Compara com `judge_budget_for_org(...)`.
+  - Excedido → 402 com `{spent_usd, budget_usd}`.
+- Senão: pula o check (rubrics determinísticas não pagam o custo).
+
+`eval_service._check_judge_budget()` continua sendo a salvaguarda interna
+para evaluators individuais durante a execução (caso `llm_judge` consuma o
+budget mid-run).
+
+### Como o lock pessimista foi implementado (G-20)
+
+`get_or_create_counter(db, org_id, period, lock=True)`:
+- `query = db.query(UsageCounter).filter(...)`
+- `if lock and _is_postgres(db): query = query.with_for_update()`
+- `row = query.one_or_none()`
+
+`increment_usage` chama com `lock=True` → em Postgres a row é bloqueada até
+o `commit()`/`rollback()`, serializando incrementos concorrentes. Em SQLite
+o `with_for_update` é compilado para nada (silently ignored) — confiamos no
+file-lock global do SQLite.
+
+### Como Postgres foi preparado sem quebrar SQLite (G-25)
+
+`db.py`:
+- `DATABASE_URL` env var, default `sqlite:///./evalops.db`.
+- `_normalize_database_url` reescreve `sqlite:///./...` → absoluto e
+  `postgresql+asyncpg://` → `postgresql+psycopg://`.
+- `connect_args = {"check_same_thread": False}` só para SQLite.
+- Helpers `is_postgres()`/`is_sqlite()` para código que precise ramificar.
+
+`docker-compose.prod.yml`:
+- Postgres 16-alpine com volume nomeado `pgdata` e healthcheck `pg_isready`.
+- API service com `pip install psycopg[binary]` no startup (bootstrap
+  driver — Phase 7 deve mover isso para imagem custom).
+- `JWT_SECRET` e `POSTGRES_PASSWORD` obrigatórios via `${VAR:?...}`.
+- Sem service web (Next.js deploya separado em prod).
+
+Nenhum teste mudou de DB — todos rodam SQLite local como antes.
+
+### Comandos executados e resultados
+
+```bash
+cd apps/api && rm -f evalops.db* && python -m pytest tests/test_phase12_quota_eval_storage.py -q --tb=short -p no:warnings
+```
+**Resultado**: `15 passed in 204.93s` ✅
+
+```bash
+cd apps/api && rm -f evalops.db* && python -m pytest tests/test_phase8_p0_security.py -q --tb=short -p no:warnings
+```
+**Resultado**: `5 passed in 68.64s` ✅
+
+```bash
+cd apps/api && rm -f evalops.db* && python -m pytest tests/test_phase9_auth_hardening.py -q --tb=short -p no:warnings
+```
+**Resultado**: `14 passed in 184.21s` ✅
+
+```bash
+cd apps/api && rm -f evalops.db* && python -m pytest tests/test_phase5_prompts_datasets_experiments.py -q --tb=short -p no:warnings
+```
+**Resultado**: `8 passed in 113.50s` ✅
+
+```bash
+cd apps/api && rm -f evalops.db* && python -m pytest tests/test_phase10_audit_privacy_exports.py -q --tb=short -p no:warnings
+```
+**Resultado**: `18 passed in 241.73s` ✅
+
+```bash
+cd apps/api && rm -f evalops.db* && python -m pytest tests/test_phase11_contracts_ux.py -q --tb=short -p no:warnings
+```
+**Resultado**: `5 passed in 28.81s` ✅
+
+```bash
+cd apps/api && rm -f evalops.db* && python -m pytest tests/test_health.py tests/test_auth_flow.py tests/test_phase1_identity_access.py tests/test_phase2_tracing.py tests/test_phase3_analytics.py tests/test_phase6_feedback_export_usage.py tests/test_phase7_e2e_mvp_flow.py -q --tb=short -p no:warnings
+```
+**Resultado**: `15 passed in 155.65s` ✅
+
+```bash
+cd apps/web && npx tsc --noEmit
+```
+**Resultado**: ✅ sem erros (nenhum arquivo frontend tocado nesta fase).
+
+**Total Fase 6**: 15 novos backend + 65 regressão = **80 testes verdes**.
+
+### O que não foi feito de propósito
+
+- **Alembic**: continua na Fase 7 — migrações ficam manuais (SQL acima).
+- **Worker assíncrono / Celery / RQ**: judge budget exhausted devolve 402
+  síncrono; sem fila para retry.
+- **Stripe / billing real**: plan limits mudados via SQL/admin; sem upgrade
+  flow.
+- **Redis para rate limit / locks distribuídos**: continua na Fase 7.
+- **OpenTelemetry**: nada foi instrumentado — Fase 7.
+- **Refatoração arquitetural**: services existentes foram estendidos, não
+  reescritos. Routes continuam finas.
+- **Frontend**: nenhum arquivo tocado. UI ainda não exibe `monthly_span_limit`/
+  `monthly_token_limit`/`monthly_judge_budget_usd` mesmo que a API agora
+  retorne — entrega para próxima onda de UX.
+
+### Riscos remanescentes
+
+1. **Lock pessimista em SQLite é no-op**: concorrência real em SQLite ainda
+   pode perder updates sob carga (raro com single-worker MVP). Mitigação:
+   migrar prod para Postgres usando `docker-compose.prod.yml`.
+2. **Budget gating não rateia spending parcial**: se um run consume USD
+   $0.30 e o budget restante era $0.20, o overshoot de $0.10 é aceito (já
+   estava em flight). Pre-check usa "spent < budget" antes de iniciar; o
+   spend real só é contabilizado depois. Mitigação: futuro hard-cap no
+   evaluator individual (já existe `_check_judge_budget` per-evaluator).
+3. **Token estimation = 0 para spans sem tokens declarados**: se a SDK
+   esquece de enviar `tokens_in`/`tokens_out`, esses spans não consomem
+   quota de tokens. Decisão consciente — não estimamos para cima para evitar
+   cobrar por uso fantasma.
+4. **Docker compose prod não validado em runtime**: estrutura OK, mas o
+   primeiro `docker compose up` em staging pode revelar gaps de env
+   (`JWT_SECRET` vem de onde, etc.). Smoke obrigatório antes de prod.
+5. **Migrações manuais frágeis**: cada DB existente precisa rodar o SQL
+   acima exatamente uma vez. Sem Alembic, esquecer = quebra silenciosa.
+   Bloqueante para Fase 7.
+6. **`psycopg[binary]` instalado em runtime**: o `pip install` no `command:`
+   do compose roda a cada start. Lentidão + risco de rede. Phase 7 deve
+   mover para imagem Docker pré-construída.
+
+### Pode avançar para Fase 7?
+
+✅ **Sim**: G-07/G-11/G-12/G-20/G-25 implementados e testados; regressão de
+todas as fases anteriores (1-5) verde com 80 testes; nenhum contrato público
+quebrou (extensão estruturada de `quota_exceeded` documentada).
+
+**Bloqueios para deploy continuam**: Alembic (Fase 7), Redis (Fase 7),
+OpenTelemetry (Fase 7), `npm audit` (pré-existente), validação Docker real
+(esta fase). Ver tabela em "Consolidação pós-Fase 4" + adições desta fase.

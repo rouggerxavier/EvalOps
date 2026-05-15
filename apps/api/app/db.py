@@ -1,3 +1,25 @@
+"""Database engine and session factory.
+
+G-25: this module supports SQLite (default for dev/test) and PostgreSQL
+(intended for production). Selection is driven by the ``DATABASE_URL`` env var.
+
+Supported URL forms:
+  * ``sqlite:///./evalops.db`` (default) — relative paths are normalised to be
+    absolute relative to ``apps/api`` so tests do not depend on CWD.
+  * ``sqlite:////absolute/path.db``
+  * ``postgresql+psycopg://user:pass@host:port/dbname`` — preferred prod driver.
+  * ``postgresql+asyncpg://...`` — accepted but transparently rewritten to
+    ``postgresql+psycopg`` since the project uses sync SQLAlchemy.
+  * ``postgresql://...`` — accepted; SQLAlchemy chooses the default driver.
+
+For Postgres deployments install the driver explicitly: ``pip install
+'psycopg[binary]>=3.2'`` (already wired in ``docker-compose.prod.yml``).
+
+Schema migrations are still managed by ``Base.metadata.create_all`` until
+Alembic is introduced in Phase 7. For new columns added in later phases,
+existing Postgres databases need the manual ALTER TABLE statements documented
+alongside each model field (see ``app/models.py`` and ``docs/plans/baseline.md``).
+"""
 from collections.abc import Generator
 import os
 
@@ -22,6 +44,15 @@ connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite")
 engine = create_engine(DATABASE_URL, future=True, pool_pre_ping=True, connect_args=connect_args)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
 Base = declarative_base()
+
+
+def is_postgres() -> bool:
+    """Return True if the configured engine targets PostgreSQL."""
+    return engine.dialect.name == "postgresql"
+
+
+def is_sqlite() -> bool:
+    return engine.dialect.name == "sqlite"
 
 
 def get_db() -> Generator[Session, None, None]:

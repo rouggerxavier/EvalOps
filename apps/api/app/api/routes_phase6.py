@@ -272,6 +272,9 @@ def get_subscription(
             "monthly_trace_limit": int(plan.monthly_trace_limit) if plan else 1000,
             "monthly_eval_limit": int(plan.monthly_eval_limit) if plan else 500,
             "monthly_export_limit": int(plan.monthly_export_limit) if plan else 10,
+            "monthly_span_limit": int(plan.monthly_span_limit) if plan else 50_000,
+            "monthly_token_limit": int(plan.monthly_token_limit) if plan else 5_000_000,
+            "monthly_judge_budget_usd": float(plan.monthly_judge_budget_usd) if plan else 20.0,
         },
     }
 
@@ -294,5 +297,7 @@ def get_usage(
         "traces_ingested": int(row.traces_ingested or 0),
         "evaluations_run": int(row.evaluations_run or 0),
         "exports_created": int(row.exports_created or 0),
+        "spans_ingested": int(row.spans_ingested or 0),
+        "tokens_ingested": int(row.tokens_ingested or 0),
         "cost_usd": float(row.cost_usd or 0),
     }

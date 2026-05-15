@@ -181,7 +181,11 @@ def test_usage_increments_and_quota_exceeded() -> None:
         },
     )
     assert second.status_code == 402
-    assert second.json()["detail"] == "quota_exceeded"
+    # Phase 6 (G-07) extended the quota detail to a structured payload so the
+    # client can distinguish which monthly limit was hit.
+    detail = second.json()["detail"]
+    assert detail["error"] == "quota_exceeded"
+    assert detail["field"] == "traces_ingested"
 
     usage = client.get(f"/v1/organizations/{org_id}/usage", headers=headers)
     assert usage.status_code == 200

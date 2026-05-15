@@ -10,10 +10,12 @@ from sqlalchemy.orm import Session
 from app.domain.evaluators.base import EvaluatorResult
 from app.domain.evaluators.registry import REGISTRY
 from app.domain.rubrics.resolver import build_trace_context
-from app.models import EvaluationRun, EvaluationScore, EvaluatorRow, Rubric, RubricVersion, Span, Trace
+from app.domain.services.usage_service import judge_budget_for_org
+from app.models import EvaluationRun, EvaluationScore, EvaluatorRow, Project, Rubric, RubricVersion, Span, Trace
 from app.security import new_id
 
-MONTHLY_JUDGE_BUDGET_USD = 20.0  # default per project
+# Legacy fallback retained for callers without an org context.
+MONTHLY_JUDGE_BUDGET_USD = 20.0
 
 
 def _utcnow() -> datetime:
@@ -38,15 +40,47 @@ def _aggregate(scores: list[tuple[float, float]], method: str) -> float:
     return 0.0
 
 
-def _check_judge_budget(project_id: str, db: Session) -> bool:
-    """Return True if the project still has remaining judge budget this month."""
+def _judge_spent_this_month(project_id: str, db: Session) -> float:
     now = _utcnow()
     spent = db.query(func.sum(EvaluationRun.cost_usd)).filter(
         EvaluationRun.project_id == project_id,
         extract("year", EvaluationRun.created_at) == now.year,
         extract("month", EvaluationRun.created_at) == now.month,
     ).scalar() or 0.0
-    return float(spent) < MONTHLY_JUDGE_BUDGET_USD
+    return float(spent)
+
+
+def _budget_for_project(project_id: str, db: Session) -> float:
+    """G-12: judge budget comes from the project's org plan (with safe fallback)."""
+    project = db.get(Project, project_id)
+    if project is None:
+        return MONTHLY_JUDGE_BUDGET_USD
+    return judge_budget_for_org(db, project.organization_id)
+
+
+def _check_judge_budget(project_id: str, db: Session) -> bool:
+    """Return True if the project still has remaining judge budget this month."""
+    return _judge_spent_this_month(project_id, db) < _budget_for_project(project_id, db)
+
+
+def judge_budget_status(project_id: str, db: Session) -> tuple[bool, float, float]:
+    """Return ``(has_budget, spent_usd, budget_usd)`` for the current month."""
+    spent = _judge_spent_this_month(project_id, db)
+    budget = _budget_for_project(project_id, db)
+    return spent < budget, spent, budget
+
+
+def rubric_uses_llm_judge(rubric_version_id: str, db: Session) -> bool:
+    return (
+        db.query(EvaluatorRow.id)
+        .filter(
+            EvaluatorRow.rubric_version_id == rubric_version_id,
+            EvaluatorRow.type == "llm_judge",
+            EvaluatorRow.enabled.is_(True),
+        )
+        .first()
+        is not None
+    )
 
 
 def run_evaluation(

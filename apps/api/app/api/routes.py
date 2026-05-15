@@ -267,7 +267,21 @@ def ingest_traces(
     project: Project = Depends(get_project_from_api_key),
     db: Session = Depends(get_db),
 ) -> dict:
+    # G-07: pre-check monthly quotas for traces, spans and tokens together so a
+    # batch that would push the org over the limit is rejected atomically before
+    # any DB writes happen — no partial state is left behind.
     enforce_quota(db, project, "traces_ingested", len(payload.traces))
+    total_spans_in_batch = sum(len(t.spans) for t in payload.traces)
+    if total_spans_in_batch:
+        enforce_quota(db, project, "spans_ingested", total_spans_in_batch)
+    total_tokens_in_batch = sum(
+        ((sp.tokens_in or 0) + (sp.tokens_out or 0))
+        for t in payload.traces
+        for sp in t.spans
+    )
+    if total_tokens_in_batch:
+        enforce_quota(db, project, "tokens_ingested", total_tokens_in_batch)
+
     redact_header = request.headers.get("X-EvalOps-Redact")
 
     spans_cap = max_spans_per_trace()
@@ -406,7 +420,14 @@ def ingest_traces(
             trace_row.total_cost_usd = float(total_cost)
             db.add(trace_row)
             db.commit()
-            increment_usage(db, project.organization_id, traces=1, cost_usd=float(total_cost))
+            increment_usage(
+                db,
+                project.organization_id,
+                traces=1,
+                cost_usd=float(total_cost),
+                spans=len(trace_in.spans),
+                tokens=total_in + total_out,
+            )
             db.commit()
             results.append({"client_trace_id": trace_in.client_trace_id, "trace_id": trace_id})
         except Exception as exc:  # noqa: BLE001
