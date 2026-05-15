@@ -2,7 +2,8 @@
 
 Data: 2026-05-13
 Fonte: `docs/audits/evalops-important-rules-audit.md`
-Status: Fases 0–6 concluídas. Fase 7 liberada como próxima.
+Status: Fases 0–6 concluídas. Fase 7A (Alembic) concluída em 2026-05-14;
+restantes 7B–7F pendentes (ver `docs/plans/evalops-phase7-execution-plan.md`).
 Branch alvo: `main`.
 
 ## Status por fase
@@ -16,7 +17,8 @@ Branch alvo: `main`.
 | 4 — Audit log, privacy, exports | ✅ Concluída (2026-05-14) | G-06, G-08, G-09, G-10, G-21 fechados; 18/18 testes (test_phase10_audit_privacy_exports.py); regressão 42/42 verde. |
 | 5 — Contratos UX | ✅ Concluída (2026-05-14) | G-14, G-18, G-23 fechados; 5/5 testes backend (test_phase11_contracts_ux.py) + 23/23 testes frontend (tests/security.test.mjs); regressão 60/60 verde. |
 | 6 — Robustez quota/eval/storage | ✅ Concluída (2026-05-14) | G-07, G-11, G-12, G-20, G-25 fechados; 15/15 testes (test_phase12_quota_eval_storage.py); regressão 65/65 verde. Postgres validado estruturalmente (Docker indisponível localmente). |
-| 7 — Arquitetura e manutenção | ⏭️ Próxima | — |
+| 7A — Alembic + migrações formais | ✅ Concluída (2026-05-14) | G-19 fechado; baseline rev `0001_baseline` materializa schema Phase 1-6; SQLite upgrade/downgrade validado; Postgres pendente (Docker indisponível). Detalhe: `docs/ops/database-migrations.md` e `docs/plans/baseline.md` (Fase 7A). |
+| 7B–7F — Service extraction, logging, SDK retry, expires_at, Redis | ⏭️ Próximas | — (ver `docs/plans/evalops-phase7-execution-plan.md`) |
 
 ---
 
@@ -430,6 +432,16 @@ Regras obrigatórias para todas as fases de implementação:
 ---
 
 ### Fase 7 — Arquitetura e manutenção
+
+> **Progresso**: 7A (Alembic) ✅ 2026-05-14. 7B (service extraction +
+> ownership helper) ✅ 2026-05-15 — `trace_ingest_service`,
+> `export_service`, `api_key_service` extraídos; `app/ownership.py`
+> centraliza project/trace/prompt/dataset/experiment/rubric/export
+> access (substitui 6× `_*_or_404`). Routers críticos finos.
+> Regressão Fases 1–6 verde (isolada por arquivo). Detalhes em
+> `docs/plans/baseline.md` § Fase 7B. Restante de 7 (observabilidade,
+> request_id, logging JSON, SDK retry, frontend polling,
+> `ApiKey.expires_at`) fica para 7C+.
 
 - **Objetivo**: refatorar agora que regras estão corretas. Adicionar observabilidade e Alembic.
 - **Gaps cobertos**: G-19, G-22, G-26, G-27, G-29, G-30 + extração de services + dedup de `_project_or_404`.

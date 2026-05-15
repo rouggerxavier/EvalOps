@@ -1,3 +1,4 @@
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, status
@@ -13,10 +14,38 @@ from app.api.routes_phase6 import router as phase6_router
 from app.config import max_body_bytes
 from app.db import Base, SessionLocal, engine, ensure_schema_compatibility
 
+
+def _use_alembic() -> bool:
+    """Pick schema-management strategy at startup.
+
+    ``EVALOPS_USE_ALEMBIC=1`` runs ``alembic upgrade head`` instead of
+    ``Base.metadata.create_all``. Production should opt in; tests and
+    local SQLite dev keep ``create_all`` (the suite recreates the DB by
+    deleting ``evalops.db*`` between runs, which is incompatible with
+    Alembic's ``alembic_version`` row).
+
+    See ``docs/ops/database-migrations.md``.
+    """
+    return os.getenv("EVALOPS_USE_ALEMBIC", "").lower() in {"1", "true", "yes"}
+
+
+def _run_alembic_upgrade() -> None:
+    from alembic import command
+    from alembic.config import Config
+
+    api_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    cfg = Config(os.path.join(api_root, "alembic.ini"))
+    cfg.set_main_option("script_location", os.path.join(api_root, "alembic"))
+    command.upgrade(cfg, "head")
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    Base.metadata.create_all(bind=engine)
-    ensure_schema_compatibility()
+    if _use_alembic():
+        _run_alembic_upgrade()
+    else:
+        Base.metadata.create_all(bind=engine)
+        ensure_schema_compatibility()
     yield
 
 

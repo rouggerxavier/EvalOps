@@ -15,10 +15,13 @@ Supported URL forms:
 For Postgres deployments install the driver explicitly: ``pip install
 'psycopg[binary]>=3.2'`` (already wired in ``docker-compose.prod.yml``).
 
-Schema migrations are still managed by ``Base.metadata.create_all`` until
-Alembic is introduced in Phase 7. For new columns added in later phases,
-existing Postgres databases need the manual ALTER TABLE statements documented
-alongside each model field (see ``app/models.py`` and ``docs/plans/baseline.md``).
+Schema management (Phase 7A): production targets opt into Alembic by setting
+``EVALOPS_USE_ALEMBIC=1``; the FastAPI lifespan then runs
+``alembic upgrade head`` at startup. SQLite dev/test continues to use
+``Base.metadata.create_all`` because the test suite recreates the database
+by deleting ``evalops.db*`` between runs, which is incompatible with
+Alembic's ``alembic_version`` bookkeeping. See
+``docs/ops/database-migrations.md``.
 """
 from collections.abc import Generator
 import os

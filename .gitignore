@@ -42,6 +42,9 @@ apps/api/*
 !apps/api/tests/**
 !apps/api/scripts/
 !apps/api/scripts/**
+!apps/api/alembic.ini
+!apps/api/alembic/
+!apps/api/alembic/**
 apps/api/**/__pycache__/
 apps/api/**/*.py[cod]
 

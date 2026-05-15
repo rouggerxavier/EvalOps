@@ -4,12 +4,18 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.deps import ensure_org_membership, get_current_user
+from app.deps import get_current_user
 from app.domain.services.audit_service import record_audit
 from app.domain.services.experiment_service import (
     ExperimentValidationError,
     execute_experiment,
     validate_variants,
+)
+from app.ownership import (
+    load_dataset as _dataset_or_404_base,
+    load_experiment as _experiment_or_404_base,
+    load_project as _project_or_404_base,
+    load_prompt as _prompt_or_404_base,
 )
 from app.models import (
     Dataset,
@@ -45,45 +51,23 @@ from app.security import new_id
 router = APIRouter(prefix="/v1")
 
 
+# Ownership is centralised in app.ownership. These keep the
+# (id, user_id, db) call shape the handlers below already use.
+
 def _project_or_404(project_id: str, user_id: str, db: Session) -> Project:
-    project = db.get(Project, project_id)
-    if not project or project.archived_at is not None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="not_found")
-    ensure_org_membership(db, user_id, project.organization_id)
-    return project
+    return _project_or_404_base(db, user_id, project_id)
 
 
 def _prompt_or_404(prompt_id: str, user_id: str, db: Session) -> Prompt:
-    prompt = db.get(Prompt, prompt_id)
-    if not prompt:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="not_found")
-    project = db.get(Project, prompt.project_id)
-    if not project or project.archived_at is not None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="not_found")
-    ensure_org_membership(db, user_id, project.organization_id)
-    return prompt
+    return _prompt_or_404_base(db, user_id, prompt_id)
 
 
 def _dataset_or_404(dataset_id: str, user_id: str, db: Session) -> Dataset:
-    dataset = db.get(Dataset, dataset_id)
-    if not dataset:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="not_found")
-    project = db.get(Project, dataset.project_id)
-    if not project or project.archived_at is not None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="not_found")
-    ensure_org_membership(db, user_id, project.organization_id)
-    return dataset
+    return _dataset_or_404_base(db, user_id, dataset_id)
 
 
 def _experiment_or_404(experiment_id: str, user_id: str, db: Session) -> Experiment:
-    experiment = db.get(Experiment, experiment_id)
-    if not experiment:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="not_found")
-    project = db.get(Project, experiment.project_id)
-    if not project or project.archived_at is not None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="not_found")
-    ensure_org_membership(db, user_id, project.organization_id)
-    return experiment
+    return _experiment_or_404_base(db, user_id, experiment_id)
 
 
 @router.get("/projects/{project_id}/prompts")

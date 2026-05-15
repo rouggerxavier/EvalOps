@@ -3,7 +3,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.deps import ensure_org_membership, get_current_user
+from app.deps import get_current_user
 from app.domain.services.audit_service import record_audit
 from app.domain.services.eval_service import (
     judge_budget_status,
@@ -11,7 +11,8 @@ from app.domain.services.eval_service import (
     run_evaluation,
 )
 from app.domain.services.usage_service import enforce_quota, increment_usage
-from app.models import EvaluationRun, EvaluationScore, Project, Rubric, RubricVersion, Trace, User
+from app.models import EvaluationRun, EvaluationScore, Rubric, RubricVersion, Trace, User
+from app.ownership import load_project, load_trace
 from app.schemas import EvaluationRunOut, EvaluationRunRequest, EvaluationScoreOut
 
 router = APIRouter(prefix="/v1")
@@ -59,10 +60,7 @@ def trigger_evaluation(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
-    trace = db.get(Trace, payload.trace_id)
-    if not trace:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="not_found")
-    ensure_org_membership(db, user.id, trace.organization_id)
+    trace = load_trace(db, user.id, payload.trace_id)
 
     rubric = db.get(Rubric, payload.rubric_id)
     if not rubric:
@@ -85,9 +83,8 @@ def trigger_evaluation(
             },
         )
 
-    project = db.get(Project, trace.project_id)
-    if project:
-        enforce_quota(db, project, "evaluations_run", 1)
+    project = load_project(db, user.id, trace.project_id)
+    enforce_quota(db, project, "evaluations_run", 1)
 
     # G-12: when the rubric uses an llm_judge evaluator, gate at 402 if the
     # plan budget is already exhausted. Per-evaluator budget skipping inside
@@ -157,8 +154,7 @@ def get_evaluation_run(
     run = db.get(EvaluationRun, run_id)
     if not run:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="not_found")
-    trace = db.get(Trace, run.trace_id)
-    ensure_org_membership(db, user.id, trace.organization_id)
+    load_trace(db, user.id, run.trace_id)
     return {"run": _run_detail(run, db)}
 
 
@@ -169,14 +165,11 @@ def list_project_evaluations(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
-    project = db.get(Project, project_id)
-    if not project:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="not_found")
-    ensure_org_membership(db, user.id, project.organization_id)
+    project = load_project(db, user.id, project_id)
     runs = (
         db.query(EvaluationRun)
         .join(Trace, EvaluationRun.trace_id == Trace.id)
-        .filter(Trace.project_id == project_id)
+        .filter(Trace.project_id == project.id)
         .order_by(EvaluationRun.created_at.desc())
         .limit(limit)
         .all()
@@ -190,13 +183,10 @@ def list_trace_evaluations(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
-    trace = db.get(Trace, trace_id)
-    if not trace:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="not_found")
-    ensure_org_membership(db, user.id, trace.organization_id)
+    trace = load_trace(db, user.id, trace_id)
     runs = (
         db.query(EvaluationRun)
-        .filter(EvaluationRun.trace_id == trace_id)
+        .filter(EvaluationRun.trace_id == trace.id)
         .order_by(EvaluationRun.created_at.desc())
         .all()
     )

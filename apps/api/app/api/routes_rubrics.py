@@ -2,10 +2,11 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.deps import ensure_org_membership, get_current_user
+from app.deps import get_current_user
 from app.domain.rubrics.parser import parse_rubric_yaml
 from app.domain.services.audit_service import record_audit
 from app.models import EvaluatorRow, Project, Rubric, RubricVersion, User
+from app.ownership import get_owned_project, get_owned_rubric
 from app.schemas import RubricCreate, RubricOut, RubricVersionCreate, RubricVersionOut
 from app.security import new_id
 
@@ -34,30 +35,21 @@ def _persist_evaluators(db: Session, rubric_version_id: str, parsed_spec: dict) 
 
 @router.get("/projects/{project_id}/rubrics")
 def list_rubrics(
-    project_id: str,
-    user: User = Depends(get_current_user),
+    project: Project = Depends(get_owned_project),
     db: Session = Depends(get_db),
 ) -> dict:
-    project = db.get(Project, project_id)
-    if not project or project.archived_at is not None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="not_found")
-    ensure_org_membership(db, user.id, project.organization_id)
-    rubrics = db.query(Rubric).filter(Rubric.project_id == project_id).order_by(Rubric.created_at.desc()).all()
+    rubrics = db.query(Rubric).filter(Rubric.project_id == project.id).order_by(Rubric.created_at.desc()).all()
     return {"data": [RubricOut.model_validate(r).model_dump() for r in rubrics]}
 
 
 @router.post("/projects/{project_id}/rubrics", status_code=status.HTTP_201_CREATED)
 def create_rubric(
-    project_id: str,
     payload: RubricCreate,
+    project: Project = Depends(get_owned_project),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
-    project = db.get(Project, project_id)
-    if not project or project.archived_at is not None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="not_found")
-    ensure_org_membership(db, user.id, project.organization_id)
-
+    project_id = project.id
     try:
         spec = parse_rubric_yaml(payload.yaml_source)
     except ValueError as exc:
@@ -123,32 +115,19 @@ def create_rubric(
 
 @router.get("/rubrics/{rubric_id}")
 def get_rubric(
-    rubric_id: str,
-    user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    rubric: Rubric = Depends(get_owned_rubric),
 ) -> dict:
-    rubric = db.get(Rubric, rubric_id)
-    if not rubric:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="not_found")
-    project = db.get(Project, rubric.project_id)
-    ensure_org_membership(db, user.id, project.organization_id)
     return RubricOut.model_validate(rubric).model_dump()
 
 
 @router.get("/rubrics/{rubric_id}/versions")
 def list_rubric_versions(
-    rubric_id: str,
-    user: User = Depends(get_current_user),
+    rubric: Rubric = Depends(get_owned_rubric),
     db: Session = Depends(get_db),
 ) -> dict:
-    rubric = db.get(Rubric, rubric_id)
-    if not rubric:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="not_found")
-    project = db.get(Project, rubric.project_id)
-    ensure_org_membership(db, user.id, project.organization_id)
     versions = (
         db.query(RubricVersion)
-        .filter(RubricVersion.rubric_id == rubric_id)
+        .filter(RubricVersion.rubric_id == rubric.id)
         .order_by(RubricVersion.version.asc())
         .all()
     )
@@ -157,19 +136,13 @@ def list_rubric_versions(
 
 @router.get("/rubrics/{rubric_id}/versions/{version_num}")
 def get_rubric_version(
-    rubric_id: str,
     version_num: int,
-    user: User = Depends(get_current_user),
+    rubric: Rubric = Depends(get_owned_rubric),
     db: Session = Depends(get_db),
 ) -> dict:
-    rubric = db.get(Rubric, rubric_id)
-    if not rubric:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="not_found")
-    project = db.get(Project, rubric.project_id)
-    ensure_org_membership(db, user.id, project.organization_id)
     ver = (
         db.query(RubricVersion)
-        .filter(RubricVersion.rubric_id == rubric_id, RubricVersion.version == version_num)
+        .filter(RubricVersion.rubric_id == rubric.id, RubricVersion.version == version_num)
         .one_or_none()
     )
     if not ver:
@@ -179,16 +152,13 @@ def get_rubric_version(
 
 @router.post("/rubrics/{rubric_id}/versions", status_code=status.HTTP_201_CREATED)
 def create_rubric_version(
-    rubric_id: str,
     payload: RubricVersionCreate,
+    rubric: Rubric = Depends(get_owned_rubric),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
-    rubric = db.get(Rubric, rubric_id)
-    if not rubric:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="not_found")
+    rubric_id = rubric.id
     project = db.get(Project, rubric.project_id)
-    ensure_org_membership(db, user.id, project.organization_id)
 
     try:
         spec = parse_rubric_yaml(payload.yaml_source)

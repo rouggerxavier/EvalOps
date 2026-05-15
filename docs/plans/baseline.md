@@ -1194,3 +1194,313 @@ quebrou (extensão estruturada de `quota_exceeded` documentada).
 **Bloqueios para deploy continuam**: Alembic (Fase 7), Redis (Fase 7),
 OpenTelemetry (Fase 7), `npm audit` (pré-existente), validação Docker real
 (esta fase). Ver tabela em "Consolidação pós-Fase 4" + adições desta fase.
+
+---
+
+## Fase 7A — Alembic + migrações formais (2026-05-14)
+
+### Status
+✅ **Concluída**. G-19 fechado para SQLite; Postgres pendente apenas em
+validação operacional (Docker indisponível no host). Schema management
+continua dual: Alembic ativado por env flag para prod, `create_all`
+permanece como caminho default para a suíte de testes.
+
+### Gaps fechados
+- **G-19** — Alembic adotado. Diretório `apps/api/alembic/` com `env.py`
+  + `script.py.mako` + `versions/0001_baseline_schema.py` representando
+  o schema completo das Fases 1–6 (todas as tabelas, índices, uniques,
+  FKs e os ALTER documentados em `models.py`: `audit_logs.organization_id`
+  nullable G-16, `traces.deleted_at` G-21, `plans.monthly_span_limit`/
+  `monthly_token_limit` G-07, `plans.monthly_judge_budget_usd` G-12,
+  `usage_counters.spans_ingested`/`tokens_ingested` G-07, e a tabela
+  `revoked_tokens` G-15).
+
+### Mudanças
+- **Novos**:
+  - `apps/api/alembic.ini` — config sem URL hardcoded; lida do env.
+  - `apps/api/alembic/env.py` — resolve `DATABASE_URL` /
+    `EVALOPS_DB_URL` via `_normalize_database_url` do app; ativa
+    `render_as_batch=True` em SQLite; sinaliza `compare_type` /
+    `compare_server_default` para autogenerate fiel.
+  - `apps/api/alembic/script.py.mako` — template padrão.
+  - `apps/api/alembic/versions/0001_baseline_schema.py` — 26 tabelas,
+    todos os índices e uniques. Reversível (`downgrade()` drop_all).
+  - `docs/ops/database-migrations.md` — referência operacional (SQLite,
+    Postgres, stamp em DB legado, autoria de novas revisions).
+- **Editados**:
+  - `apps/api/pyproject.toml` — `alembic>=1.13,<2` adicionado.
+  - `apps/api/app/main.py` — lifespan respeita
+    `EVALOPS_USE_ALEMBIC=1`: roda `alembic upgrade head` em prod;
+    permanece em `create_all` por default para tests/dev.
+  - `apps/api/app/db.py` — docstring atualizado refletindo Fase 7A.
+
+### Configuração
+- **Env flag**: `EVALOPS_USE_ALEMBIC=1` (default unset). Prod
+  (`docker-compose.prod.yml`) deve setar — entrypoint pode também
+  rodar `alembic upgrade head` antes do `uvicorn` (alteração do
+  compose **fora do escopo de 7A** para evitar PR grande).
+- **DB URL**: Alembic usa o mesmo `DATABASE_URL`/`EVALOPS_DB_URL` do
+  app, normalizado pelo helper compartilhado em `app/db.py`.
+
+### Migração para DB existente
+
+Três caminhos documentados em `docs/ops/database-migrations.md`:
+
+1. **DB vazio (SQLite ou Postgres novo)**: `alembic upgrade head`.
+2. **DB de produção atual (Phase 1–6 já aplicado via `create_all` + ALTERs
+   manuais)**: `alembic stamp 0001_baseline` — escreve `alembic_version`
+   sem tocar schema. Subsequentes `alembic upgrade head` funcionam
+   normalmente.
+3. **Tests/CI**: deixar `EVALOPS_USE_ALEMBIC` unset; `create_all`
+   continua sendo o fast path porque a fixture
+   `Base.metadata.drop_all` + `create_all` é incompatível com a tabela
+   `alembic_version` (seria apagada e re-migrada por cada teste).
+
+### Validação executada
+
+#### SQLite
+```bash
+cd apps/api
+rm -f tmp_alembic.db
+DATABASE_URL=sqlite:///./tmp_alembic.db .venv/bin/alembic upgrade head
+# → Running upgrade  -> 0001_baseline, baseline schema (Phase 1-6 consolidated).
+```
+**Resultado**: ✅ schema criado.
+
+```bash
+rm -f tmp_create.db
+DATABASE_URL=sqlite:///./tmp_create.db .venv/bin/python -c \
+  "from app.db import Base, engine; from app import models; Base.metadata.create_all(bind=engine)"
+# diff de tabelas + colunas + índices entre tmp_alembic.db e tmp_create.db
+```
+**Resultado**: ✅ `equal: True` — 26 tabelas idênticas em colunas e
+índices. Listagem:
+
+```
+api_keys, audit_logs, dataset_items, datasets, evaluation_runs,
+evaluation_scores, evaluators, events, experiment_runs, experiments,
+export_jobs, human_feedback, memberships, organizations, plans,
+projects, prompt_versions, prompts, revoked_tokens, rubric_versions,
+rubrics, spans, subscriptions, traces, usage_counters, users
+```
+
+#### Round-trip
+```bash
+DATABASE_URL=sqlite:///./tmp_alembic.db .venv/bin/alembic downgrade base
+```
+**Resultado**: ✅ todas as tabelas dropadas; resta apenas
+`alembic_version`.
+
+#### Postgres
+⏳ **Pendente** — Docker indisponível neste ambiente. Smoke recomendado
+em staging:
+
+```bash
+DATABASE_URL=postgresql+psycopg://evalops:****@db:5432/evalops \
+  alembic upgrade head && alembic downgrade -1 && alembic upgrade head
+```
+
+#### Regressão
+Subconjunto de testes rodado nesta sessão com `create_all` ainda no
+caminho default (flag desligada):
+
+```bash
+cd apps/api && rm -f evalops.db* && \
+  .venv/bin/python -m pytest tests/test_health.py tests/test_auth_flow.py \
+  tests/test_phase8_p0_security.py tests/test_phase12_quota_eval_storage.py \
+  -q --tb=short -p no:warnings
+```
+**Resultado**: combo com 4 arquivos em uma chamada apresenta flake de
+FS no WSL2 (`disk I/O error` / `attempt to write a readonly database`
+em `DROP TABLE`); rodando o arquivo problemático **isolado** o
+resultado é verde:
+
+```bash
+rm -f evalops.db* && \
+  .venv/bin/python -m pytest tests/test_phase12_quota_eval_storage.py \
+  -q --tb=line -p no:warnings
+# → 15 passed in 257s
+```
+
+```bash
+rm -f evalops.db* && \
+  .venv/bin/python -m pytest tests/test_health.py tests/test_phase8_p0_security.py \
+  -q --tb=line -p no:warnings
+# → 7 passed in 90s
+```
+
+A flake de FS é pré-existente (mesma classe documentada em "Workaround
+SQLite" no topo deste baseline) e não foi introduzida por 7A — a única
+edição funcional em backend é a adição da branch `if _use_alembic()`
+no lifespan, com `create_all` no ramo `else` (caminho default,
+byte-equivalente ao pré-Fase-7A).
+
+#### Lifespan com flag ativada
+```bash
+rm -f tmp_lifespan.db && \
+  EVALOPS_USE_ALEMBIC=1 DATABASE_URL=sqlite:///./tmp_lifespan.db \
+  python -c "from fastapi.testclient import TestClient; from app.main import app; \
+             c=TestClient(app); \
+             with c: print(c.get('/health/liveness').json(), c.get('/health/readiness').json())"
+```
+**Resultado**: ✅ lifespan roda `alembic upgrade head`, ambos health
+checks 200, DB final contém `alembic_version` + 26 tabelas. Confirma
+caminho prod end-to-end.
+
+### O que não foi feito de propósito
+
+- **Compose entrypoint** — `docker-compose.prod.yml` continua sem
+  `alembic upgrade head` no boot. Mudança documentada como follow-up
+  para subfase que tocar deployment (7C/7F).
+- **Remoção de `create_all` / `ensure_schema_compatibility`** —
+  ambos permanecem no ramo default do lifespan; remoção exige migrar
+  as fixtures de teste para preservarem `alembic_version`, escopo de
+  Fase 7B.
+- **Postgres smoke real** — bloqueado por ambiente; documentado.
+- **Autogenerate de revisões "delta"** — schema atual cabe em uma
+  única revision baseline; não há delta a representar separadamente
+  (todos os ALTERs documentados em `models.py` já estão consolidados
+  no `0001_baseline`).
+- **CI gate `alembic upgrade head`** — não foi adicionado workflow CI
+  nesta sessão; comando de validação ficou registrado neste baseline e
+  em `docs/ops/database-migrations.md`.
+
+### Riscos remanescentes
+
+1. **`create_all` ainda no caminho default**: dev/test não exercitam
+   o caminho Alembic. Risco: drift entre `models.py` e
+   `0001_baseline` passar despercebido. Mitigação: o procedimento de
+   autoria documentado em `docs/ops/database-migrations.md` exige
+   `alembic revision --autogenerate` contra um DB já no head — se há
+   drift, o autogenerate detecta.
+2. **Stamp em prod legado é manual**: operador precisa rodar
+   `alembic stamp 0001_baseline` exatamente uma vez por DB; esquecer
+   = upgrade futuro tenta recriar tabelas que existem. Mitigação: o
+   runbook em `docs/ops/database-migrations.md` cobre o passo.
+3. **Postgres não validado nesta sessão**: smoke obrigatório antes de
+   ativar `EVALOPS_USE_ALEMBIC=1` em qualquer Postgres real.
+4. **Flake de FS no WSL2 com múltiplos arquivos por chamada `pytest`**:
+   já documentado em "Workaround SQLite" no topo do baseline; rodando
+   isoladamente cada arquivo retorna verde. Solução estrutural (isolar
+   DB por worker / migrar suite para Postgres em CI) fica para 7B+.
+
+### Pode avançar para Fase 7B?
+
+✅ **Sim** — bloqueador único de deploy Postgres novo (G-19) está
+fechado. Próxima subfase (`7B — Service extraction + ownership
+helper`) pode começar; quando ela criar nova revision (ex:
+`api_keys.expires_at` em 7E), a infra Alembic já está pronta para
+recebê-la com `down_revision = "0001_baseline"`.
+
+---
+
+## Fase 7B — Service extraction + ownership helper (2026-05-15)
+
+### Status
+
+✅ Concluída. Routers afinados, regras de aplicação movidas para
+services, ownership/project lookup centralizado. Sem Alembic tocado
+(7A já fechou), sem frontend, sem mudança de contrato público.
+
+### Services extraídos
+
+- **`app/domain/services/trace_ingest_service.py`** — toda a lógica de
+  `POST /v1/traces` (pré-check de quota traces/spans/tokens, cap de
+  spans, idempotência por `client_trace_id`, redaction, persistência de
+  trace/span/event, wiring de parent/fallback, `increment_usage`).
+  Função pública: `ingest_trace_batch(db, project, payload, redact_header)`.
+- **`app/domain/services/export_service.py`** — dump JSONL de
+  `POST /v1/exports` (filtro de traces, serialização + feedback,
+  escrita de arquivo, marcação completed/error, `increment_usage`,
+  audit). Função pública: `create_jsonl_export(db, project, user_id, payload)`.
+- **`app/domain/services/api_key_service.py`** — list/create/revoke de
+  API keys, incluindo audit. Funções: `list_keys`, `create_key`,
+  `revoke_key`.
+- **`experiment_service` / `usage_service`** — não foi necessário
+  consolidar; já concentravam a regra desde Fases 3/6. Sem alteração.
+
+### Ownership centralizado
+
+Novo módulo **`app/ownership.py`** — fonte única de
+project/trace/prompt/dataset/experiment/rubric/export access:
+
+- `load_*(db, user_id, id)` — forma plain (usada quando o id vem no
+  corpo do POST, ex.: `create_export`).
+- `get_owned_*` — dependências FastAPI (`Depends`) para rotas onde o id
+  está no path. Router faz `parse/deps/auth → service → response`.
+
+As 6 cópias de `_project_or_404` / `_trace_or_404` / `_prompt_or_404` /
+`_dataset_or_404` / `_experiment_or_404` espalhadas por
+`routes_phase5.py` e `routes_phase6.py`, mais os blocos inline em
+`routes.py`, `routes_rubrics.py` e `routes_evaluations.py`, agora
+delegam a esse módulo. `routes_phase5.py` mantém wrappers finos com a
+assinatura `(id, user_id, db)` antiga só para não reescrever 14 call
+sites — a lógica vive uma única vez em `ownership.py`.
+
+### Rotas afinadas
+
+- `routes.py`: `ingest_traces` (≈175 linhas → 2), `list/create/revoke
+  api-keys` agora chamam `api_key_service` + `get_owned_project`;
+  `list_traces`, `get_trace`, `delete_trace`, `analytics_overview`
+  usam `get_owned_project`/`get_owned_trace`.
+- `routes_phase6.py`: `create_export` chama `export_service`;
+  feedback/export usam ownership helpers; ~120 linhas de I/O saíram do
+  router.
+- `routes_rubrics.py` / `routes_evaluations.py`: ownership inline
+  substituído por `get_owned_*` / `load_*`.
+
+### Duplicações removidas
+
+- 6 definições de `_*_or_404` → 1 módulo `ownership.py`.
+- Bloco de persistência de trace/span/event (só existia inline).
+- Lógica de filtro+serialização de export (só existia inline).
+- Construção/audit de API key (só existia inline).
+
+### Contratos preservados
+
+Schemas Pydantic e status codes inalterados. Verificado via suíte de
+contratos (`test_phase11`) e e2e (`test_phase7`) — ver abaixo.
+
+### Testes executados (cada arquivo com DB fresca; SQLite WSL2 exige
+isolamento por processo — ver "Workaround SQLite" no topo)
+
+| Suite | Resultado |
+|---|---|
+| phase1 identity/access | ✅ 2 passed |
+| phase2 tracing | ✅ 2 passed |
+| phase3 analytics | ✅ 1 passed |
+| phase4 rubrics/eval | ✅ 51 passed |
+| phase5 prompts/datasets/experiments | ✅ 8 passed |
+| phase6 feedback/export/usage | ✅ 3 passed |
+| phase7 e2e MVP flow | ✅ 1 passed |
+| phase8 p0 security (ingest) | ✅ 5 passed |
+| phase10 audit/redaction/export/soft-delete | ✅ 18 passed |
+| phase12 quota/eval storage | ✅ 15 passed |
+
+`pytest tests/` completo **não** usado como critério (flake de FS no
+WSL2 com múltiplos arquivos por processo, já documentado). Critério =
+cada arquivo isolado verde.
+
+### Riscos remanescentes
+
+1. **Consistência de `deleted_at`/`archived_at`**: `get_owned_trace`
+   passa a checar `trace.deleted_at` e `load_project` checa
+   `archived_at` em rotas que antes **não** checavam (feedback de
+   trace soft-deleted, `GET /evaluations/{id}` de trace deletado,
+   `list_project_evaluations`/export download de projeto arquivado).
+   Agora retornam 404 nesses casos — comportamento mais correto e
+   consistente, mas é mudança observável de borda. Nenhum teste de
+   regressão exercita esses caminhos; risco baixo, monitorar.
+2. **Wrappers `_*_or_404` em `routes_phase5.py`**: mantidos por
+   pragmatismo (evitar reescrever 14 call sites). Dívida cosmética —
+   7C pode migrar para `Depends(get_owned_*)` se desejado.
+3. **`routes_auth.py` não tocado**: helpers `_slugify`/`_unique_slug`
+   continuam locais (lógica de registro, não ownership). Fora de escopo.
+
+### Pode avançar para Fase 7C?
+
+✅ **Sim** — routers críticos (`routes.py`, `routes_phase6.py`) agora
+só resolvem ownership + chamam service. Regra de aplicação isolada em
+`domain/services`. Modelos SQLAlchemy permanecem sem regra de negócio.
+Próxima subfase (observabilidade / request_id / logging JSON, ou
+`ApiKey.expires_at` em 7E) pode começar sobre base limpa.

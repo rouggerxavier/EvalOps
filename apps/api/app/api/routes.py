@@ -1,5 +1,4 @@
 import base64
-import json as _json
 from datetime import datetime
 from decimal import Decimal
 
@@ -7,18 +6,16 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import func, or_, and_
 from sqlalchemy.orm import Session
 
-from app.config import max_spans_per_trace
 from app.db import get_db
 from app.deps import ensure_org_membership, get_current_user, get_project_from_api_key
+from app.domain.services import api_key_service
 from app.domain.services.audit_service import record_audit
-from app.domain.services.redaction_service import should_redact
-from app.domain.services.usage_service import enforce_quota, increment_usage
-from app.infra.llm.pricing import compute_cost_usd
-from app.models import ApiKey, AuditLog, Event, HumanFeedback, Membership, Organization, Project, Span, Trace, User, utcnow
+from app.domain.services.trace_ingest_service import ingest_trace_batch
+from app.models import Event, HumanFeedback, Membership, Organization, Project, Span, Trace, User, utcnow
+from app.ownership import get_owned_project, get_owned_trace
 from app.schemas import (
     ApiKeyCreate,
     ApiKeyCreateOut,
-    ApiKeyOut,
     OrganizationCreate,
     OrganizationOut,
     ProjectCreate,
@@ -26,7 +23,7 @@ from app.schemas import (
     TraceBatchIn,
     TraceOut,
 )
-from app.security import generate_api_key, hash_api_key, new_id
+from app.security import new_id
 
 router = APIRouter(prefix="/v1")
 
@@ -155,109 +152,32 @@ def create_project(
 
 @router.get("/projects/{project_id}/api-keys")
 def list_api_keys(
-    project_id: str,
-    user: User = Depends(get_current_user),
+    project: Project = Depends(get_owned_project),
     db: Session = Depends(get_db),
 ) -> dict:
-    project = db.get(Project, project_id)
-    if not project or project.archived_at is not None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="not_found")
-    ensure_org_membership(db, user.id, project.organization_id)
-    keys = (
-        db.query(ApiKey)
-        .filter(ApiKey.project_id == project_id)
-        .order_by(ApiKey.created_at.desc())
-        .all()
-    )
-    data = [
-        ApiKeyOut(
-            id=k.id,
-            prefix=k.prefix,
-            name=k.name,
-            environment=k.environment,
-            scopes=[s for s in k.scopes.split(",") if s],
-            rate_limit_per_minute=k.rate_limit_per_minute,
-            created_at=k.created_at,
-            revoked_at=k.revoked_at,
-        ).model_dump()
-        for k in keys
-    ]
-    return {"data": data}
+    return {"data": api_key_service.list_keys(db, project)}
 
 
 @router.post("/projects/{project_id}/api-keys", status_code=status.HTTP_201_CREATED, response_model=ApiKeyCreateOut)
 def create_api_key(
-    project_id: str,
     payload: ApiKeyCreate,
+    project: Project = Depends(get_owned_project),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> ApiKeyCreateOut:
-    project = db.get(Project, project_id)
-    if not project or project.archived_at is not None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="not_found")
-    ensure_org_membership(db, user.id, project.organization_id)
-    raw_key, prefix = generate_api_key(payload.environment)
-    scopes = ",".join(payload.scopes)
-    row = ApiKey(
-        id=new_id("key"),
-        project_id=project_id,
-        prefix=prefix,
-        hash=hash_api_key(raw_key),
-        name=payload.name,
-        environment=payload.environment,
-        scopes=scopes,
-        rate_limit_per_minute=60,
-    )
-    db.add(row)
-    record_audit(
-        db, "api_key.created",
-        organization_id=project.organization_id,
-        actor_user_id=user.id,
-        target_type="api_key",
-        target_id=row.id,
-        payload={"project_id": project_id, "key_name": payload.name, "environment": payload.environment},
-    )
-    db.commit()
-    db.refresh(row)
-    return ApiKeyCreateOut(
-        id=row.id,
-        prefix=row.prefix,
-        name=row.name,
-        environment=row.environment,
-        scopes=payload.scopes,
-        rate_limit_per_minute=row.rate_limit_per_minute,
-        created_at=row.created_at,
-        revoked_at=row.revoked_at,
-        key=raw_key,
-    )
+    return api_key_service.create_key(db, project, payload, user.id)
 
 
 @router.post("/projects/{project_id}/api-keys/{key_id}/revoke", status_code=status.HTTP_204_NO_CONTENT)
 def revoke_api_key(
-    project_id: str,
     key_id: str,
+    project: Project = Depends(get_owned_project),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> None:
-    project = db.get(Project, project_id)
-    if not project or project.archived_at is not None:
+    key = api_key_service.revoke_key(db, project, key_id, user.id)
+    if key is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="not_found")
-    ensure_org_membership(db, user.id, project.organization_id)
-    key = db.get(ApiKey, key_id)
-    if not key or key.project_id != project_id:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="not_found")
-    if key.revoked_at is None:
-        key.revoked_at = utcnow()
-        db.add(key)
-        record_audit(
-            db, "api_key.revoked",
-            organization_id=project.organization_id,
-            actor_user_id=user.id,
-            target_type="api_key",
-            target_id=key.id,
-            payload={"project_id": project_id, "key_name": key.name},
-        )
-        db.commit()
 
 
 @router.post("/traces", status_code=status.HTTP_202_ACCEPTED)
@@ -267,191 +187,21 @@ def ingest_traces(
     project: Project = Depends(get_project_from_api_key),
     db: Session = Depends(get_db),
 ) -> dict:
-    # G-07: pre-check monthly quotas for traces, spans and tokens together so a
-    # batch that would push the org over the limit is rejected atomically before
-    # any DB writes happen — no partial state is left behind.
-    enforce_quota(db, project, "traces_ingested", len(payload.traces))
-    total_spans_in_batch = sum(len(t.spans) for t in payload.traces)
-    if total_spans_in_batch:
-        enforce_quota(db, project, "spans_ingested", total_spans_in_batch)
-    total_tokens_in_batch = sum(
-        ((sp.tokens_in or 0) + (sp.tokens_out or 0))
-        for t in payload.traces
-        for sp in t.spans
-    )
-    if total_tokens_in_batch:
-        enforce_quota(db, project, "tokens_ingested", total_tokens_in_batch)
-
     redact_header = request.headers.get("X-EvalOps-Redact")
-
-    spans_cap = max_spans_per_trace()
-    for idx, trace_in in enumerate(payload.traces):
-        span_count = len(trace_in.spans)
-        if span_count > spans_cap:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail={
-                    "error": "too_many_spans",
-                    "trace_index": idx,
-                    "client_trace_id": trace_in.client_trace_id,
-                    "spans": span_count,
-                    "limit": spans_cap,
-                },
-            )
-
-    results: list[dict] = []
-    errors: list[dict] = []
-
-    for idx, trace_in in enumerate(payload.traces):
-        try:
-            if trace_in.ended_at < trace_in.started_at:
-                raise ValueError("ended_at must be >= started_at")
-
-            if trace_in.client_trace_id:
-                existing = (
-                    db.query(Trace)
-                    .filter(
-                        Trace.project_id == project.id,
-                        Trace.client_trace_id == trace_in.client_trace_id,
-                    )
-                    .one_or_none()
-                )
-                if existing is not None:
-                    results.append({"client_trace_id": trace_in.client_trace_id, "trace_id": existing.id})
-                    continue
-
-            do_redact = should_redact(trace_in.tags, redact_header)
-            trace_id = new_id("tr")
-            duration_ms = int((trace_in.ended_at - trace_in.started_at).total_seconds() * 1000)
-            trace_row = Trace(
-                id=trace_id,
-                project_id=project.id,
-                organization_id=project.organization_id,
-                client_trace_id=trace_in.client_trace_id,
-                name=trace_in.name,
-                service=trace_in.service,
-                environment=trace_in.environment,
-                status=trace_in.status,
-                started_at=trace_in.started_at,
-                ended_at=trace_in.ended_at,
-                duration_ms=duration_ms,
-                tags=trace_in.tags,
-                user_ref=trace_in.user_ref,
-                metadata_json=trace_in.metadata,
-                redacted=do_redact,
-            )
-            db.add(trace_row)
-            db.flush()
-
-            client_to_span: dict[str, str] = {}
-            fallback_refs: list[tuple[Span, str]] = []
-            parent_refs: list[tuple[Span, str]] = []
-            total_in = 0
-            total_out = 0
-            total_cost = Decimal("0")
-
-            for span_in in trace_in.spans:
-                if span_in.ended_at < span_in.started_at:
-                    raise ValueError(f"span '{span_in.client_span_id}' has invalid timestamps")
-                span_id = new_id("sp")
-                client_to_span[span_in.client_span_id] = span_id
-                duration_span_ms = int((span_in.ended_at - span_in.started_at).total_seconds() * 1000)
-                if span_in.cost_usd is None:
-                    cost = compute_cost_usd(span_in.provider, span_in.model, span_in.tokens_in, span_in.tokens_out)
-                else:
-                    cost = Decimal(str(span_in.cost_usd))
-                row = Span(
-                    id=span_id,
-                    trace_id=trace_id,
-                    parent_span_id=None,
-                    type=span_in.type,
-                    name=span_in.name,
-                    status=span_in.status,
-                    started_at=span_in.started_at,
-                    ended_at=span_in.ended_at,
-                    duration_ms=duration_span_ms,
-                    provider=span_in.provider,
-                    model=span_in.model,
-                    prompt_version_ref=span_in.prompt_version_ref,
-                    messages_in=None if do_redact else span_in.messages_in,
-                    messages_out=None if do_redact else span_in.messages_out,
-                    tools=span_in.tools,
-                    tokens_in=span_in.tokens_in,
-                    tokens_out=span_in.tokens_out,
-                    cost_usd=float(cost),
-                    fallback_from_span_id=None,
-                    input=None if do_redact else span_in.input,
-                    output=None if do_redact else span_in.output,
-                    error=span_in.error,
-                    metadata_json=span_in.metadata,
-                )
-                db.add(row)
-                if span_in.parent_client_span_id:
-                    parent_refs.append((row, span_in.parent_client_span_id))
-                if span_in.fallback_from_client_span_id:
-                    fallback_refs.append((row, span_in.fallback_from_client_span_id))
-                total_in += span_in.tokens_in or 0
-                total_out += span_in.tokens_out or 0
-                total_cost += cost
-                for event_in in span_in.events:
-                    db.add(
-                        Event(
-                            id=new_id("ev"),
-                            span_id=span_id,
-                            type=event_in.type,
-                            occurred_at=event_in.occurred_at,
-                            payload=event_in.payload,
-                        )
-                    )
-
-            for span_row, parent_client_id in parent_refs:
-                parent_id = client_to_span.get(parent_client_id)
-                if parent_id is None:
-                    raise ValueError(f"parent span '{parent_client_id}' not found")
-                span_row.parent_span_id = parent_id
-
-            for span_row, fallback_client_id in fallback_refs:
-                fallback_id = client_to_span.get(fallback_client_id)
-                if fallback_id:
-                    span_row.fallback_from_span_id = fallback_id
-
-            trace_row.total_tokens_in = total_in
-            trace_row.total_tokens_out = total_out
-            trace_row.total_cost_usd = float(total_cost)
-            db.add(trace_row)
-            db.commit()
-            increment_usage(
-                db,
-                project.organization_id,
-                traces=1,
-                cost_usd=float(total_cost),
-                spans=len(trace_in.spans),
-                tokens=total_in + total_out,
-            )
-            db.commit()
-            results.append({"client_trace_id": trace_in.client_trace_id, "trace_id": trace_id})
-        except Exception as exc:  # noqa: BLE001
-            db.rollback()
-            errors.append({"index": idx, "client_trace_id": trace_in.client_trace_id, "message": str(exc)})
-
-    return {"ingested": len(results), "results": results, "errors": errors}
+    return ingest_trace_batch(db, project, payload, redact_header)
 
 
 @router.get("/traces")
 def list_traces(
-    project_id: str,
     trace_status: str | None = Query(None, alias="status"),
     environment: str | None = None,
     name: str | None = None,
     limit: int = 50,
     cursor: str | None = None,
-    user: User = Depends(get_current_user),
+    project: Project = Depends(get_owned_project),
     db: Session = Depends(get_db),
 ) -> dict:
-    project = db.get(Project, project_id)
-    if not project or project.archived_at is not None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="not_found")
-    ensure_org_membership(db, user.id, project.organization_id)
+    project_id = project.id
     query = db.query(Trace).filter(Trace.project_id == project_id, Trace.deleted_at.is_(None))
     if trace_status:
         query = query.filter(Trace.status == trace_status)
@@ -478,14 +228,10 @@ def list_traces(
 
 @router.get("/traces/{trace_id}")
 def get_trace(
-    trace_id: str,
-    user: User = Depends(get_current_user),
+    trace: Trace = Depends(get_owned_trace),
     db: Session = Depends(get_db),
 ) -> dict:
-    trace = db.get(Trace, trace_id)
-    if not trace or trace.deleted_at is not None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="not_found")
-    ensure_org_membership(db, user.id, trace.organization_id)
+    trace_id = trace.id
     spans = db.query(Span).filter(Span.trace_id == trace_id).all()
     span_ids = [span.id for span in spans]
     events = db.query(Event).filter(Event.span_id.in_(span_ids)).all() if span_ids else []
@@ -556,14 +302,10 @@ def get_trace(
 
 @router.delete("/traces/{trace_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_trace(
-    trace_id: str,
+    trace: Trace = Depends(get_owned_trace),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> None:
-    trace = db.get(Trace, trace_id)
-    if not trace or trace.deleted_at is not None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="not_found")
-    ensure_org_membership(db, user.id, trace.organization_id)
     trace.deleted_at = utcnow()
     db.add(trace)
     record_audit(
@@ -579,17 +321,12 @@ def delete_trace(
 
 @router.get("/analytics/overview")
 def analytics_overview(
-    project_id: str,
     environment: str | None = None,
     limit_days: int = 14,
-    user: User = Depends(get_current_user),
+    project: Project = Depends(get_owned_project),
     db: Session = Depends(get_db),
 ) -> dict:
-    project = db.get(Project, project_id)
-    if not project or project.archived_at is not None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="not_found")
-    ensure_org_membership(db, user.id, project.organization_id)
-
+    project_id = project.id
     base_query = db.query(Trace).filter(Trace.project_id == project_id, Trace.deleted_at.is_(None))
     if environment:
         base_query = base_query.filter(Trace.environment == environment)
