@@ -406,3 +406,76 @@ def test_double_delete_returns_404() -> None:
     assert first.status_code == 204
     second = client.delete(f"/v1/traces/{trace_id}", headers=headers)
     assert second.status_code == 404
+
+
+# ── Fix-7B.1: soft delete consistency ─────────────────────────────────────────
+
+def test_export_excludes_soft_deleted_trace() -> None:
+    client = _client()
+    _, project_id, api_key, headers = _bootstrap(client)
+    active = _ingest(client, api_key, "ct-exp-active")["results"][0]["trace_id"]
+    deleted = _ingest(client, api_key, "ct-exp-deleted")["results"][0]["trace_id"]
+    assert client.delete(f"/v1/traces/{deleted}", headers=headers).status_code == 204
+
+    exp_res = client.post(
+        "/v1/exports", headers=headers,
+        json={"project_id": project_id, "format": "jsonl", "filters": {}},
+    )
+    assert exp_res.status_code == 202, exp_res.text
+    export_id = exp_res.json()["export_id"]
+
+    with SessionLocal() as db:
+        job = db.get(ExportJob, export_id)
+        assert job.row_count == 1, "row_count must count only active traces"
+
+    dl_res = client.get(f"/v1/exports/{export_id}/download", headers=headers)
+    assert dl_res.status_code == 200, dl_res.text
+    lines = [json.loads(ln) for ln in dl_res.text.strip().split("\n") if ln]
+    ids = [row["id"] for row in lines]
+    assert active in ids
+    assert deleted not in ids
+
+
+def test_reingest_deleted_client_trace_id_returns_409() -> None:
+    client = _client()
+    _, _proj, api_key, headers = _bootstrap(client)
+    ingest = _ingest(client, api_key, "ct-reingest-del")
+    trace_id = ingest["results"][0]["trace_id"]
+    assert client.delete(f"/v1/traces/{trace_id}", headers=headers).status_code == 204
+
+    t0, t1 = _ts()
+    payload = {
+        "traces": [{
+            "client_trace_id": "ct-reingest-del",
+            "name": "test.trace",
+            "environment": "prod",
+            "started_at": t0,
+            "ended_at": t1,
+            "status": "ok",
+            "tags": {},
+            "spans": [],
+        }]
+    }
+    res = client.post("/v1/traces", headers={"X-EvalOps-Key": api_key}, json=payload)
+    assert res.status_code == 409, res.text
+    detail = res.json()["detail"]
+    assert detail["error"] == "trace_deleted"
+    assert detail["client_trace_id"] == "ct-reingest-del"
+
+    with SessionLocal() as db:
+        rows = (
+            db.query(Trace)
+            .filter(Trace.client_trace_id == "ct-reingest-del")
+            .all()
+        )
+        assert len(rows) == 1, "must not create a new trace row"
+        assert rows[0].id == trace_id
+        assert rows[0].deleted_at is not None
+
+
+def test_reingest_active_client_trace_id_still_idempotent() -> None:
+    client = _client()
+    _, _proj, api_key, headers = _bootstrap(client)
+    first = _ingest(client, api_key, "ct-reingest-active")["results"][0]["trace_id"]
+    second = _ingest(client, api_key, "ct-reingest-active")["results"][0]["trace_id"]
+    assert first == second

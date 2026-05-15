@@ -508,3 +508,67 @@ def test_invalid_prompt_version_ref_marks_run_as_error() -> None:
     run_data = detail.json()["run"]
     assert run_data["status"] == "error"
     assert "prompt_version_ref_invalid" in run_data["run_metadata"]["error"]
+
+
+def _ingest_one(api_key: str, client_trace_id: str) -> str:
+    now = datetime.now(timezone.utc)
+    payload = {
+        "traces": [
+            {
+                "client_trace_id": client_trace_id,
+                "name": f"docops.{client_trace_id}",
+                "environment": "prod",
+                "started_at": now.isoformat(),
+                "ended_at": (now + timedelta(milliseconds=10)).isoformat(),
+                "status": "ok",
+                "tags": {},
+                "spans": [
+                    {
+                        "client_span_id": "cs_root",
+                        "type": "llm_call",
+                        "name": "openai.chat.completions",
+                        "started_at": now.isoformat(),
+                        "ended_at": (now + timedelta(milliseconds=5)).isoformat(),
+                        "status": "ok",
+                        "provider": "openai",
+                        "model": "gpt-4o-mini",
+                        "messages_in": [{"role": "user", "content": "hi"}],
+                        "messages_out": [{"role": "assistant", "content": "yo"}],
+                    }
+                ],
+            }
+        ]
+    }
+    resp = client.post("/v1/traces", headers={"X-EvalOps-Key": api_key}, json=payload)
+    assert resp.status_code == 202, resp.text
+    return resp.json()["results"][0]["trace_id"]
+
+
+def test_build_dataset_from_traces_ignores_soft_deleted() -> None:
+    headers, _, project_id = _bootstrap()
+    api_key = _create_api_key(headers, project_id)
+    keep = _ingest_one(api_key, "ct_keep")
+    drop = _ingest_one(api_key, "ct_drop")
+    assert client.delete(f"/v1/traces/{drop}", headers=headers).status_code == 204
+
+    dataset = client.post(
+        f"/v1/projects/{project_id}/datasets",
+        headers=headers,
+        json={"slug": "trace-replay", "description": "Replay", "source": "traces"},
+    )
+    assert dataset.status_code == 201
+    dataset_id = dataset.json()["id"]
+
+    built = client.post(
+        f"/v1/datasets/{dataset_id}/build-from-traces",
+        headers=headers,
+        json={"environment": "prod", "limit": 10},
+    )
+    assert built.status_code == 202, built.text
+    assert built.json()["created"] == 1, "only the active trace must be ingested"
+
+    items = client.get(f"/v1/datasets/{dataset_id}/items", headers=headers)
+    assert items.status_code == 200
+    names = [it["input"]["trace"]["name"] for it in items.json()["data"]]
+    assert "docops.ct_keep" in names
+    assert "docops.ct_drop" not in names

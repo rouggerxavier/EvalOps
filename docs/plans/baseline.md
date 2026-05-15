@@ -1513,3 +1513,87 @@ só resolvem ownership + chamam service. Regra de aplicação isolada em
 `domain/services`. Modelos SQLAlchemy permanecem sem regra de negócio.
 Próxima subfase (observabilidade / request_id / logging JSON, ou
 `ApiKey.expires_at` em 7E) pode começar sobre base limpa.
+
+---
+
+## Fix-7B.1 — Soft delete consistency
+
+Cobre achados de auditoria **A-01 (P0)**, **A-03 (P1)**, **A-04 (P1)**,
+**A-05 (P1)**. Objetivo: `Trace.deleted_at` respeitado em todos os
+fluxos operacionais normais. Nenhuma outra subfase implementada.
+
+### Arquivos alterados
+
+- `apps/api/app/domain/services/export_service.py`
+- `apps/api/app/api/routes_phase5.py`
+- `apps/api/app/api/routes_evaluations.py`
+- `apps/api/app/domain/services/trace_ingest_service.py`
+- `apps/api/tests/test_phase10_audit_privacy_exports.py` (testes)
+- `apps/api/tests/test_phase5_prompts_datasets_experiments.py` (testes)
+- `apps/api/tests/test_phase4_rubrics_eval.py` (testes)
+
+### A-01 — Export respeita soft delete
+
+`_filter_traces` agora filtra `Trace.deleted_at.is_(None)` junto com
+`project_id`. Como `row_count` e a serialização de feedback/spans/eventos
+derivam exclusivamente da lista retornada por `_filter_traces`, traces
+soft-deletados ficam ausentes do JSONL **e** não contam para
+`row_count`. Sem mudança de schema/contrato.
+
+### A-03 — Dataset build respeita soft delete
+
+`build_dataset_from_traces` adiciona `Trace.deleted_at.is_(None)` ao
+query base. Se nenhum trace ativo sobrar, o loop não itera e o endpoint
+retorna `202 {"created": 0}` — comportamento controlado, compatível com
+o contrato atual.
+
+### A-04 — Evaluations por projeto respeitam soft delete
+
+`list_project_evaluations` adiciona `Trace.deleted_at.is_(None)` ao
+join com `Trace`. Runs antigos **não** são apagados; apenas filtrados
+do fluxo de listagem por projeto. Acesso direto via DB/`run_id`
+permanece (linha histórica intacta).
+
+### A-05 — Contrato de reingest de `client_trace_id` deletado
+
+`_existing_trace_id` agora carrega o trace mesmo quando deletado. Se
+`deleted_at IS NOT NULL`, levanta `HTTPException(409,
+{"error":"trace_deleted","client_trace_id":"..."})`. O loop de
+`ingest_trace_batch` propaga `HTTPException` (re-raise antes do
+`except Exception` genérico) para o 409 chegar ao cliente em vez de ir
+para a lista `errors`. Não recria trace (colidiria com
+`uq_traces_project_client`) e não restaura automaticamente.
+Idempotência de trace **ativo** inalterada.
+
+### Testes adicionados
+
+- `test_export_excludes_soft_deleted_trace` — assert trace deletado
+  ausente do JSONL e `row_count == 1`.
+- `test_reingest_deleted_client_trace_id_returns_409` — 409 com
+  `detail.error == "trace_deleted"`, nenhuma linha nova criada.
+- `test_reingest_active_client_trace_id_still_idempotent` — regressão.
+- `test_build_dataset_from_traces_ignores_soft_deleted` — `created == 1`,
+  item do trace deletado ausente.
+- `test_list_project_evaluations_excludes_soft_deleted_trace` — run do
+  trace deletado fora da listagem, row do run ainda presente no DB.
+
+### Comandos e resultados
+
+| Comando | Resultado |
+|---|---|
+| `pytest tests/test_phase10_audit_privacy_exports.py` | ✅ incl. nos 84 abaixo |
+| `pytest tests/test_phase5_prompts_datasets_experiments.py` | ✅ idem |
+| `pytest tests/test_phase4_rubrics_eval.py` | ✅ idem |
+| `pytest tests/test_phase2_tracing.py` | ✅ idem |
+| 4 arquivos-alvo juntos | ✅ 84 passed |
+| Regressão focada (phase8/9/10/11/12/5) | ✅ 69 passed |
+| `pytest tests` completo | ✅ 136 passed |
+
+Fix-7B.3 já estabilizou isolamento SQLite; suíte completa roda verde
+sem `rm -f evalops.db*`.
+
+### Pode avançar para Fix-7B.2?
+
+✅ **Sim** — A-01/A-03/A-04/A-05 fechados, suíte completa verde,
+nenhum escopo proibido tocado (sem hard delete, sem endpoint admin,
+sem restore, sem mudança de schema/migration, sem frontend/SDK).

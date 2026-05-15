@@ -169,7 +169,7 @@ def list_project_evaluations(
     runs = (
         db.query(EvaluationRun)
         .join(Trace, EvaluationRun.trace_id == Trace.id)
-        .filter(Trace.project_id == project.id)
+        .filter(Trace.project_id == project.id, Trace.deleted_at.is_(None))
         .order_by(EvaluationRun.created_at.desc())
         .limit(limit)
         .all()

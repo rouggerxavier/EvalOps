@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 
 from app.db import Base, SessionLocal, engine
 from app.main import app
-from app.models import User
+from app.models import EvaluationRun, User
 from app.security import create_access_token
 
 client = TestClient(app)
@@ -758,3 +758,73 @@ evaluators:
         # Score was created with error
         assert len(run_data["scores"]) == 1
         assert run_data["scores"][0]["reasoning"] == "judge_budget_exhausted"
+
+
+def _ingest_named(api_key: str, client_trace_id: str) -> str:
+    now = datetime.now(timezone.utc)
+    resp = client.post(
+        "/v1/traces",
+        headers={"X-EvalOps-Key": api_key},
+        json={
+            "traces": [
+                {
+                    "client_trace_id": client_trace_id,
+                    "name": "test.trace",
+                    "environment": "prod",
+                    "started_at": now.isoformat(),
+                    "ended_at": (now + timedelta(seconds=1)).isoformat(),
+                    "status": "ok",
+                    "tags": {},
+                    "spans": [
+                        {
+                            "client_span_id": "cs_1",
+                            "type": "llm_call",
+                            "name": "openai.chat",
+                            "started_at": now.isoformat(),
+                            "ended_at": (now + timedelta(milliseconds=800)).isoformat(),
+                            "status": "ok",
+                            "provider": "openai",
+                            "model": "gpt-4o-mini",
+                            "messages_in": [{"role": "user", "content": "What is the capital of France?"}],
+                            "messages_out": [{"role": "assistant", "content": "The capital of France is Paris."}],
+                        }
+                    ],
+                }
+            ]
+        },
+    )
+    assert resp.status_code == 202, resp.text
+    return resp.json()["results"][0]["trace_id"]
+
+
+def test_list_project_evaluations_excludes_soft_deleted_trace() -> None:
+    headers, _, project_id, api_key = _bootstrap()
+    active = _ingest_named(api_key, "ct_eval_active")
+    deleted = _ingest_named(api_key, "ct_eval_deleted")
+
+    rubric_id = client.post(
+        f"/v1/projects/{project_id}/rubrics",
+        headers=headers,
+        json={"yaml_source": MINIMAL_RUBRIC},
+    ).json()["rubric"]["id"]
+
+    run_active = client.post(
+        "/v1/evaluations/run", headers=headers,
+        json={"trace_id": active, "rubric_id": rubric_id},
+    ).json()["run"]["id"]
+    run_deleted = client.post(
+        "/v1/evaluations/run", headers=headers,
+        json={"trace_id": deleted, "rubric_id": rubric_id},
+    ).json()["run"]["id"]
+
+    assert client.delete(f"/v1/traces/{deleted}", headers=headers).status_code == 204
+
+    listed = client.get(f"/v1/projects/{project_id}/evaluations", headers=headers)
+    assert listed.status_code == 200, listed.text
+    run_ids = [r["id"] for r in listed.json()["data"]]
+    assert run_active in run_ids
+    assert run_deleted not in run_ids
+
+    # Old run row is NOT deleted, only filtered from the project listing.
+    with SessionLocal() as db:
+        assert db.get(EvaluationRun, run_deleted) is not None

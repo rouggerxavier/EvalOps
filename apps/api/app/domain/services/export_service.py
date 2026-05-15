@@ -22,7 +22,10 @@ from app.security import new_id
 
 
 def _filter_traces(db: Session, project_id: str, filters: dict | None) -> list[Trace]:
-    query = db.query(Trace).filter(Trace.project_id == project_id)
+    query = db.query(Trace).filter(
+        Trace.project_id == project_id,
+        Trace.deleted_at.is_(None),
+    )
     filters = filters or {}
     if isinstance(filters.get("environment"), str):
         query = query.filter(Trace.environment == filters["environment"])

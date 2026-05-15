@@ -299,7 +299,10 @@ def build_dataset_from_traces(
     db: Session = Depends(get_db),
 ) -> dict:
     dataset = _dataset_or_404(dataset_id, user.id, db)
-    query = db.query(Trace).filter(Trace.project_id == dataset.project_id)
+    query = db.query(Trace).filter(
+        Trace.project_id == dataset.project_id,
+        Trace.deleted_at.is_(None),
+    )
     if payload.environment:
         query = query.filter(Trace.environment == payload.environment)
     if payload.status:

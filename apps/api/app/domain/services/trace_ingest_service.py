@@ -65,7 +65,17 @@ def _existing_trace_id(db: Session, project_id: str, client_trace_id: str | None
         .filter(Trace.project_id == project_id, Trace.client_trace_id == client_trace_id)
         .one_or_none()
     )
-    return existing.id if existing else None
+    if existing is None:
+        return None
+    if existing.deleted_at is not None:
+        # A-05: reingest of a soft-deleted client_trace_id is ambiguous.
+        # Contract: reject with a structured 409. We do not recreate a new
+        # trace (would collide with uq_traces_project_client) nor auto-restore.
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"error": "trace_deleted", "client_trace_id": client_trace_id},
+        )
+    return existing.id
 
 
 def _persist_trace(
@@ -217,6 +227,9 @@ def ingest_trace_batch(
             )
             db.commit()
             results.append({"client_trace_id": trace_in.client_trace_id, "trace_id": trace_id})
+        except HTTPException:
+            db.rollback()
+            raise
         except Exception as exc:  # noqa: BLE001
             db.rollback()
             errors.append({"index": idx, "client_trace_id": trace_in.client_trace_id, "message": str(exc)})
