@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from app.config import exports_dir
 from app.domain.services.audit_service import record_audit
-from app.domain.services.usage_service import enforce_quota, increment_usage
+from app.domain.services.usage_service import apply_usage_with_quota, enforce_quota
 from app.models import ExportJob, HumanFeedback, Project, Trace, utcnow
 from app.schemas import ExportJobCreate
 from app.security import new_id
@@ -103,7 +103,7 @@ def create_jsonl_export(
         job.row_count = row_count
         job.expires_at = utcnow() + timedelta(days=7)
         job.completed_at = utcnow()
-        increment_usage(db, project.organization_id, exports=1)
+        apply_usage_with_quota(db, project, exports=1)
         record_audit(
             db, "export.created",
             organization_id=project.organization_id,

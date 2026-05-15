@@ -4,7 +4,8 @@ from datetime import datetime, timezone
 from decimal import Decimal
 
 from fastapi import HTTPException, status
-from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Query, Session
 
 from app.models import Plan, Project, Subscription, UsageCounter
 from app.security import new_id
@@ -52,6 +53,58 @@ def _is_postgres(db: Session) -> bool:
         return False
 
 
+def _counter_query(db: Session, org_id: str, period: str, *, lock: bool) -> Query[UsageCounter]:
+    query = db.query(UsageCounter).filter(
+        UsageCounter.organization_id == org_id,
+        UsageCounter.period == period,
+    )
+    if lock and _is_postgres(db):
+        query = query.with_for_update()
+    return query
+
+
+def _quota_exceeded(field: str, limit: int) -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_402_PAYMENT_REQUIRED,
+        detail={"error": "quota_exceeded", "field": field, "limit": limit},
+    )
+
+
+def _usage_deltas(
+    *,
+    traces: int = 0,
+    evals: int = 0,
+    exports: int = 0,
+    spans: int = 0,
+    tokens: int = 0,
+) -> dict[str, int]:
+    return {
+        "traces_ingested": max(0, traces),
+        "evaluations_run": max(0, evals),
+        "exports_created": max(0, exports),
+        "spans_ingested": max(0, spans),
+        "tokens_ingested": max(0, tokens),
+    }
+
+
+def _apply_counter_deltas(
+    row: UsageCounter,
+    *,
+    traces: int = 0,
+    evals: int = 0,
+    exports: int = 0,
+    cost_usd: float = 0.0,
+    spans: int = 0,
+    tokens: int = 0,
+) -> None:
+    row.traces_ingested = int(row.traces_ingested or 0) + max(0, traces)
+    row.evaluations_run = int(row.evaluations_run or 0) + max(0, evals)
+    row.exports_created = int(row.exports_created or 0) + max(0, exports)
+    row.spans_ingested = int(row.spans_ingested or 0) + max(0, spans)
+    row.tokens_ingested = int(row.tokens_ingested or 0) + max(0, tokens)
+    row.cost_usd = float(Decimal(str(row.cost_usd or 0)) + Decimal(str(max(0.0, cost_usd))))
+
+
 def get_or_create_counter(db: Session, org_id: str, period: str, *, lock: bool = False) -> UsageCounter:
     """Fetch (or create) the monthly counter row.
 
@@ -61,15 +114,11 @@ def get_or_create_counter(db: Session, org_id: str, period: str, *, lock: bool =
     locking clause silently — concurrency in SQLite remains at file-lock level
     (writes already serialize via SQLite's internal lock).
     """
-    query = db.query(UsageCounter).filter(
-        UsageCounter.organization_id == org_id, UsageCounter.period == period
-    )
-    if lock and _is_postgres(db):
-        query = query.with_for_update()
-    row = query.one_or_none()
+    row = _counter_query(db, org_id, period, lock=lock).one_or_none()
     if row:
         return row
-    row = UsageCounter(
+
+    candidate = UsageCounter(
         id=new_id("usc"),
         organization_id=org_id,
         period=period,
@@ -80,9 +129,18 @@ def get_or_create_counter(db: Session, org_id: str, period: str, *, lock: bool =
         spans_ingested=0,
         tokens_ingested=0,
     )
-    db.add(row)
-    db.flush()
-    return row
+    try:
+        # Savepoint rollback protects the caller's outer transaction state.
+        with db.begin_nested():
+            db.add(candidate)
+            db.flush()
+        return candidate
+    except IntegrityError:
+        # Concurrent insert for (organization_id, period): reload the winner.
+        existing = _counter_query(db, org_id, period, lock=lock).one_or_none()
+        if existing is not None:
+            return existing
+        raise
 
 
 def _plan_limit(plan: Plan, field: str) -> int | None:
@@ -114,10 +172,57 @@ def enforce_quota(db: Session, project: Project, field: str, increment: int = 1)
         return
     current_value = int(getattr(counter, field) or 0)
     if current_value + max(0, increment) > limit:
-        raise HTTPException(
-            status_code=status.HTTP_402_PAYMENT_REQUIRED,
-            detail={"error": "quota_exceeded", "field": field, "limit": limit},
-        )
+        raise _quota_exceeded(field, limit)
+
+
+def apply_usage_with_quota(
+    db: Session,
+    project: Project,
+    *,
+    traces: int = 0,
+    evals: int = 0,
+    exports: int = 0,
+    cost_usd: float = 0.0,
+    spans: int = 0,
+    tokens: int = 0,
+) -> UsageCounter:
+    """Atomically enforce quota and apply usage deltas in the same transaction.
+
+    The caller controls commit/rollback boundaries; this function only mutates
+    the current DB transaction.
+    """
+    sub = ensure_subscription(db, project.organization_id)
+    plan = db.get(Plan, sub.plan_id)
+    counter = get_or_create_counter(db, project.organization_id, current_period(), lock=True)
+    deltas = _usage_deltas(
+        traces=traces,
+        evals=evals,
+        exports=exports,
+        spans=spans,
+        tokens=tokens,
+    )
+    if plan is not None:
+        for field, delta in deltas.items():
+            if delta <= 0:
+                continue
+            limit = _plan_limit(plan, field)
+            if limit is None:
+                continue
+            current_value = int(getattr(counter, field) or 0)
+            if current_value + delta > limit:
+                raise _quota_exceeded(field, limit)
+
+    _apply_counter_deltas(
+        counter,
+        traces=traces,
+        evals=evals,
+        exports=exports,
+        cost_usd=cost_usd,
+        spans=spans,
+        tokens=tokens,
+    )
+    db.add(counter)
+    return counter
 
 
 def increment_usage(
@@ -131,7 +236,7 @@ def increment_usage(
     spans: int = 0,
     tokens: int = 0,
 ) -> UsageCounter:
-    """Increment the monthly counters for an org.
+    """Increment the monthly counters for an org without quota checks.
 
     G-20: takes a pessimistic lock on the existing row when running on Postgres
     so concurrent writers do not race read-modify-write. On SQLite the lock is a
@@ -139,12 +244,15 @@ def increment_usage(
     single-process ingest.
     """
     row = get_or_create_counter(db, org_id, current_period(), lock=True)
-    row.traces_ingested = int(row.traces_ingested or 0) + max(0, traces)
-    row.evaluations_run = int(row.evaluations_run or 0) + max(0, evals)
-    row.exports_created = int(row.exports_created or 0) + max(0, exports)
-    row.spans_ingested = int(row.spans_ingested or 0) + max(0, spans)
-    row.tokens_ingested = int(row.tokens_ingested or 0) + max(0, tokens)
-    row.cost_usd = float(Decimal(str(row.cost_usd or 0)) + Decimal(str(max(0.0, cost_usd))))
+    _apply_counter_deltas(
+        row,
+        traces=traces,
+        evals=evals,
+        exports=exports,
+        cost_usd=cost_usd,
+        spans=spans,
+        tokens=tokens,
+    )
     db.add(row)
     return row
 

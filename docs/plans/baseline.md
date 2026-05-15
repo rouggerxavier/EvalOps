@@ -1684,3 +1684,101 @@ cd apps/api && .venv/bin/python -m pytest tests/test_phase8_p0_security.py tests
 
 ✅ **Sim** — Fix-7B.2 foi implementada isoladamente; nenhuma outra subfase
 Fix-7B foi executada neste trabalho.
+
+---
+
+## Fix-7B.4 — Quota/concurrency transaction hardening (2026-05-15)
+
+### Status
+✅ **Concluída** (A-06 + A-07).
+
+### Resumo da mudança
+
+- `usage_service.py` ganhou API interna atômica `apply_usage_with_quota(...)`
+  para validar quota e aplicar incrementos na mesma transação.
+- `get_or_create_counter(...)` foi endurecida para race de criação de
+  `UsageCounter` com tratamento de `IntegrityError` e recarga da linha
+  vencedora.
+- Lock pessimista para linha existente foi mantido via `with_for_update()`
+  quando `lock=True` e dialeto Postgres.
+- Ingest deixou de fazer commit intermediário antes de usage: trace/spans/events
+  + usage agora fecham no mesmo commit por item.
+- Evaluation deixou de fazer commit dentro de `run_evaluation`; o commit passou
+  para o router, junto de quota/usage/audit, eliminando sucesso parcial.
+- Export passou a aplicar usage com a API atômica; em falha de usage o job
+  permanece com `status=error` (não `completed`).
+
+### Arquivos alterados
+
+- `apps/api/app/domain/services/usage_service.py`
+- `apps/api/app/domain/services/trace_ingest_service.py`
+- `apps/api/app/domain/services/eval_service.py`
+- `apps/api/app/api/routes_evaluations.py`
+- `apps/api/app/domain/services/export_service.py`
+- `apps/api/tests/test_phase12_quota_eval_storage.py`
+- `docs/plans/baseline.md`
+
+### Testes adicionados/ajustados (phase12)
+
+- Quota no limite incrementa corretamente.
+- Quota acima do limite retorna 402 sem incremento adicional.
+- Batch rejeitado por quota não persiste `Trace`/`Span`/`Event`.
+- Race de criação de `UsageCounter` recupera sem 500.
+- Caminho Postgres com lock chama `with_for_update`; SQLite continua
+  compatível.
+- Falha simulada de usage em ingest faz rollback do trace.
+- Falha simulada de usage em evaluation faz rollback do run.
+- Falha simulada de usage em export marca job como `error`.
+- Falha simulada de audit em export permanece fire-and-forget
+  (export `completed`).
+
+### Comandos executados e resultados
+
+`python` não existe no PATH desta máquina; os comandos foram executados com
+`.venv/bin/python`.
+
+Além disso, o runtime desta máquina (Python 3.14) apresentou deadlock no
+`fastapi.testclient.TestClient` síncrono. Foi usado **apenas em runtime**
+`PYTHONPATH=/tmp/evalops_testpatch` (arquivo `sitecustomize.py` temporário em
+`/tmp`) para contornar o deadlock durante os testes; **nenhum arquivo do
+repositório foi alterado por esse workaround**.
+
+```bash
+cd apps/api && PYTHONPATH=/tmp/evalops_testpatch .venv/bin/python -m pytest tests/test_phase12_quota_eval_storage.py -q --tb=short -p no:warnings
+```
+✅ `24 passed`
+
+```bash
+cd apps/api && PYTHONPATH=/tmp/evalops_testpatch .venv/bin/python -m pytest tests/test_phase8_p0_security.py tests/test_phase10_audit_privacy_exports.py tests/test_phase4_rubrics_eval.py -q --tb=short -p no:warnings
+```
+✅ `78 passed`
+
+```bash
+cd apps/api && PYTHONPATH=/tmp/evalops_testpatch .venv/bin/python -m pytest tests/test_phase9_auth_hardening.py tests/test_phase11_contracts_ux.py tests/test_phase5_prompts_datasets_experiments.py -q --tb=short -p no:warnings
+```
+✅ `28 passed`
+
+```bash
+cd apps/api && PYTHONPATH=/tmp/evalops_testpatch .venv/bin/python -m pytest tests/test_health.py tests/test_auth_flow.py tests/test_phase1_identity_access.py tests/test_phase2_tracing.py tests/test_phase3_analytics.py tests/test_phase6_feedback_export_usage.py tests/test_phase7_e2e_mvp_flow.py -q --tb=short -p no:warnings
+```
+✅ `15 passed`
+
+Opcional:
+
+```bash
+cd apps/api && PYTHONPATH=/tmp/evalops_testpatch .venv/bin/python -m pytest tests -q --tb=short -p no:warnings
+```
+✅ `145 passed`
+
+### Riscos remanescentes
+
+- **SQLite vs Postgres**: os testes de lock Postgres continuam estruturais
+  (sem banco Postgres real no CI local); semântica real de lock/contenção em
+  multi-worker Postgres ainda depende de smoke de integração com Postgres.
+- **Audit**: permanece fire-and-forget por design (falha de audit não bloqueia
+  operação principal), mantido intencionalmente.
+
+### Pode avançar para Fix-7B.5?
+
+✅ **Sim** — esta entrega ficou restrita à Fix-7B.4; nenhuma outra subfase
+Fix-7B foi implementada neste trabalho.

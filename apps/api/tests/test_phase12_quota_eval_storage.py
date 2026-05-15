@@ -10,16 +10,20 @@ G-25: DATABASE_URL accepts SQLite (default) and the PG URL is wired in
 from __future__ import annotations
 
 import os
+from contextlib import nullcontext
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy.exc import IntegrityError
 
 from app.db import Base, SessionLocal, engine, is_postgres, is_sqlite
+from app.domain.services import audit_service
 from app.domain.services import usage_service
 from app.main import app
-from app.models import EvaluationRun, Plan, Subscription, UsageCounter, User
+from app.models import EvaluationRun, Event, ExportJob, Plan, Span, Subscription, Trace, UsageCounter, User
 from app.security import create_access_token, new_id
 
 client = TestClient(app)
@@ -198,6 +202,76 @@ def test_g07_quota_rejection_does_not_leave_partial_counter_state() -> None:
     assert int(counter.tokens_ingested) == 0
 
 
+def test_fix7b4_trace_quota_at_limit_allows_and_increments() -> None:
+    headers, org_id, project_id, api_key = _bootstrap()
+    _seed_org_subscription(headers, org_id, project_id)
+    _set_plan_limits(org_id, monthly_trace_limit=1)
+
+    ok = client.post("/v1/traces", headers={"X-EvalOps-Key": api_key}, json=_trace_payload("ct_p12_limit_ok"))
+    assert ok.status_code == 202, ok.text
+
+    counter = _read_counter(org_id)
+    assert counter is not None
+    assert int(counter.traces_ingested) == 1
+
+
+def test_fix7b4_trace_quota_above_limit_returns_402_without_increment() -> None:
+    headers, org_id, project_id, api_key = _bootstrap()
+    _seed_org_subscription(headers, org_id, project_id)
+    _set_plan_limits(org_id, monthly_trace_limit=1)
+
+    first = client.post("/v1/traces", headers={"X-EvalOps-Key": api_key}, json=_trace_payload("ct_p12_limit_1"))
+    assert first.status_code == 202, first.text
+    second = client.post("/v1/traces", headers={"X-EvalOps-Key": api_key}, json=_trace_payload("ct_p12_limit_2"))
+    assert second.status_code == 402, second.text
+    assert second.json()["detail"]["field"] == "traces_ingested"
+
+    counter = _read_counter(org_id)
+    assert counter is not None
+    assert int(counter.traces_ingested) == 1
+
+
+def test_fix7b4_batch_quota_rejection_does_not_persist_trace_graph() -> None:
+    headers, org_id, project_id, api_key = _bootstrap()
+    _seed_org_subscription(headers, org_id, project_id)
+    _set_plan_limits(org_id, monthly_trace_limit=1)
+
+    payload = {
+        "traces": [
+            _trace_payload("ct_p12_batch_a")["traces"][0],
+            _trace_payload("ct_p12_batch_b")["traces"][0],
+        ]
+    }
+    resp = client.post("/v1/traces", headers={"X-EvalOps-Key": api_key}, json=payload)
+    assert resp.status_code == 402, resp.text
+
+    with SessionLocal() as db:
+        assert db.query(Trace).filter(Trace.project_id == project_id).count() == 0
+        assert db.query(Span).count() == 0
+        assert db.query(Event).count() == 0
+
+
+def test_fix7b4_ingest_usage_failure_rolls_back_trace(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.domain.services import trace_ingest_service
+
+    headers, _org_id, project_id, api_key = _bootstrap()
+
+    def _boom(*args, **kwargs):  # noqa: ANN002, ANN003
+        raise RuntimeError("usage backend unavailable")
+
+    monkeypatch.setattr(trace_ingest_service, "apply_usage_with_quota", _boom)
+    resp = client.post("/v1/traces", headers={"X-EvalOps-Key": api_key}, json=_trace_payload("ct_p12_usage_fail"))
+
+    assert resp.status_code == 202, resp.text
+    body = resp.json()
+    assert body["ingested"] == 0
+    assert len(body["errors"]) == 1
+    assert body["errors"][0]["client_trace_id"] == "ct_p12_usage_fail"
+
+    with SessionLocal() as db:
+        assert db.query(Trace).filter(Trace.project_id == project_id).count() == 0
+
+
 # ── G-11: duplicate evaluation → 409 ──────────────────────────────────────────
 
 RUBRIC_LENGTH_YAML = """
@@ -297,6 +371,35 @@ def test_g11_duplicate_returns_existing_run_id() -> None:
     )
     assert second.status_code == 409
     assert second.json()["detail"]["existing_run_id"] == expected_run_id
+
+
+def test_fix7b4_evaluation_usage_failure_rolls_back_run(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.api import routes_evaluations
+
+    headers, org_id, project_id, api_key = _bootstrap()
+    _seed_org_subscription(headers, org_id, project_id)
+    trace_id = _ingest_simple_trace(api_key, "ct_eval_usage_fail")
+    rubric_id = _create_rubric(headers, project_id, RUBRIC_LENGTH_YAML)
+
+    def _boom(*args, **kwargs):  # noqa: ANN002, ANN003
+        raise RuntimeError("usage cost update failed")
+
+    monkeypatch.setattr(routes_evaluations, "increment_usage", _boom)
+    with pytest.raises(RuntimeError, match="usage cost update failed"):
+        client.post(
+            "/v1/evaluations/run",
+            headers=headers,
+            json={"trace_id": trace_id, "rubric_id": rubric_id, "triggered_by": "test"},
+        )
+
+    with SessionLocal() as db:
+        assert db.query(EvaluationRun).filter(EvaluationRun.trace_id == trace_id).count() == 0
+        counter = (
+            db.query(UsageCounter)
+            .filter(UsageCounter.organization_id == org_id, UsageCounter.period == usage_service.current_period())
+            .one_or_none()
+        )
+        assert counter is None or int(counter.evaluations_run or 0) == 0
 
 
 # ── G-12: judge budget per plan ──────────────────────────────────────────────
@@ -404,6 +507,69 @@ def test_g12_plan_without_explicit_budget_uses_safe_fallback() -> None:
 
 # ── G-20: pessimistic lock on usage counter ──────────────────────────────────
 
+def test_fix7b4_usage_counter_create_race_is_recovered(monkeypatch: pytest.MonkeyPatch) -> None:
+    period = "2099-02"
+    org_id = "org_race_test"
+    winner = UsageCounter(
+        id="usc_winner",
+        organization_id=org_id,
+        period=period,
+        traces_ingested=0,
+        evaluations_run=0,
+        exports_created=0,
+        cost_usd=0,
+        spans_ingested=0,
+        tokens_ingested=0,
+    )
+    calls = {"query": 0}
+
+    class _DummyDB:
+        bind = SimpleNamespace(dialect=SimpleNamespace(name="sqlite"))
+
+        def begin_nested(self):
+            return nullcontext()
+
+        def add(self, _row):  # noqa: ANN001
+            return None
+
+        def flush(self):
+            raise IntegrityError("INSERT usage_counters", {}, Exception("uq_usage_org_period"))
+
+    class _FakeQuery:
+        def one_or_none(self):
+            calls["query"] += 1
+            return None if calls["query"] == 1 else winner
+
+    monkeypatch.setattr(usage_service, "_counter_query", lambda *args, **kwargs: _FakeQuery())
+    row = usage_service.get_or_create_counter(_DummyDB(), org_id, period, lock=True)
+    assert row is winner
+
+
+def test_fix7b4_with_for_update_path_used_when_postgres_lock_requested(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from sqlalchemy.orm import Query
+
+    headers, org_id, project_id, _ = _bootstrap()
+    _seed_org_subscription(headers, org_id, project_id)
+
+    calls = {"with_for_update": 0}
+    original = Query.with_for_update
+
+    def _tracked_with_for_update(self, *args, **kwargs):  # noqa: ANN001, ANN002, ANN003
+        calls["with_for_update"] += 1
+        return original(self, *args, **kwargs)
+
+    monkeypatch.setattr(usage_service, "_is_postgres", lambda _db: True)
+    monkeypatch.setattr(Query, "with_for_update", _tracked_with_for_update)
+
+    with SessionLocal() as db:
+        usage_service.get_or_create_counter(db, org_id, usage_service.current_period(), lock=True)
+        usage_service.increment_usage(db, org_id, traces=1)
+        db.commit()
+
+    assert calls["with_for_update"] >= 2
+
 def test_g20_pessimistic_lock_used_on_postgres_only() -> None:
     """``increment_usage`` calls ``get_or_create_counter(lock=True)``; that helper
     only emits ``with_for_update`` against Postgres. We assert the dispatch
@@ -439,6 +605,62 @@ def test_g20_sqlite_concurrent_increments_are_compatible() -> None:
     assert int(counter.traces_ingested) == 7
     assert int(counter.spans_ingested) == 14
     assert int(counter.tokens_ingested) == 35
+
+
+# ── Fix-7B.4: export + audit/usage failure contracts ─────────────────────────
+
+def test_fix7b4_export_usage_failure_marks_job_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.domain.services import export_service
+
+    headers, org_id, project_id, api_key = _bootstrap()
+    _seed_org_subscription(headers, org_id, project_id)
+    _ingest_simple_trace(api_key, "ct_export_usage_fail")
+
+    def _boom(*args, **kwargs):  # noqa: ANN002, ANN003
+        raise RuntimeError("usage update failed")
+
+    monkeypatch.setattr(export_service, "apply_usage_with_quota", _boom)
+    resp = client.post(
+        "/v1/exports",
+        headers=headers,
+        json={"project_id": project_id, "format": "jsonl", "filters": {}},
+    )
+    assert resp.status_code == 500
+    assert resp.json()["detail"] == "export_failed"
+
+    with SessionLocal() as db:
+        job = db.query(ExportJob).filter(ExportJob.project_id == project_id).one()
+        assert job.status == "error"
+        assert job.completed_at is not None
+        counter = (
+            db.query(UsageCounter)
+            .filter(UsageCounter.organization_id == org_id, UsageCounter.period == usage_service.current_period())
+            .one_or_none()
+        )
+        assert counter is not None
+        assert int(counter.exports_created or 0) == 0
+
+
+def test_fix7b4_export_audit_failure_stays_fire_and_forget(monkeypatch: pytest.MonkeyPatch) -> None:
+    headers, _org_id, project_id, api_key = _bootstrap()
+    _ingest_simple_trace(api_key, "ct_export_audit_fail")
+
+    class _BrokenAuditLog:
+        def __init__(self, *args, **kwargs):  # noqa: ANN002, ANN003
+            raise RuntimeError("audit storage failed")
+
+    monkeypatch.setattr(audit_service, "AuditLog", _BrokenAuditLog)
+    create = client.post(
+        "/v1/exports",
+        headers=headers,
+        json={"project_id": project_id, "format": "jsonl", "filters": {}},
+    )
+    assert create.status_code == 202, create.text
+
+    export_id = create.json()["export_id"]
+    job = client.get(f"/v1/exports/{export_id}", headers=headers)
+    assert job.status_code == 200, job.text
+    assert job.json()["status"] == "completed"
 
 
 # ── G-25: SQLite default + Postgres prep ─────────────────────────────────────

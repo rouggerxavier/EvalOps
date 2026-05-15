@@ -91,7 +91,10 @@ def run_evaluation(
     db: Session,
     rubric_version_num: int | None = None,
 ) -> EvaluationRun:
-    """Run evaluation synchronously. Returns the completed EvaluationRun."""
+    """Run evaluation synchronously. Returns the completed EvaluationRun.
+
+    The caller owns the final commit/rollback boundary.
+    """
     run_start = time.monotonic()
 
     # Load trace + spans
@@ -264,6 +267,5 @@ def run_evaluation(
     run.latency_ms = int((time.monotonic() - run_start) * 1000)
 
     db.add(run)
-    db.commit()
-    db.refresh(run)
+    db.flush()
     return run

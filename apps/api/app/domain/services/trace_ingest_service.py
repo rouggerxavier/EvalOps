@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 
 from app.config import max_spans_per_trace
 from app.domain.services.redaction_service import should_redact
-from app.domain.services.usage_service import enforce_quota, increment_usage
+from app.domain.services.usage_service import apply_usage_with_quota, enforce_quota
 from app.infra.llm.pricing import compute_cost_usd
 from app.models import Event, Project, Span, Trace
 from app.schemas import TraceBatchIn
@@ -216,10 +216,9 @@ def ingest_trace_batch(
             trace_id, total_in, total_out, total_cost, span_count = _persist_trace(
                 db, project, trace_in, redact_header
             )
-            db.commit()
-            increment_usage(
+            apply_usage_with_quota(
                 db,
-                project.organization_id,
+                project,
                 traces=1,
                 cost_usd=float(total_cost),
                 spans=span_count,
