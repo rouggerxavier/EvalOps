@@ -8,6 +8,7 @@ from typing import Any
 
 from app.domain.evaluators.base import EvaluatorResult
 from app.domain.rubrics.resolver import resolve_dotpath
+from app.infra.llm.pricing import estimate_judge_cost_usd
 
 
 def _extract_first_json(text: str) -> str | None:
@@ -55,8 +56,44 @@ def run(context: dict, config: dict[str, Any]) -> EvaluatorResult:
     pass_threshold: float = config.get("pass_threshold", 0.7)
     cost_cap_usd: float = config.get("cost_cap_usd", 0.01)
 
+    # Fix-7B.5 (A-08): assumed completion budget for the pre-call cost estimate.
+    # Output length is unknown before the call, so cost is gated conservatively
+    # against this budget; post-call the estimate is recomputed from the real
+    # response so EvaluationRun.cost_usd / the monthly judge budget see actual
+    # (estimated) spend.
+    assumed_output_tokens: int = int(config.get("max_output_tokens", 512) or 512)
+
     rendered_prompt = _render_prompt(prompt_template, context)
     messages = [{"role": "user", "content": rendered_prompt}]
+
+    def _estimated_cost(response_text: str) -> float:
+        return float(
+            estimate_judge_cost_usd(
+                model,
+                rendered_prompt,
+                response_text,
+                assumed_output_tokens=assumed_output_tokens,
+            )
+        )
+
+    # Fix-7B.5 (A-08): cost_cap_usd is no longer a dead field. Block *before*
+    # spending money when even the conservative pre-call estimate exceeds the
+    # cap. Error is structured and leaks no stack/SQL/path/secret.
+    pre_call_cost = _estimated_cost("")
+    if cost_cap_usd is not None and pre_call_cost > float(cost_cap_usd):
+        latency_ms = int((time.monotonic() - t0) * 1000)
+        return EvaluatorResult(
+            score=0.0,
+            passed=False,
+            reasoning="cost_cap_exceeded",
+            raw_output={
+                "error": "cost_cap_exceeded",
+                "estimated_cost_usd": round(pre_call_cost, 6),
+                "cost_cap_usd": round(float(cost_cap_usd), 6),
+            },
+            cost_usd=pre_call_cost,
+            latency_ms=latency_ms,
+        )
 
     raw_text = ""
     parsed: dict | None = None
@@ -74,6 +111,7 @@ def run(context: dict, config: dict[str, Any]) -> EvaluatorResult:
                 passed=False,
                 reasoning=f"LLM call failed: {exc}",
                 raw_output={"error": str(exc)},
+                cost_usd=_estimated_cost(raw_text),
                 latency_ms=latency_ms,
             )
 
@@ -106,6 +144,7 @@ def run(context: dict, config: dict[str, Any]) -> EvaluatorResult:
             passed=False,
             reasoning="LLM returned invalid JSON after retries",
             raw_output={"parse_error": True, "raw": raw_text[:500]},
+            cost_usd=_estimated_cost(raw_text),
             latency_ms=latency_ms,
         )
 
@@ -119,5 +158,6 @@ def run(context: dict, config: dict[str, Any]) -> EvaluatorResult:
         passed=passed,
         reasoning=reasoning,
         raw_output=parsed,
+        cost_usd=_estimated_cost(raw_text),
         latency_ms=latency_ms,
     )

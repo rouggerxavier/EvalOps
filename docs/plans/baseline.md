@@ -1782,3 +1782,132 @@ cd apps/api && PYTHONPATH=/tmp/evalops_testpatch .venv/bin/python -m pytest test
 
 ✅ **Sim** — esta entrega ficou restrita à Fix-7B.4; nenhuma outra subfase
 Fix-7B foi implementada neste trabalho.
+
+---
+
+## Fix-7B.5 — Judge budget e LLM cost consistency (2026-05-15)
+
+### Status
+✅ **Concluída** (A-08 P1).
+
+### Resumo da mudança
+
+- `app/infra/llm/pricing.py`: adicionada estimativa determinística de custo de
+  judge — `estimate_judge_cost_usd(model, prompt, response, assumed_output_tokens)`,
+  `split_provider_model()`, `estimate_tokens()` (heurística ~4 chars/token,
+  arredonda para cima) e `DEFAULT_JUDGE_PER_1K` (fallback conservador = tier
+  gpt-4.1) para provider/model fora da tabela. `compute_cost_usd` original
+  **não foi alterado** (continua usado por `trace_ingest_service`).
+- `app/domain/evaluators/llm_judge.py`: `cost_cap_usd` deixou de ser campo
+  morto. Estimativa pré-chamada (input real + `max_output_tokens`, default 512);
+  se exceder o cap, **bloqueia antes de gastar** e retorna erro estruturado
+  `cost_cap_exceeded`. Todos os caminhos de retorno (falha de LLM, parse fail,
+  sucesso) agora preenchem `EvaluatorResult.cost_usd` com a estimativa.
+- `app/domain/services/eval_service.py`: **sem alteração** — já somava
+  `result.cost_usd` em `EvaluationRun.cost_usd`; agora o valor é real.
+- `app/domain/services/experiment_service.py`: nova exceção
+  `ExperimentBudgetError`. `execute_experiment` aplica o mesmo gate de judge
+  budget (pré-check + parada consistente quando o gasto cumulativo de judge
+  ultrapassa o budget mid-run). Fecha o bypass onde experiments rodavam
+  `llm_judge` via REGISTRY sem gate.
+- `app/api/routes_phase5.py`: pré-check 402 espelhando a rota de evaluation
+  (quando o rubric do experiment usa `llm_judge` e o budget está esgotado);
+  `ExperimentBudgetError` adicionada ao `except` → run `status=error` com
+  mensagem segura.
+
+### Contrato final de `cost_cap_usd`
+
+- Tipo: float USD, default `0.01`, por evaluator `llm_judge` (config do rubric).
+- Semântica: teto de custo **estimado** de uma única invocação do judge.
+- Pré-chamada estima `input (prompt renderizado) + max_output_tokens` (default
+  512) usando a tabela de pricing (fallback conservador se model desconhecido).
+- Se a estimativa pré-chamada **excede** o cap → **não chama o LLM**; retorna
+  `EvaluatorResult(score=0, passed=False, reasoning="cost_cap_exceeded",
+  raw_output={error, estimated_cost_usd, cost_cap_usd}, cost_usd=estimativa)`.
+- Erro é estável e não vaza stack/SQL/path/segredo.
+
+### Custo real vs estimado
+
+**Estimado**, determinístico. O contrato síncrono de `call_llm` retorna apenas
+texto (sem token usage), e chamada de LLM real é proibida em teste. Custo =
+`estimate_tokens(prompt)*price_in + estimate_tokens(response)*price_out`
+(ou `max_output_tokens` pré-chamada). Mesmo prompt + mesma resposta ⇒ mesmo
+custo, portanto testável sem rede.
+
+### Como `EvaluationRun.cost_usd` é preenchido
+
+`llm_judge.run()` seta `EvaluatorResult.cost_usd`; `eval_service.run_evaluation`
+soma em `total_cost` e grava em `run.cost_usd`; a rota aplica
+`increment_usage(cost_usd=run.cost_usd)`. Evaluators não-LLM continuam custo
+`0.0`, logo não consomem judge budget.
+
+### Como o judge budget por plano é aplicado
+
+`Plan.monthly_judge_budget_usd` → `judge_budget_for_org` (fallback seguro 20.0
+quando ausente/zero/sem subscription). Gasto do mês = `Σ EvaluationRun.cost_usd`
+do projeto no mês corrente. Rota `/evaluations/run`: se o rubric usa `llm_judge`
+e `spent >= budget` → **402** `judge_budget_exhausted`. Safety net por evaluator
+em `eval_service` mantido. Como o custo agora é real, o budget acumula de runs
+reais (antes nunca acumulava).
+
+### Como experiments com `llm_judge` foram protegidos
+
+Pré-check 402 na rota `/experiments/{id}/run` (mesmo gate da evaluation) +
+gate defensivo em `execute_experiment` (pré-check e parada cumulativa
+mid-run via `ExperimentBudgetError`). Experiments sem `llm_judge`
+(`rubric_uses_llm_judge` falso) não são afetados.
+
+### Testes adicionados/alterados
+
+- `tests/test_phase4_rubrics_eval.py`: `TestLlmJudgeCostCap` (cap bloqueia
+  antes de gastar / cap permite dentro do limite / erro não vaza internals),
+  `test_llm_judge_records_cost_usd_on_evaluation_run`,
+  `test_duplicate_llm_judge_evaluation_still_returns_409`.
+- `tests/test_phase5_prompts_datasets_experiments.py`: experiment com
+  `llm_judge` bloqueado em 402 quando budget esgotado / experiment sem
+  `llm_judge` não bloqueado / experiment com `llm_judge` roda quando há budget.
+- `tests/test_phase12_quota_eval_storage.py`: **sem alteração** — G-12 já
+  cobria block/allow por plano; continua verde com custo real.
+
+### Comandos executados e resultados
+
+Não existe `.venv` neste ambiente; foi criada `apps/api/.venv` com
+`python3 -m venv` (Python 3.12) + `pip install -e ".[dev]"`. Os comandos foram
+executados via WSL Ubuntu (o repo é montado em `\wsl.localhost`):
+
+```bash
+wsl.exe -d Ubuntu -- bash -lc 'cd /home/inovatecjp/rougger/evalops/apps/api && \
+  .venv/bin/python -m pytest tests/test_phase4_rubrics_eval.py \
+  tests/test_phase5_prompts_datasets_experiments.py \
+  tests/test_phase12_quota_eval_storage.py -q --tb=short -p no:warnings'
+```
+✅ `93 passed in 151.13s`
+
+```bash
+wsl.exe -d Ubuntu -- bash -lc 'cd /home/inovatecjp/rougger/evalops/apps/api && \
+  .venv/bin/python -m pytest tests -q --tb=short -p no:warnings'
+```
+✅ `153 passed in 262.30s`
+
+Nota: para respeitar a regra "não rodar a mesma suíte mais de 2 vezes", os
+três comandos individuais foram consolidados na regressão focada (1ª execução)
+e a regressão ampliada (2ª execução); cada suíte-alvo rodou exatamente 2x.
+
+### Riscos remanescentes
+
+- **Custo estimado, não real**: enquanto o caminho de LLM for síncrono e sem
+  token usage, o custo é heurístico (~4 chars/token). Conservador, mas pode
+  divergir do faturamento real do provider.
+- **Pré-chamada usa `max_output_tokens` assumido (512)**: se a resposta real
+  for muito maior, o custo registrado pós-chamada reflete o real estimado, mas
+  o gate pré-chamada pode deixar passar um caso de borda; mitigado pelo budget
+  mensal que consome o custo real estimado.
+- **Mid-run em experiments**: a parada cumulativa usa `result["cost_usd"]` do
+  rubric (apenas `llm_judge` gera custo); se um futuro evaluator não-judge
+  passar a gerar custo, o tracking precisará discriminar por tipo.
+
+### Pode avançar para Fix-7B.8 ou Fix-7B.6?
+
+✅ **Sim** — entrega restrita à Fix-7B.5 (A-08 P1); nenhuma outra subfase
+Fix-7B foi implementada. Regressões de Fix-7B.1/.2/.4 e duplicate-409
+continuam verdes.

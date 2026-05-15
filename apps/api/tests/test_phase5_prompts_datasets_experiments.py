@@ -572,3 +572,138 @@ def test_build_dataset_from_traces_ignores_soft_deleted() -> None:
     names = [it["input"]["trace"]["name"] for it in items.json()["data"]]
     assert "docops.ct_keep" in names
     assert "docops.ct_drop" not in names
+
+
+# ── Fix-7B.5 (A-08): experiments using llm_judge respect the judge budget ────
+
+_JUDGE_EXP_RUBRIC = """
+slug: exp-judge
+name: Exp Judge
+description: experiment rubric using llm_judge
+threshold: 0.0
+aggregate: mean
+evaluators:
+  - id: judge
+    type: llm_judge
+    weight: 1.0
+    config:
+      model: openai/gpt-4o-mini
+      prompt: "Rate: {{ trace.output.assistant_message }}"
+      pass_threshold: 0.5
+      cost_cap_usd: 1.0
+"""
+
+_NONJUDGE_EXP_RUBRIC = """
+slug: exp-nonjudge
+name: Exp NonJudge
+description: experiment rubric without llm_judge
+threshold: 0.0
+aggregate: mean
+evaluators:
+  - id: length_check
+    type: length_bounds
+    weight: 1.0
+    config:
+      target: trace.output.assistant_message
+      unit: chars
+      min: 1
+      max: 5000
+"""
+
+
+def _build_experiment(headers, project_id, rubric_yaml) -> str:
+    api_key = _create_api_key(headers, project_id)
+    _ingest_trace(api_key)
+    rubric_id = client.post(
+        f"/v1/projects/{project_id}/rubrics",
+        headers=headers, json={"yaml_source": rubric_yaml},
+    ).json()["rubric"]["id"]
+    dataset_id = client.post(
+        f"/v1/projects/{project_id}/datasets",
+        headers=headers,
+        json={"slug": "replay", "description": "replay", "source": "traces"},
+    ).json()["id"]
+    client.post(
+        f"/v1/datasets/{dataset_id}/build-from-traces",
+        headers=headers, json={"environment": "prod", "limit": 10},
+    )
+    return client.post(
+        f"/v1/projects/{project_id}/experiments",
+        headers=headers,
+        json={
+            "name": "exp",
+            "dataset_id": dataset_id,
+            "rubric_id": rubric_id,
+            "variants": [{"name": "control", "model": "openai/gpt-4o-mini", "params": {}}],
+            "baseline_variant": "control",
+        },
+    ).json()["id"]
+
+
+def _exhaust_judge_budget(headers, org_id, project_id) -> None:
+    """Force a Subscription, tighten plan judge budget, seed monthly spend."""
+    client.get(f"/v1/organizations/{org_id}/subscription", headers=headers)
+    from app.models import EvaluationRun, Plan, Rubric, Subscription, Trace
+    from app.security import new_id
+    with SessionLocal() as db:
+        sub = db.query(Subscription).filter(Subscription.organization_id == org_id).one()
+        plan = db.get(Plan, sub.plan_id)
+        plan.monthly_judge_budget_usd = 0.001
+        db.add(plan)
+        trace = db.query(Trace).filter(Trace.project_id == project_id).first()
+        rubric = db.query(Rubric).filter(Rubric.project_id == project_id).first()
+        db.add(EvaluationRun(
+            id=new_id("evr"), project_id=project_id, trace_id=trace.id,
+            rubric_id=rubric.id, rubric_version=999, triggered_by="seed",
+            status="completed", cost_usd=0.10, run_metadata={},
+        ))
+        db.commit()
+
+
+def test_experiment_with_llm_judge_blocked_when_budget_exhausted(monkeypatch) -> None:
+    import app.domain.evaluators.llm_judge as lj_mod
+    monkeypatch.setattr(lj_mod, "call_llm", lambda *a, **kw: '{"score": 0.9}')
+
+    headers, org_id, project_id = _bootstrap()
+    experiment_id = _build_experiment(headers, project_id, _JUDGE_EXP_RUBRIC)
+    _exhaust_judge_budget(headers, org_id, project_id)
+
+    resp = client.post(
+        f"/v1/experiments/{experiment_id}/run",
+        headers=headers, json={"triggered_by": "api"},
+    )
+    assert resp.status_code == 402, resp.text
+    detail = resp.json()["detail"]
+    assert detail["error"] == "judge_budget_exhausted"
+    blob = str(detail)
+    for leak in ("Traceback", "SELECT", "sqlite", "/home/", "Bearer"):
+        assert leak not in blob
+
+
+def test_experiment_without_llm_judge_not_blocked_by_judge_budget() -> None:
+    headers, org_id, project_id = _bootstrap()
+    experiment_id = _build_experiment(headers, project_id, _NONJUDGE_EXP_RUBRIC)
+    _exhaust_judge_budget(headers, org_id, project_id)
+
+    resp = client.post(
+        f"/v1/experiments/{experiment_id}/run",
+        headers=headers, json={"triggered_by": "api"},
+    )
+    assert resp.status_code == 202, resp.text
+    assert resp.json()["status"] in ("completed", "error")
+
+
+def test_experiment_with_llm_judge_runs_when_budget_available(monkeypatch) -> None:
+    import app.domain.evaluators.llm_judge as lj_mod
+    monkeypatch.setattr(lj_mod, "call_llm", lambda *a, **kw: '{"score": 0.9}')
+
+    headers, org_id, project_id = _bootstrap()
+    experiment_id = _build_experiment(headers, project_id, _JUDGE_EXP_RUBRIC)
+    client.get(f"/v1/organizations/{org_id}/subscription", headers=headers)
+
+    resp = client.post(
+        f"/v1/experiments/{experiment_id}/run",
+        headers=headers, json={"triggered_by": "api"},
+    )
+    assert resp.status_code == 202, resp.text
+    assert resp.json()["status"] == "completed"

@@ -828,3 +828,135 @@ def test_list_project_evaluations_excludes_soft_deleted_trace() -> None:
     # Old run row is NOT deleted, only filtered from the project listing.
     with SessionLocal() as db:
         assert db.get(EvaluationRun, run_deleted) is not None
+
+
+# ── Fix-7B.5 (A-08): cost_cap_usd is real + judge cost is recorded ───────────
+
+class TestLlmJudgeCostCap:
+    def test_cost_cap_blocks_before_spending_when_estimate_exceeds(self, monkeypatch):
+        """A tiny cap must block the call entirely — call_llm never runs."""
+        import app.domain.evaluators.llm_judge as lj_mod
+
+        def _must_not_call(*a, **kw):
+            raise AssertionError("call_llm invoked despite cost cap")
+
+        monkeypatch.setattr(lj_mod, "call_llm", _must_not_call)
+        from app.domain.evaluators.llm_judge import run
+
+        result = run(CONTEXT, {
+            "model": "openai/gpt-4o-mini",
+            "prompt": "Rate: {{ trace.output.assistant_message }}",
+            "cost_cap_usd": 1e-9,
+        })
+        assert result.passed is False
+        assert result.reasoning == "cost_cap_exceeded"
+        assert result.raw_output["error"] == "cost_cap_exceeded"
+        assert result.cost_usd > 0  # estimated cost recorded for observability
+
+    def test_cost_cap_allows_when_estimate_within_cap(self, monkeypatch):
+        import app.domain.evaluators.llm_judge as lj_mod
+        monkeypatch.setattr(
+            lj_mod, "call_llm",
+            lambda *a, **kw: '{"score": 0.85, "reasoning": "ok"}',
+        )
+        from app.domain.evaluators.llm_judge import run
+
+        result = run(CONTEXT, {
+            "model": "openai/gpt-4o-mini",
+            "prompt": "Rate: {{ trace.output.assistant_message }}",
+            "cost_cap_usd": 1.0,
+        })
+        assert result.passed is True
+        assert result.score == pytest.approx(0.85)
+        assert result.cost_usd > 0  # judge cost is no longer a dead 0.0
+
+    def test_cost_cap_error_does_not_leak_internals(self, monkeypatch):
+        import app.domain.evaluators.llm_judge as lj_mod
+        monkeypatch.setattr(
+            lj_mod, "call_llm",
+            lambda *a, **kw: (_ for _ in ()).throw(AssertionError("nope")),
+        )
+        from app.domain.evaluators.llm_judge import run
+
+        result = run(CONTEXT, {
+            "model": "openai/gpt-4o-mini",
+            "prompt": "Rate: {{ trace.output.assistant_message }}",
+            "cost_cap_usd": 1e-12,
+        })
+        blob = f"{result.reasoning} {result.raw_output}"
+        for leak in ("Traceback", "SELECT", "sqlite", "Bearer", "/home/", "\wsl", "OPENAI_API_KEY"):
+            assert leak not in blob
+        assert set(result.raw_output) == {"error", "estimated_cost_usd", "cost_cap_usd"}
+
+
+JUDGE_COST_RUBRIC = """
+slug: judge-cost-rubric
+name: Judge Cost Rubric
+description: llm_judge with a generous cap
+threshold: 0.5
+aggregate: mean
+evaluators:
+  - id: judge
+    type: llm_judge
+    weight: 1.0
+    config:
+      model: openai/gpt-4o-mini
+      prompt: "Rate: {{ trace.output.assistant_message }}"
+      pass_threshold: 0.5
+      cost_cap_usd: 1.0
+"""
+
+
+def test_llm_judge_records_cost_usd_on_evaluation_run(monkeypatch):
+    """EvaluationRun.cost_usd must reflect the judge cost (was always 0.0)."""
+    import app.domain.evaluators.llm_judge as lj_mod
+    monkeypatch.setattr(
+        lj_mod, "call_llm",
+        lambda *a, **kw: '{"score": 0.9, "reasoning": "great"}',
+    )
+
+    headers, _, project_id, api_key = _bootstrap()
+    trace_id = _ingest_trace(api_key, project_id)
+    rubric_id = client.post(
+        f"/v1/projects/{project_id}/rubrics",
+        headers=headers,
+        json={"yaml_source": JUDGE_COST_RUBRIC},
+    ).json()["rubric"]["id"]
+
+    run_r = client.post(
+        "/v1/evaluations/run",
+        headers=headers,
+        json={"trace_id": trace_id, "rubric_id": rubric_id},
+    )
+    assert run_r.status_code == 201, run_r.text
+    run_data = run_r.json()["run"]
+    assert float(run_data["cost_usd"]) > 0.0
+    assert float(run_data["scores"][0]["cost_usd"]) > 0.0
+
+
+def test_duplicate_llm_judge_evaluation_still_returns_409(monkeypatch):
+    """Fix-7B.5 must not regress the G-11 duplicate-run 409 contract."""
+    import app.domain.evaluators.llm_judge as lj_mod
+    monkeypatch.setattr(
+        lj_mod, "call_llm",
+        lambda *a, **kw: '{"score": 0.9, "reasoning": "great"}',
+    )
+    headers, _, project_id, api_key = _bootstrap()
+    trace_id = _ingest_trace(api_key, project_id)
+    rubric_id = client.post(
+        f"/v1/projects/{project_id}/rubrics",
+        headers=headers,
+        json={"yaml_source": JUDGE_COST_RUBRIC},
+    ).json()["rubric"]["id"]
+
+    first = client.post(
+        "/v1/evaluations/run", headers=headers,
+        json={"trace_id": trace_id, "rubric_id": rubric_id},
+    )
+    assert first.status_code == 201, first.text
+    dup = client.post(
+        "/v1/evaluations/run", headers=headers,
+        json={"trace_id": trace_id, "rubric_id": rubric_id},
+    )
+    assert dup.status_code == 409
+    assert dup.json()["detail"]["error"] == "evaluation_run_duplicate"

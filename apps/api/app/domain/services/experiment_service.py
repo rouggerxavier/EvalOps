@@ -18,7 +18,11 @@ from sqlalchemy.orm import Session
 from app.domain.evaluators.base import EvaluatorResult
 from app.domain.evaluators.registry import REGISTRY
 from app.domain.rubrics.resolver import build_trace_context
-from app.domain.services.eval_service import _aggregate
+from app.domain.services.eval_service import (
+    _aggregate,
+    judge_budget_status,
+    rubric_uses_llm_judge,
+)
 from app.models import (
     Dataset,
     DatasetItem,
@@ -37,6 +41,15 @@ _jinja = Environment(autoescape=False)
 
 class ExperimentValidationError(Exception):
     """Invalid experiment configuration (maps to HTTP 422 in routes)."""
+
+
+class ExperimentBudgetError(Exception):
+    """Fix-7B.5 (A-08): the experiment's rubric uses an llm_judge evaluator but
+    the project's monthly judge budget is exhausted (or is exhausted mid-run).
+
+    Closes the bypass where experiment_service ran llm_judge through REGISTRY
+    with no budget/cost gate. The message is a stable, safe code
+    (``judge_budget_exhausted``) — no stack/SQL/path/secret."""
 
 
 def validate_variants(variants: list[dict] | list[Any], baseline_variant: str | None) -> None:
@@ -261,6 +274,19 @@ def execute_experiment(experiment: Experiment, db: Session) -> dict:
     if rubric_version is None:
         raise ValueError("rubric_version_not_found")
 
+    # Fix-7B.5 (A-08): same judge budget gate as the evaluation route. Without
+    # this, experiments were a budget-free path to run llm_judge. Pre-check up
+    # front so an already-exhausted plan never spends a cent.
+    uses_judge = rubric_uses_llm_judge(rubric_version.id, db)
+    judge_spent = 0.0
+    judge_budget = 0.0
+    if uses_judge:
+        has_budget, judge_spent, judge_budget = judge_budget_status(
+            experiment.project_id, db
+        )
+        if not has_budget:
+            raise ExperimentBudgetError("judge_budget_exhausted")
+
     items = (
         db.query(DatasetItem)
         .filter(DatasetItem.dataset_id == dataset.id)
@@ -302,6 +328,13 @@ def execute_experiment(experiment: Experiment, db: Session) -> dict:
             assistant_text = _synthesize_variant_output(template, variant, item)
             context = _build_variant_context(item, variant, assistant_text, db)
             result = _run_rubric_on_context(rubric_version, context, db)
+            # Fix-7B.5 (A-08): only llm_judge produces non-zero cost_usd, so the
+            # rubric's cost == judge spend. Stop consistently the moment
+            # cumulative judge spend would exceed the plan budget mid-run.
+            if uses_judge:
+                judge_spent += float(result["cost_usd"])
+                if judge_spent > judge_budget:
+                    raise ExperimentBudgetError("judge_budget_exhausted")
             scores.append(float(result["score"]))
             costs.append(float(result["cost_usd"]))
             latencies.append(int(result["latency_ms"]))
