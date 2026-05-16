@@ -4,6 +4,7 @@ import { History, MoreHorizontal, Play, Plus, Target } from "lucide-react";
 import { AuthRequiredPanel } from "@/components/AuthRequiredPanel";
 import { triggerEvaluationAction } from "@/lib/actions";
 import { getProjectEvaluations, getRubrics, getTraces, hasAuthToken, resolveProject } from "@/lib/api";
+import { safeErrorMessage } from "@/lib/safe-error";
 import type { EvaluationRun, Rubric } from "@/lib/types";
 
 type Props = {
@@ -79,6 +80,7 @@ export default async function EvaluationsPage({ params, searchParams }: Props) {
   const runs = evalsRes.data;
   const rubrics = rubricsRes.data;
   const traces = tracesRes.data;
+  const safeQueryError = qp.error ? safeErrorMessage(qp.error, "Falha ao criar avaliação.") : null;
 
   const rubricMap = new Map<string, Rubric>(rubrics.map((r) => [r.id, r]));
 
@@ -104,19 +106,19 @@ export default async function EvaluationsPage({ params, searchParams }: Props) {
           </p>
         </div>
         <div className="evo-row">
-          <button type="button" className="evo-btn evo-btn--sm">
+          <Link href="#run-evaluation" className="evo-btn evo-btn--sm">
             <Play size={13} /> Rodar agora
-          </button>
-          <button type="button" className="evo-btn evo-btn--sm evo-btn--primary">
-            <Plus size={13} /> Nova evaluation
-          </button>
+          </Link>
+          <Link href={`/o/${org}/p/${project}/rubrics`} className="evo-btn evo-btn--sm evo-btn--primary">
+            <Plus size={13} /> Nova rubric
+          </Link>
         </div>
       </div>
 
       {/* Flash */}
-      {qp.error && (
+      {safeQueryError && (
         <div style={{ padding: "10px 14px", background: "var(--err-bg)", border: "1px solid var(--err-border)", borderRadius: 6, color: "var(--err)", fontSize: 13, marginBottom: 12 }}>
-          {qp.error}
+          {safeQueryError}
         </div>
       )}
       {qp.created && (
@@ -210,7 +212,13 @@ export default async function EvaluationsPage({ params, searchParams }: Props) {
                       </td>
                       <td className="evo-muted">{lastRun ? relTime(lastRun.created_at) + " atrás" : "—"}</td>
                       <td>
-                        <button type="button" className="evo-btn evo-btn--ghost evo-btn--sm evo-btn--icon">
+                        <button
+                          type="button"
+                          className="evo-btn evo-btn--ghost evo-btn--sm evo-btn--icon"
+                          disabled
+                          data-status="planned"
+                          title="Ações por avaliação — em breve"
+                        >
                           <MoreHorizontal size={14} />
                         </button>
                       </td>
@@ -306,6 +314,7 @@ export default async function EvaluationsPage({ params, searchParams }: Props) {
       {/* Run trigger (collapsible) */}
       {tab === "active" && traces.length > 0 && rubrics.length > 0 && (
         <details
+          id="run-evaluation"
           style={{
             background: "var(--surface-1)",
             border: "1px solid var(--border)",

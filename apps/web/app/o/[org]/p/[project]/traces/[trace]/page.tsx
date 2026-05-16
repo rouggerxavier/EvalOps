@@ -6,6 +6,7 @@ import { SpanWaterfall } from "@/components/SpanWaterfall";
 import { getTrace, hasAuthToken } from "@/lib/api";
 import { createTraceFeedbackAction } from "@/lib/actions";
 import { formatCost, formatDateTime, formatLatency } from "@/lib/format";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 type Props = {
   params: Promise<{ org: string; project: string; trace: string }>;
@@ -30,6 +31,7 @@ export default async function TraceDetailPage({ params, searchParams }: Props) {
 
   const detail = await getTrace(trace);
   const t = detail.trace;
+  const safeQueryError = qp.error ? safeErrorMessage(qp.error, "Falha ao registrar feedback.") : null;
 
   return (
     <main className="evo-page">
@@ -40,6 +42,7 @@ export default async function TraceDetailPage({ params, searchParams }: Props) {
             <h1 className="evo-page-header__title" style={{ margin: 0 }}>{t.name}</h1>
             <StatusBadge status={t.status} />
             <span className="evo-tag">{t.environment}</span>
+            {t.redacted ? <span className="evo-tag">Redigido</span> : null}
           </div>
           <div className="evo-row" style={{ fontSize: 12, color: "var(--text-muted)", gap: 12 }}>
             <span className="evo-mono" style={{ fontSize: 11 }}>{t.id}</span>
@@ -50,9 +53,33 @@ export default async function TraceDetailPage({ params, searchParams }: Props) {
           </div>
         </div>
         <div className="evo-row">
-          <button type="button" className="evo-btn evo-btn--sm"><Flag size={13} /> Flagear</button>
-          <button type="button" className="evo-btn evo-btn--sm"><Play size={13} /> Reexecutar</button>
-          <button type="button" className="evo-btn evo-btn--sm"><GitCompare size={13} /> Comparar</button>
+          <button
+            type="button"
+            className="evo-btn evo-btn--sm"
+            disabled
+            data-status="planned"
+            title="Flag manual — em breve"
+          >
+            <Flag size={13} /> Flagear
+          </button>
+          <button
+            type="button"
+            className="evo-btn evo-btn--sm"
+            disabled
+            data-status="planned"
+            title="Reexecução de trace — em breve"
+          >
+            <Play size={13} /> Reexecutar
+          </button>
+          <button
+            type="button"
+            className="evo-btn evo-btn--sm"
+            disabled
+            data-status="planned"
+            title="Comparação de traces — em breve"
+          >
+            <GitCompare size={13} /> Comparar
+          </button>
           <Link className="evo-btn evo-btn--sm" href={`/o/${org}/p/${project}/traces`}>
             ← Traces
           </Link>
@@ -139,9 +166,9 @@ export default async function TraceDetailPage({ params, searchParams }: Props) {
                   Feedback registrado com sucesso.
                 </div>
               )}
-              {qp.error && (
+              {safeQueryError && (
                 <div style={{ marginBottom: 12, padding: "8px 12px", background: "var(--err-bg)", border: "1px solid var(--err-border)", borderRadius: 6, fontSize: 13, color: "var(--err)" }}>
-                  {qp.error}
+                  {safeQueryError}
                 </div>
               )}
               <form action={createTraceFeedbackAction} style={{ display: "flex", flexDirection: "column", gap: 12 }}>

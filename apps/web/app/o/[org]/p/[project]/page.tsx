@@ -95,7 +95,8 @@ function statusLabel(status: string): string {
 }
 
 
-function PageHeader({ project, org }: { project: string; org: string }) {
+function PageHeader({ project, org, environment }: { project: string; org: string; environment: string }) {
+  const refreshHref = `/o/${org}/p/${project}${environment ? `?environment=${encodeURIComponent(environment)}` : ""}`;
   return (
     <div className="evo-page-header">
       <div>
@@ -105,9 +106,15 @@ function PageHeader({ project, org }: { project: string; org: string }) {
         </div>
       </div>
       <div className="evo-page-header__actions">
-        <button className="evo-btn evo-btn--sm"><Clock size={13} /> Últimos 7 dias <ChevronDown size={12} /></button>
-        <button className="evo-btn evo-btn--sm"><RefreshCw size={13} /> Atualizar</button>
-        <button className="evo-btn evo-btn--sm evo-btn--primary"><Play size={13} /> Rodar avaliação</button>
+        <button className="evo-btn evo-btn--sm" type="button" disabled data-status="planned" title="Filtro de janela — em breve">
+          <Clock size={13} /> Últimos 7 dias <ChevronDown size={12} />
+        </button>
+        <Link href={refreshHref} className="evo-btn evo-btn--sm" title="Atualizar overview">
+          <RefreshCw size={13} /> Atualizar
+        </Link>
+        <Link href={`/o/${org}/p/${project}/evaluations`} className="evo-btn evo-btn--sm evo-btn--primary">
+          <Play size={13} /> Rodar avaliação
+        </Link>
       </div>
     </div>
   );
@@ -314,7 +321,7 @@ export default async function ProjectOverviewPage({ params, searchParams }: Prop
 
   return (
     <div className="evo-page">
-      <PageHeader project={project} org={org} />
+      <PageHeader project={project} org={org} environment={environment} />
 
             <section className="evo-kpi-grid">
               <MetricCard label="Traces" icon={<Activity size={12} />} value={fmtNumber(kpis.traces)} delta="janela atual" deltaDir="neutral" spark={tracesSpark} />
@@ -332,7 +339,14 @@ export default async function ProjectOverviewPage({ params, searchParams }: Prop
                   </div>
                   <div className="evo-row">
                     <Badge variant="info">cost</Badge>
-                    <button className="evo-btn evo-btn--ghost evo-btn--sm evo-btn--icon" aria-label="Exportar"><Download size={13} /></button>
+                    <Link
+                      className="evo-btn evo-btn--ghost evo-btn--sm evo-btn--icon"
+                      href={`/o/${org}/p/${project}/exports`}
+                      aria-label="Abrir exports"
+                      title="Abrir exports"
+                    >
+                      <Download size={13} />
+                    </Link>
                   </div>
                 </div>
                 <div className="evo-card__body">

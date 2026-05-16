@@ -21,6 +21,7 @@ const SAFE_HTTP_MESSAGES: Record<number, string> = {
   403: "Sem permissão para esta ação.",
   404: "Recurso não encontrado.",
   409: "Conflito: o recurso já existe ou foi modificado.",
+  410: "Export expirado. Gere um novo arquivo.",
   413: "Payload muito grande.",
   422: "Dados inválidos. Verifique os campos e tente novamente.",
   429: "Muitas requisições. Aguarde e tente novamente.",

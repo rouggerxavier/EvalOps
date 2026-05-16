@@ -25,6 +25,7 @@ export type Trace = {
   tags: Record<string, string>;
   user_ref?: string | null;
   metadata: Record<string, unknown>;
+  redacted: boolean;
   created_at: string;
 };
 
@@ -291,6 +292,9 @@ export type OrgSubscription = {
     monthly_trace_limit: number;
     monthly_eval_limit: number;
     monthly_export_limit: number;
+    monthly_span_limit: number;
+    monthly_token_limit: number;
+    monthly_judge_budget_usd: number;
   };
 };
 
@@ -300,5 +304,7 @@ export type OrgUsage = {
   traces_ingested: number;
   evaluations_run: number;
   exports_created: number;
+  spans_ingested: number;
+  tokens_ingested: number;
   cost_usd: number;
 };

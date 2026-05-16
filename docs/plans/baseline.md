@@ -2199,3 +2199,113 @@ Matches remanescentes justificados:
 `EvaluatorResult.reasoning`/`raw_output.error` foi corrigido e a regressão
 backend completa passou. Antes de commit/merge no worktree principal, integrar
 esta mudança em `fix-7b` após resolver o bloqueio local de `README.md` dirty.
+
+## Fix-7B.7 — Frontend contract/UX cleanup (2026-05-16)
+
+### Resumo
+
+Subfase focada em contrato e UX do dashboard sem redesign amplo. O frontend foi
+alinhado ao backend para download real de exports concluídos, atualização de
+tipos de plano/uso/redaction e remoção de botões com aparência de ação sem
+comportamento real.
+
+### Arquivos alterados
+
+- `apps/web/app/api/exports/[exportId]/download/route.ts`
+- `apps/web/app/o/[org]/p/[project]/exports/page.tsx`
+- `apps/web/app/o/[org]/p/[project]/evaluations/page.tsx`
+- `apps/web/app/o/[org]/p/[project]/page.tsx`
+- `apps/web/app/o/[org]/p/[project]/traces/[trace]/page.tsx`
+- `apps/web/app/o/[org]/p/[project]/traces/page.tsx`
+- `apps/web/lib/api.ts`
+- `apps/web/lib/safe-error.ts`
+- `apps/web/lib/types.ts`
+- `apps/web/tests/security.test.mjs`
+
+### Decisões de UX/contrato
+
+- Export download:
+  - botão `Download` agora usa rota frontend autenticada
+    `/api/exports/{id}/download`, que proxia `GET /v1/exports/{id}/download`
+    com bearer da sessão.
+  - erros `404/409/410` voltam para a página de exports com mensagem segura.
+  - jobs `running/queued/failed` não expõem CTA enganoso de download.
+- Estados planejados:
+  - ações futuras ficaram `disabled` + `data-status="planned"` + `title`
+    acionável.
+- Microcopy:
+  - removidas mensagens que insinuavam inexistência de download quando o
+    endpoint já existe.
+  - mantida linguagem operacional e não técnica.
+- Segurança de erro:
+  - `safe-error.ts` passou a mapear `410` para `Export expirado. Gere um novo arquivo.`
+  - páginas tocadas sanitizam `qp.error` antes de renderizar.
+
+### Botões conectados/desabilitados/removidos
+
+- **Conectados a ação real**
+  - `overview`: `Atualizar` (link para a própria página com query atual),
+    `Rodar avaliação` (link para `/evaluations`), ícone `Exportar` (link para
+    `/exports`).
+  - `evaluations`: `Rodar agora` (âncora para o formulário real de run),
+    `Nova rubric` (link para `/rubrics`).
+  - `exports`: `Download` real para jobs concluídos.
+- **Desabilitados como planejado**
+  - `overview`: filtro de janela (`Últimos 7 dias`) sem backend correspondente.
+  - `evaluations`: menu `MoreHorizontal` sem ações implementadas.
+  - `trace detail`: `Flagear`, `Reexecutar`, `Comparar`.
+
+### Tipos/helpers atualizados
+
+- `Trace.redacted`
+- `OrgUsage.spans_ingested`
+- `OrgUsage.tokens_ingested`
+- `OrgSubscription.plan.monthly_span_limit`
+- `OrgSubscription.plan.monthly_token_limit`
+- `OrgSubscription.plan.monthly_judge_budget_usd`
+- helper `getExportDownloadPath(exportId, redirectPath)` em `lib/api.ts`
+
+### Estado final de loading/empty/error
+
+- loading manteve padrão existente (sem redesign).
+- empty states preservados com próxima ação real (ex.: criar export, ir para
+  rubricas/traces).
+- erros de query/action nas páginas tocadas passam por sanitização e não
+  renderizam texto bruto técnico.
+
+### Testes executados
+
+Frontend:
+
+```bash
+cd apps/web && npm run test
+```
+✅ `51 pass, 0 fail`
+
+```bash
+cd apps/web && npm run build
+```
+✅ build OK
+
+```bash
+cd apps/web && npx tsc --noEmit
+```
+✅ typecheck OK
+
+Backend contrato (integração com endpoint de export):
+
+```bash
+cd apps/api && timeout 600 .venv/bin/python -m pytest \
+  tests/test_phase10_audit_privacy_exports.py \
+  tests/test_phase11_contracts_ux.py \
+  tests/test_phase12_quota_eval_storage.py \
+  -q --tb=short -p no:warnings
+```
+✅ `54 passed in 19.86s`
+
+### Riscos remanescentes
+
+1. A página de exports continua dependente de IDs conhecidos em query (`ids`),
+   porque o contrato ainda não oferece histórico global de jobs.
+2. Ações planejadas (`flag`, `reexecute`, `compare`, menu por evaluation) foram
+   explicitadas como futuras, mas continuam sem implementação funcional.

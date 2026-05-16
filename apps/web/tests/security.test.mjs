@@ -187,6 +187,7 @@ const SAFE_HTTP_MESSAGES = {
   403: "Sem permissão para esta ação.",
   404: "Recurso não encontrado.",
   409: "Conflito: o recurso já existe ou foi modificado.",
+  410: "Export expirado. Gere um novo arquivo.",
   413: "Payload muito grande.",
   422: "Dados inválidos. Verifique os campos e tente novamente.",
   429: "Muitas requisições. Aguarde e tente novamente.",
@@ -257,6 +258,11 @@ test("G-23: 401 maps to friendly auth message", () => {
 test("G-23: 409 maps to safe conflict message", () => {
   const msg = "API 409: {\"detail\":\"organization_slug_taken\"}";
   assert.equal(sanitizeApiError(msg), SAFE_HTTP_MESSAGES[409]);
+});
+
+test("G-23: 410 maps to export-expired message", () => {
+  const msg = "API 410: export_expired";
+  assert.equal(sanitizeApiError(msg), SAFE_HTTP_MESSAGES[410]);
 });
 
 test("G-23: 429 maps to rate-limit message", () => {
@@ -462,3 +468,91 @@ for (const section of ["datasets", "exports", "keys"]) {
     assert.equal(/\{error\.message/.test(src), false);
   });
 }
+
+// --- Fix-7B.7: frontend contract/UX cleanup -------------------------------
+
+test("Fix-7B.7: exports page uses real authenticated download route", () => {
+  const src = readFileSync(new URL("../app/o/[org]/p/[project]/exports/page.tsx", import.meta.url), "utf8");
+  assert.match(src, /getExportDownloadPath\(/);
+  assert.match(src, /href=\{getExportDownloadPath\(row\.job\.id,\s*currentViewHref\)\}/);
+  assert.match(src, /download/);
+});
+
+test("Fix-7B.7: export pending or failed state does not expose clickable fake download", () => {
+  const src = readFileSync(new URL("../app/o/[org]/p/[project]/exports/page.tsx", import.meta.url), "utf8");
+  assert.match(src, /disabled/);
+  assert.match(src, /Processando/);
+  assert.match(src, /Falhou/);
+});
+
+test("Fix-7B.7: exports copy does not claim download endpoint is missing", () => {
+  const src = readFileSync(new URL("../app/o/[org]/p/[project]/exports/page.tsx", import.meta.url), "utf8");
+  assert.equal(/nao existe endpoint de download/i.test(src), false);
+  assert.equal(/download nao existe/i.test(src), false);
+  assert.equal(/nao implementado/i.test(src), false);
+});
+
+test("Fix-7B.7: export download route proxies backend with auth and safe redirect", () => {
+  const src = readFileSync(new URL("../app/api/exports/[exportId]/download/route.ts", import.meta.url), "utf8");
+  assert.match(src, /getAuthToken/);
+  assert.match(src, /\/exports\/\$\{encodeURIComponent\(exportId\)\}\/download/);
+  assert.equal(/\/exports\/\$\{exportId\}\/download/.test(src), false);
+  assert.match(src, /Authorization:\s*`Bearer \$\{token\}`/);
+  assert.match(src, /sanitizeApiError/);
+  assert.match(src, /410/);
+});
+
+test("Fix-7B.7: planned controls are explicitly disabled in touched pages", () => {
+  const overview = readFileSync(new URL("../app/o/[org]/p/[project]/page.tsx", import.meta.url), "utf8");
+  const evaluations = readFileSync(new URL("../app/o/[org]/p/[project]/evaluations/page.tsx", import.meta.url), "utf8");
+  const traceDetail = readFileSync(new URL("../app/o/[org]/p/[project]/traces/[trace]/page.tsx", import.meta.url), "utf8");
+
+  assert.match(overview, /data-status="planned"/);
+  assert.match(evaluations, /data-status="planned"/);
+  assert.match(traceDetail, /data-status="planned"/);
+  assert.match(traceDetail, /disabled/);
+});
+
+test("Fix-7B.7: actionable controls in touched pages use real links/forms", () => {
+  const overview = readFileSync(new URL("../app/o/[org]/p/[project]/page.tsx", import.meta.url), "utf8");
+  const evaluations = readFileSync(new URL("../app/o/[org]/p/[project]/evaluations/page.tsx", import.meta.url), "utf8");
+  const exportsPage = readFileSync(new URL("../app/o/[org]/p/[project]/exports/page.tsx", import.meta.url), "utf8");
+
+  assert.match(overview, /href=\{`\/o\/\$\{org\}\/p\/\$\{project\}\/evaluations`\}/);
+  assert.match(evaluations, /href="#run-evaluation"/);
+  assert.match(exportsPage, /action=\{createExportAction\}/);
+});
+
+test("Fix-7B.7: frontend types include usage/quota and redaction fields", () => {
+  const src = readFileSync(new URL("../lib/types.ts", import.meta.url), "utf8");
+  for (const token of [
+    "redacted: boolean",
+    "spans_ingested: number",
+    "tokens_ingested: number",
+    "monthly_span_limit: number",
+    "monthly_token_limit: number",
+    "monthly_judge_budget_usd: number",
+    "next_cursor: string | null",
+    "cost_usd: number",
+  ]) {
+    assert.match(src, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  }
+});
+
+test("Fix-7B.7: touched pages sanitize query-driven error surfaces", () => {
+  const exportsPage = readFileSync(new URL("../app/o/[org]/p/[project]/exports/page.tsx", import.meta.url), "utf8");
+  const evaluations = readFileSync(new URL("../app/o/[org]/p/[project]/evaluations/page.tsx", import.meta.url), "utf8");
+  const traceDetail = readFileSync(new URL("../app/o/[org]/p/[project]/traces/[trace]/page.tsx", import.meta.url), "utf8");
+
+  assert.match(exportsPage, /safeErrorMessage\(qp\.error/);
+  assert.match(evaluations, /safeErrorMessage\(qp\.error/);
+  assert.match(traceDetail, /safeErrorMessage\(qp\.error/);
+  assert.equal(/\{qp\.error\}/.test(evaluations), false);
+  assert.equal(/\{qp\.error\}/.test(traceDetail), false);
+});
+
+test("Fix-7B.7: exports usage panel surfaces judge budget safely", () => {
+  const src = readFileSync(new URL("../app/o/[org]/p/[project]/exports/page.tsx", import.meta.url), "utf8");
+  assert.match(src, /monthly_judge_budget_usd/);
+  assert.match(src, /formatCost\(subResult\.subscription\.plan\.monthly_judge_budget_usd\)/);
+});

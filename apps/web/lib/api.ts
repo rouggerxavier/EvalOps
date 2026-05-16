@@ -316,6 +316,11 @@ export async function getExport(exportId: string): Promise<ExportJob> {
   return fetchJson<ExportJob>(`/exports/${exportId}`);
 }
 
+export function getExportDownloadPath(exportId: string, redirectPath: string): string {
+  const params = new URLSearchParams({ redirect: redirectPath });
+  return `/api/exports/${encodeURIComponent(exportId)}/download?${params.toString()}`;
+}
+
 export async function getOrganizationSubscription(orgId: string): Promise<OrgSubscription> {
   return fetchJson<OrgSubscription>(`/organizations/${orgId}/subscription`);
 }
