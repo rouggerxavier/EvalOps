@@ -210,6 +210,15 @@ CONTEXT = {
     }
 }
 
+LEAKY_EVALUATOR_ERROR = "Traceback SELECT /home/app/.venv token evk_prod_deadbeef Bearer abc"
+LEAK_NEEDLES = ("Traceback", "SELECT", "/home/", "evk_", "Bearer", "token evk_prod_deadbeef")
+
+
+def _assert_no_error_leak(value: object) -> None:
+    blob = str(value)
+    for needle in LEAK_NEEDLES:
+        assert needle not in blob, f"leak detected: {needle!r} in {blob!r}"
+
 
 class TestRegexMatch:
     def test_must_match_passes(self):
@@ -329,6 +338,36 @@ class TestJsonSchemaValid:
         })
         assert result.passed is False
 
+    def test_invalid_json_error_does_not_expose_payload(self):
+        from app.domain.evaluators.json_schema_valid import run
+        sensitive = f"not json {LEAKY_EVALUATOR_ERROR}"
+        ctx = {"trace": {"output": {"assistant_message": sensitive}}}
+        result = run(ctx, {"target": "trace.output.assistant_message"})
+        assert result.passed is False
+        assert result.reasoning == "invalid_json"
+        assert result.raw_output["parse_error"] == "invalid_json"
+        _assert_no_error_leak(result.reasoning)
+        _assert_no_error_leak(result.raw_output)
+
+    def test_schema_error_does_not_expose_instance_or_schema(self):
+        from app.domain.evaluators.json_schema_valid import run
+        ctx = {
+            "trace": {
+                "output": {
+                    "assistant_message": json.dumps({"api_key": "evk_prod_deadbeef", "sql": "SELECT * FROM users"})
+                }
+            }
+        }
+        result = run(ctx, {
+            "target": "trace.output.assistant_message",
+            "schema": {"type": "object", "required": ["safe_field"]},
+        })
+        assert result.passed is False
+        assert result.reasoning == "schema_validation_failed"
+        assert result.raw_output["schema_error"] == "schema_validation_failed"
+        _assert_no_error_leak(result.reasoning)
+        _assert_no_error_leak(result.raw_output)
+
 
 class TestExactMatch:
     def test_exact_match_passes(self):
@@ -398,6 +437,24 @@ class TestCosineSimilarity:
         assert result.passed is False
         assert result.score == pytest.approx(0.0)
 
+    def test_embedding_failure_is_sanitized(self, monkeypatch):
+        import app.domain.evaluators.cosine_similarity as cs_mod
+
+        def _boom(*_args, **_kwargs):
+            raise RuntimeError(LEAKY_EVALUATOR_ERROR)
+
+        monkeypatch.setattr(cs_mod, "get_embedding", _boom)
+
+        from app.domain.evaluators.cosine_similarity import run
+        result = run(CONTEXT, {
+            "target_a": "trace.output.assistant_message",
+            "target_b": "x",
+        })
+        assert result.passed is False
+        assert result.raw_output["error"] == "embedding_failed"
+        _assert_no_error_leak(result.reasoning)
+        _assert_no_error_leak(result.raw_output)
+
 
 class TestLlmJudge:
     def test_valid_response(self, monkeypatch):
@@ -457,6 +514,26 @@ class TestLlmJudge:
         assert result.passed is False
         assert result.score == pytest.approx(0.4)
 
+    def test_llm_call_failure_is_sanitized(self, monkeypatch):
+        import app.domain.evaluators.llm_judge as lj_mod
+
+        def _boom(*_args, **_kwargs):
+            raise RuntimeError(LEAKY_EVALUATOR_ERROR)
+
+        monkeypatch.setattr(lj_mod, "call_llm", _boom)
+
+        from app.domain.evaluators.llm_judge import run
+        result = run(CONTEXT, {
+            "model": "openai/gpt-4o-mini",
+            "prompt": "Rate: {{ trace.output.assistant_message }}",
+            "cost_cap_usd": 1.0,
+        })
+        assert result.passed is False
+        assert result.raw_output["error"] == "llm_call_failed"
+        assert result.cost_usd >= 0
+        _assert_no_error_leak(result.reasoning)
+        _assert_no_error_leak(result.raw_output)
+
 
 # ── Aggregation tests ─────────────────────────────────────────────────────────
 
@@ -513,6 +590,47 @@ class TestEvalAPI:
         assert run_data["passed"] is True
         assert len(run_data["scores"]) == 1
         assert run_data["scores"][0]["evaluator_slug"] == "length_check"
+
+    def test_evaluation_api_does_not_expose_evaluator_error(self, monkeypatch):
+        import app.domain.evaluators.llm_judge as lj_mod
+
+        def _boom(*_args, **_kwargs):
+            raise RuntimeError(LEAKY_EVALUATOR_ERROR)
+
+        monkeypatch.setattr(lj_mod, "call_llm", _boom)
+        headers, _, project_id, api_key = _bootstrap()
+        trace_id = _ingest_trace(api_key, project_id)
+        rubric_yaml = """
+slug: sanitized-evaluator-error
+name: Sanitized Evaluator Error
+description: Evaluator failure should not leak internals
+threshold: 0.5
+aggregate: mean
+evaluators:
+  - id: judge
+    type: llm_judge
+    weight: 1.0
+    config:
+      model: openai/gpt-4o-mini
+      prompt: "Rate: {{ trace.output.assistant_message }}"
+      cost_cap_usd: 1.0
+"""
+        rubric_resp = client.post(
+            f"/v1/projects/{project_id}/rubrics",
+            headers=headers,
+            json={"yaml_source": rubric_yaml},
+        )
+        assert rubric_resp.status_code == 201, rubric_resp.text
+        run_resp = client.post(
+            "/v1/evaluations/run",
+            headers=headers,
+            json={"trace_id": trace_id, "rubric_id": rubric_resp.json()["rubric"]["id"]},
+        )
+        assert run_resp.status_code == 201, run_resp.text
+        score = run_resp.json()["run"]["scores"][0]
+        assert score["reasoning"] == "LLM call failed: llm_call_failed"
+        assert score["raw_output"]["error"] == "llm_call_failed"
+        _assert_no_error_leak(run_resp.text)
 
     def test_invalid_yaml_returns_422(self):
         headers, _, project_id, _ = _bootstrap()

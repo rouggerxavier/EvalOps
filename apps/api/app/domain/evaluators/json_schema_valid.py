@@ -14,6 +14,10 @@ def _extract_first_json(text: str) -> str | None:
     return match.group(0) if match else None
 
 
+INVALID_JSON_ERROR = "invalid_json"
+SCHEMA_VALIDATION_ERROR = "schema_validation_failed"
+
+
 def run(context: dict, config: dict[str, Any]) -> EvaluatorResult:
     t0 = time.monotonic()
     target_path: str = config.get("target", "")
@@ -30,13 +34,13 @@ def run(context: dict, config: dict[str, Any]) -> EvaluatorResult:
 
     try:
         parsed = json.loads(json_text)
-    except json.JSONDecodeError as exc:
+    except json.JSONDecodeError:
         latency_ms = int((time.monotonic() - t0) * 1000)
         return EvaluatorResult(
             score=0.0,
             passed=False,
-            reasoning=f"JSON parse error: {exc}",
-            raw_output={"parse_error": str(exc)},
+            reasoning=INVALID_JSON_ERROR,
+            raw_output={"parse_error": INVALID_JSON_ERROR},
             latency_ms=latency_ms,
         )
 
@@ -51,9 +55,9 @@ def run(context: dict, config: dict[str, Any]) -> EvaluatorResult:
             # Fallback: just check it parses
             valid = True
             error_msg = None
-        except Exception as exc:  # noqa: BLE001
+        except Exception:  # noqa: BLE001
             valid = False
-            error_msg = str(exc)
+            error_msg = SCHEMA_VALIDATION_ERROR
     else:
         valid = True
         error_msg = None

@@ -2071,3 +2071,131 @@ backend executada foi o smoke Alembic obrigatório em SQLite efêmero.
 
 ✅ **Sim** — Fix-7B.8 ficou isolada em deploy/Alembic/npm audit; nenhuma outra
 subfase Fix-7B foi implementada.
+
+---
+
+## Fix-7B.6.1 — Sanitize evaluator-returned errors (2026-05-16)
+
+### Escopo
+
+Correção curta do blocker P1 identificado na auditoria Fix-7B.6:
+
+- `llm_judge` e `cosine_similarity` retornavam `str(exc)` em
+  `EvaluatorResult.reasoning` e `raw_output.error`.
+- `json_schema_valid` podia retornar mensagens cruas de parse/schema contendo
+  payload, schema ou input sensível.
+- Esses campos são persistidos em score/evaluation e podem ser expostos pela
+  API de evaluations.
+
+Não houve alteração de soft delete, logout, quota/concurrency, judge budget
+além da preservação do contrato existente, Docker/Alembic, SDK, Redis,
+cleanup jobs, API key expiration, polling frontend ou UI.
+
+### Correção aplicada
+
+- `apps/api/app/domain/evaluators/llm_judge.py`: falhas de `call_llm` agora
+  passam por `safe_message(..., context="llm_judge")`; `reasoning` e
+  `raw_output.error` recebem somente texto público seguro. O contrato
+  `cost_cap_exceeded`, `cost_usd` e `cost_cap_usd` foi preservado.
+- `apps/api/app/domain/evaluators/cosine_similarity.py`: exceções de embedding
+  ou cálculo agora passam por `safe_message(..., context="cosine_similarity")`;
+  `reasoning` e `raw_output.error` não carregam mais `str(exc)` cru.
+- `apps/api/app/domain/evaluators/json_schema_valid.py`: erro de JSON inválido
+  retorna o slug `invalid_json`; erro de schema retorna
+  `schema_validation_failed`. O schema, a instância e o payload bruto deixam de
+  ser expostos em `reasoning`/`raw_output`.
+- `apps/api/app/domain/services/eval_service.py`: defesa em profundidade
+  sanitiza `EvaluatorResult.reasoning` de resultados falhos e chaves
+  `error`/`parse_error`/`schema_error` em `raw_output` antes de persistir.
+
+### Testes adicionados
+
+`apps/api/tests/test_phase4_rubrics_eval.py` cobre:
+
+- `llm_judge` com `call_llm` levantando erro contendo `Traceback`, SQL, path
+  local, token `evk_` e bearer token.
+- `cosine_similarity` com embedding falhando com erro equivalente.
+- `json_schema_valid` com JSON inválido e schema error contendo payload
+  sensível.
+- API de evaluation persistindo/retornando score sem expor o erro bruto do
+  evaluator.
+
+### Comandos executados e resultados
+
+O worktree isolado não possui `.venv`; os testes foram executados a partir do
+codigo em `/tmp/evalops-fix-7b6-audit-ab588aa` usando o Python do venv existente
+em `/home/rouggerxavier/dev/evalops/apps/api/.venv/bin/python`.
+
+```bash
+cd /tmp/evalops-fix-7b6-audit-ab588aa/apps/api && \
+  timeout 600 /home/rouggerxavier/dev/evalops/apps/api/.venv/bin/python \
+  -m pytest tests/test_phase4_rubrics_eval.py -q --tb=short -p no:warnings
+```
+✅ `62 passed in 4.50s`
+
+```bash
+cd /tmp/evalops-fix-7b6-audit-ab588aa/apps/api && \
+  timeout 600 /home/rouggerxavier/dev/evalops/apps/api/.venv/bin/python \
+  -m pytest tests/test_phase10_audit_privacy_exports.py -q --tb=short -p no:warnings
+```
+✅ `25 passed in 3.12s`
+
+```bash
+cd /tmp/evalops-fix-7b6-audit-ab588aa/apps/api && \
+  timeout 600 /home/rouggerxavier/dev/evalops/apps/api/.venv/bin/python \
+  -m pytest tests/test_phase12_quota_eval_storage.py -q --tb=short -p no:warnings
+```
+✅ `24 passed in 2.98s`
+
+```bash
+cd /tmp/evalops-fix-7b6-audit-ab588aa/apps/api && \
+  timeout 1200 /home/rouggerxavier/dev/evalops/apps/api/.venv/bin/python \
+  -m pytest tests -q --tb=short -p no:warnings
+```
+✅ `182 passed in 16.51s`
+
+Frontend validation:
+
+- `apps/web/node_modules` não existe neste worktree isolado.
+- Nenhum `npm install` foi executado, conforme restrição do prompt.
+- `npm run test`, `npm run build` e `npx tsc --noEmit` ficam pendentes para um
+  worktree com dependências frontend instaladas.
+
+### Busca final por vazamento
+
+```bash
+rg "str\\(exc\\)|repr\\(exc\\)|raw_output.*error|reasoning.*exc|Evaluator error" \
+  apps/api/app/domain/evaluators apps/api/app/domain/services/eval_service.py
+```
+
+Matches remanescentes justificados:
+
+- `eval_service.py` usa `raw_output={"error": "judge_budget_exhausted"}`:
+  slug estruturado e seguro.
+- `eval_service.py` usa `reasoning=f"Evaluator error: {safe}"` e
+  `raw_output={"error": safe}`: `safe` vem de `safe_message`.
+- `cosine_similarity.py` e `llm_judge.py` usam `raw_output={"error": safe}`:
+  `safe` vem de `safe_message`.
+- `json_schema_valid.py` usa `parse_error`/`schema_error` com slugs seguros.
+- `llm_judge.py` ainda mantém `raw_output.raw = raw_text[:500]` quando a
+  resposta do LLM não é JSON válido. Esse campo não é exceção nem
+  `raw_output.error`; fica como risco residual para auditoria posterior se o
+  provider puder ecoar input sensível em respostas inválidas.
+
+### Riscos remanescentes
+
+1. A validação frontend não foi executada neste worktree por ausência de
+   `node_modules`.
+2. A correção foi aplicada no worktree isolado em detached `ab588aa`, porque o
+   worktree principal estava bloqueado por `README.md` dirty e arquivos
+   untracked que não deveriam ser tocados sem autorização.
+3. `raw_output.raw` de resposta inválida do `llm_judge` continua limitado a
+   500 caracteres, mas não foi alterado por estar fora do blocker específico
+   `str(exc)`/`raw_output.error`.
+
+### Pode avançar para Fix-7B.7?
+
+✅ **Sim, do ponto de vista backend da Fix-7B.6.1**: o blocker P1 de
+`EvaluatorResult.reasoning`/`raw_output.error` foi corrigido e a regressão
+backend completa passou. Antes de commit/merge no worktree principal, integrar
+esta mudança em `fix-7b` após resolver o bloqueio local de `README.md` dirty.

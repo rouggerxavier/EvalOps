@@ -9,6 +9,7 @@ from typing import Any
 from app.domain.evaluators.base import EvaluatorResult
 from app.domain.rubrics.resolver import resolve_dotpath
 from app.infra.llm.pricing import estimate_judge_cost_usd
+from app.safe_errors import safe_message
 
 
 def _extract_first_json(text: str) -> str | None:
@@ -105,12 +106,13 @@ def run(context: dict, config: dict[str, Any]) -> EvaluatorResult:
         try:
             raw_text = call_llm(model, messages, temperature)
         except Exception as exc:  # noqa: BLE001
+            safe = safe_message(exc, fallback="llm_call_failed", context="llm_judge")
             latency_ms = int((time.monotonic() - t0) * 1000)
             return EvaluatorResult(
                 score=0.0,
                 passed=False,
-                reasoning=f"LLM call failed: {exc}",
-                raw_output={"error": str(exc)},
+                reasoning=f"LLM call failed: {safe}",
+                raw_output={"error": safe},
                 cost_usd=_estimated_cost(raw_text),
                 latency_ms=latency_ms,
             )
