@@ -2,7 +2,7 @@
 
 Date: 2026-05-17
 Base branch: `main`
-Base HEAD: `f13f24c`
+Base HEAD: `0ab562e`
 Primary status source: `docs/audits/evalops-phase7-status-after-7bc.md`
 
 This is the operational roadmap from the current `main`, after 7B/7C and the
@@ -13,7 +13,7 @@ were treated as untouched.
 
 | Subphase | Status | Next step |
 |---|---|---|
-| 7A Alembic/migrations | partial | Verify Postgres smoke and record result. |
+| 7A Alembic/migrations | partial / Postgres inconclusive | Re-run Postgres smoke in a Docker/Postgres-enabled environment before any new migration. |
 | 7B service extraction/ownership | partial | Leave as follow-up unless touching phase 5 routers; remaining `_project_or_404` wrappers are real. |
 | 7C structured logging/request_id | done | Do not reimplement. Monitor in deploy/runtime validation. |
 | 7D SDK retry/dead-letter | partial | Implement only dead-letter/replay gap if still in Phase 7. |
@@ -51,6 +51,16 @@ Acceptance:
 - Empty Postgres reaches `0001_baseline`.
 - Legacy stamping instructions remain correct.
 - Docs record exactly what was run and any blocker.
+
+2026-05-17 attempt:
+
+- Branch/HEAD: `main` at `0ab562e`.
+- Result: **Postgres inconclusive**, not approved and not failed.
+- Blocker: Docker was not installed in the WSL distro; `psql` and
+  `pg_isready` were unavailable; no local listener existed on `5432`/`55432`;
+  `DATABASE_URL` and `EVALOPS_DB_URL` were unset.
+- No Postgres database was touched. Re-run the smoke with a disposable DB named
+  `evalops_alembic_smoke` before authoring `0002+`.
 
 Code review before commit: yes.
 

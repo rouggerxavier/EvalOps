@@ -226,8 +226,26 @@ What was actually validated in Phase 7A:
 |---|---|
 | `alembic upgrade head` on empty SQLite | ✅ creates 26 tables identical to `create_all` (table names + columns + indexes diff = empty). |
 | `alembic downgrade base` round-trip on SQLite | ✅ drops every table; only `alembic_version` remains. |
-| `alembic upgrade head` on Postgres | ⏳ **pending** — local Docker not available in this session; smoke needs to be run as part of the prod deploy gate. |
+| `alembic upgrade head` on Postgres | ⏳ **inconclusive on 2026-05-17** — checkout `main` at `0ab562e`, but Docker was not installed in this WSL distro, `psql`/`pg_isready` were unavailable, no local listener existed on `5432`/`55432`, and `DATABASE_URL`/`EVALOPS_DB_URL` were unset. No Postgres DB was touched. |
 | Test regression (`test_health`, `test_auth_flow`, `test_phase8`, `test_phase12`) with default `create_all` path | see `docs/plans/baseline.md` Phase 7A section. |
+
+Postgres smoke remains required before adding future schema migrations. In a
+Docker-enabled environment, the intended disposable target is:
+
+```bash
+docker run --name evalops-postgres-alembic-smoke \
+  -e POSTGRES_USER=evalops \
+  -e POSTGRES_PASSWORD=evalops \
+  -e POSTGRES_DB=evalops_alembic_smoke \
+  -p 55432:5432 \
+  -d postgres:16-alpine
+
+cd apps/api
+DATABASE_URL="postgresql+psycopg://evalops:evalops@localhost:55432/evalops_alembic_smoke" \
+  .venv/bin/python -m alembic upgrade head
+DATABASE_URL="postgresql+psycopg://evalops:evalops@localhost:55432/evalops_alembic_smoke" \
+  .venv/bin/python -m alembic current
+```
 
 ---
 

@@ -27,7 +27,7 @@ Sources used:
 
 | Subphase | Real status | Evidence | Remaining gaps | Next step |
 |---|---|---|---|---|
-| 7A Alembic / migrations | partial | `618e511` added `apps/api/alembic/`, `0001_baseline_schema.py`, `EVALOPS_USE_ALEMBIC` startup path, and `docs/ops/database-migrations.md`; `b6c962d` updated `docker-compose.prod.yml` with a dedicated `migrate` job. | Postgres smoke remains pending in docs; `Base.metadata.create_all` and `ensure_schema_compatibility()` still exist for dev/test fallback; future schema changes still need new revisions. | Run focused 7A verification on Postgres and document go/no-go before adding new schema work. |
+| 7A Alembic / migrations | partial / Postgres inconclusive | `618e511` added `apps/api/alembic/`, `0001_baseline_schema.py`, `EVALOPS_USE_ALEMBIC` startup path, and `docs/ops/database-migrations.md`; `b6c962d` updated `docker-compose.prod.yml` with a dedicated `migrate` job; 2026-05-17 smoke attempt on `main` `0ab562e` found Docker/Postgres unavailable locally and touched no DB. | Postgres smoke still lacks execution evidence; `Base.metadata.create_all` and `ensure_schema_compatibility()` still exist for dev/test fallback; future schema changes still need new revisions. | Re-run focused 7A verification on a disposable Postgres before adding new schema work. |
 | 7B service extraction / ownership helper | partial | `618e511` added `app/ownership.py`, `trace_ingest_service.py`, `export_service.py`, `api_key_service.py`; `routes.py` and `routes_phase6.py` now call these services. | `routes_phase5.py` still has `_project_or_404` wrappers and call sites; routers remain large (`routes.py` 421 lines, `routes_phase5.py` 499 lines, `routes_phase6.py` 185 lines); some services still own framework exceptions/commits. | Treat as 7B follow-up, preferably after deployment blockers or when touching related routers for real bugs. |
 | 7C structured logging / request_id | done | `9e9a517` added `app/logging_config.py`, `app/request_id.py`, middleware in `app/main.py`, context updates in `app/deps.py`, and `tests/test_phase13_logging_request_id.py`. | No gap found against the original 7C objective. Operational validation in the target deploy environment is still useful. | Do not reimplement; only harden if runtime logging issues appear. |
 | 7D SDK retry / dead-letter | partial | `40cf27a` changed `packages/sdk-python/evalops/uploader.py` and `packages/sdk-python/tests/test_sdk.py`; current code has controlled retries, 408/429/5xx/exception retry behavior, bounded shutdown/flush logic, queue-full fallback, and `dropped_count`. | No local dead-letter directory, no `replay_dead_letter(...)`, no Retry-After honoring, and no jitter found. `packages/sdk-python/evalops/__init__.py` does not export replay. | Do gap analysis and implement only dead-letter/replay plus Retry-After/jitter if still desired; preserve the reliability fixes from `40cf27a`. |
@@ -96,8 +96,12 @@ work without fresh evidence:
 
 Blocking or near-blocking items:
 
-- 7A Postgres migration smoke: run `alembic upgrade head` and rollback/smoke on
-  a real Postgres environment, then record the result.
+- 7A Postgres migration smoke: the 2026-05-17 local attempt was inconclusive
+  because Docker was not installed in this WSL distro, `psql`/`pg_isready`
+  were unavailable, no local listener existed on `5432`/`55432`, and
+  `DATABASE_URL`/`EVALOPS_DB_URL` were unset. Re-run `alembic upgrade head`,
+  `alembic current`, and optional disposable rollback on a real disposable
+  Postgres environment, then record the result.
 - 7D dead-letter/replay gap: implement local dead-letter files and
   `replay_dead_letter(...)` only if SDK telemetry durability remains part of
   Phase 7.

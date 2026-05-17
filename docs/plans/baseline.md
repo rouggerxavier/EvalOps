@@ -45,7 +45,7 @@ Resumo de status documentado:
 
 | Subfase | Status atualizado | Evidência curta |
 |---|---|---|
-| 7A Alembic/migrations | parcial | Alembic e compose `migrate` existem; Postgres smoke pendente. |
+| 7A Alembic/migrations | parcial | Alembic e compose `migrate` existem; Postgres smoke tentado em 2026-05-17, mas inconclusivo por ausência local de Docker/Postgres. |
 | 7B service extraction/ownership | parcial | Services e `ownership.py` existem; `_project_or_404` ainda aparece em `routes_phase5.py`. |
 | 7C structured logging/request_id | feito | `9e9a517`, `logging_config.py`, `request_id.py`, teste phase13. |
 | 7D SDK retry/dead-letter | parcial | `40cf27a` cobre retry/drop; dead-letter/replay ausentes. |
@@ -1260,10 +1260,11 @@ OpenTelemetry (Fase 7), `npm audit` (pré-existente), validação Docker real
 ## Fase 7A — Alembic + migrações formais (2026-05-14)
 
 ### Status
-✅ **Concluída**. G-19 fechado para SQLite; Postgres pendente apenas em
-validação operacional (Docker indisponível no host). Schema management
+⚠️ **Parcialmente validada**. G-19 fechado para SQLite; Postgres smoke
+pendente/inconclusivo por falta de ambiente descartável. Schema management
 continua dual: Alembic ativado por env flag para prod, `create_all`
-permanece como caminho default para a suíte de testes.
+permanece como caminho default para a suíte de testes. Não criar migration
+`0002+` antes de validar `0001_baseline` em Postgres descartável.
 
 ### Gaps fechados
 - **G-19** — Alembic adotado. Diretório `apps/api/alembic/` com `env.py`
@@ -1352,12 +1353,24 @@ DATABASE_URL=sqlite:///./tmp_alembic.db .venv/bin/alembic downgrade base
 `alembic_version`.
 
 #### Postgres
-⏳ **Pendente** — Docker indisponível neste ambiente. Smoke recomendado
-em staging:
+⏳ **Inconclusivo em 2026-05-17** — tentativa feita em `main` no HEAD
+`0ab562e`; Docker não estava instalado nesta distro WSL, `psql` e
+`pg_isready` não estavam disponíveis, não havia listener local em
+`5432`/`55432`, e `DATABASE_URL`/`EVALOPS_DB_URL` estavam unset. Nenhum
+Postgres foi tocado.
+
+Smoke recomendado em ambiente com Postgres descartável:
 
 ```bash
-DATABASE_URL=postgresql+psycopg://evalops:****@db:5432/evalops \
-  alembic upgrade head && alembic downgrade -1 && alembic upgrade head
+cd apps/api
+DATABASE_URL=postgresql+psycopg://evalops:evalops@localhost:55432/evalops_alembic_smoke \
+  .venv/bin/python -m alembic upgrade head
+DATABASE_URL=postgresql+psycopg://evalops:evalops@localhost:55432/evalops_alembic_smoke \
+  .venv/bin/python -m alembic current
+DATABASE_URL=postgresql+psycopg://evalops:evalops@localhost:55432/evalops_alembic_smoke \
+  .venv/bin/python -m alembic downgrade base
+DATABASE_URL=postgresql+psycopg://evalops:evalops@localhost:55432/evalops_alembic_smoke \
+  .venv/bin/python -m alembic upgrade head
 ```
 
 #### Regressão
@@ -1437,8 +1450,10 @@ caminho prod end-to-end.
    `alembic stamp 0001_baseline` exatamente uma vez por DB; esquecer
    = upgrade futuro tenta recriar tabelas que existem. Mitigação: o
    runbook em `docs/ops/database-migrations.md` cobre o passo.
-3. **Postgres não validado nesta sessão**: smoke obrigatório antes de
-   ativar `EVALOPS_USE_ALEMBIC=1` em qualquer Postgres real.
+3. **Postgres não validado nesta sessão**: smoke de 2026-05-17 ficou
+   inconclusivo por ausência local de Docker/Postgres. A validação em Postgres
+   descartável segue obrigatória antes de qualquer nova migration `0002+` e
+   antes de ativar `EVALOPS_USE_ALEMBIC=1` em qualquer Postgres real.
 4. **Flake de FS no WSL2 com múltiplos arquivos por chamada `pytest`**:
    já documentado em "Workaround SQLite" no topo do baseline; rodando
    isoladamente cada arquivo retorna verde. Solução estrutural (isolar
@@ -1446,11 +1461,10 @@ caminho prod end-to-end.
 
 ### Pode avançar para Fase 7B?
 
-✅ **Sim** — bloqueador único de deploy Postgres novo (G-19) está
-fechado. Próxima subfase (`7B — Service extraction + ownership
-helper`) pode começar; quando ela criar nova revision (ex:
-`api_keys.expires_at` em 7E), a infra Alembic já está pronta para
-recebê-la com `down_revision = "0001_baseline"`.
+⚠️ **Parcial** — a infraestrutura Alembic existe, mas a tentativa de smoke em
+Postgres de 2026-05-17 ficou inconclusiva por falta de Docker/Postgres local.
+Não criar nova revision (ex: `api_keys.expires_at` em 7E) antes de validar
+`0001_baseline` em Postgres descartável e confirmar `alembic current`.
 
 ---
 
@@ -1460,7 +1474,8 @@ recebê-la com `down_revision = "0001_baseline"`.
 
 ✅ Concluída. Routers afinados, regras de aplicação movidas para
 services, ownership/project lookup centralizado. Sem Alembic tocado
-(7A já fechou), sem frontend, sem mudança de contrato público.
+(7A segue parcial/inconclusiva para Postgres), sem frontend, sem mudança de
+contrato público.
 
 ### Services extraídos
 
@@ -1562,8 +1577,10 @@ cada arquivo isolado verde.
 ✅ **Sim** — routers críticos (`routes.py`, `routes_phase6.py`) agora
 só resolvem ownership + chamam service. Regra de aplicação isolada em
 `domain/services`. Modelos SQLAlchemy permanecem sem regra de negócio.
-Próxima subfase (observabilidade / request_id / logging JSON, ou
-`ApiKey.expires_at` em 7E) pode começar sobre base limpa.
+Próxima subfase sem schema (observabilidade / request_id / logging JSON, ou
+decisão de 7D) pode ser decidida separadamente. `ApiKey.expires_at` em 7E com
+nova migration/`0002+` só deve começar depois de validar `0001_baseline` em
+Postgres descartável.
 
 ---
 
