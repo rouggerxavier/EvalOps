@@ -2,7 +2,9 @@
 
 Date: 2026-05-17
 Base branch: `main`
-Base HEAD: `0ab562e`
+Base HEAD: `0812b76`
+Original next-steps snapshot: `0ab562e`; latest documentation verification:
+`0812b76`.
 Primary status source: `docs/audits/evalops-phase7-status-after-7bc.md`
 
 This is the operational roadmap from the current `main`, after 7B/7C and the
@@ -13,7 +15,7 @@ were treated as untouched.
 
 | Subphase | Status | Next step |
 |---|---|---|
-| 7A Alembic/migrations | partial / Postgres inconclusive | Re-run Postgres smoke in a Docker/Postgres-enabled environment before any new migration. |
+| 7A Alembic/migrations | Postgres smoke approved on disposable DB | No longer blocking `0002+`; every new migration still needs its own PR and smoke. |
 | 7B service extraction/ownership | partial | Leave as follow-up unless touching phase 5 routers; remaining `_project_or_404` wrappers are real. |
 | 7C structured logging/request_id | done | Do not reimplement. Monitor in deploy/runtime validation. |
 | 7D SDK retry/dead-letter | partial | Implement only dead-letter/replay gap if still in Phase 7. |
@@ -22,29 +24,41 @@ were treated as untouched.
 
 ## Recommended Order
 
-### 1. Verify 7A on Postgres
+### 1. 7A Postgres Smoke Is Validated
 
-Objective: prove the existing Alembic setup is deploy-ready before adding new
-migrations.
+Objective: record that the existing Alembic setup was proven against disposable
+Postgres before adding new migrations.
 
-Likely files:
+Recorded files:
 
 - `docs/ops/database-migrations.md`
 - `docs/plans/baseline.md`
-- `docker-compose.prod.yml`
-- `apps/api/alembic/versions/0001_baseline_schema.py`
+- `docs/audits/evalops-phase7-status-after-7bc.md`
+- `docs/plans/evalops-phase7-next-steps.md`
 
 Risks:
 
-- SQLite success does not prove Postgres readiness.
+- The completed smoke proves `0001_baseline` on an empty disposable Postgres;
+  it does not prove production migration or legacy DB stamping.
 - Legacy DBs require `alembic stamp 0001_baseline`; running `upgrade head` on an
   already-created schema may fail.
+- Future schema changes still need their own revision, PR, and smoke.
 
-Tests/commands:
+Executed smoke:
 
-- `cd apps/api && DATABASE_URL=<postgres-url> alembic upgrade head`
-- `cd apps/api && DATABASE_URL=<postgres-url> alembic current`
-- optional disposable rollback: `alembic downgrade base`
+- Disposable container `evalops-postgres-alembic-smoke` using
+  `postgres:16-alpine`, DB `evalops_alembic_smoke`, port `55432`.
+- `pg_isready` initially returned `no response`, then
+  `/var/run/postgresql:5432 - accepting connections`.
+- First Alembic attempt failed with `ModuleNotFoundError: No module named
+  'psycopg'`; installing `psycopg[binary]>=3,<4` in the local API venv installed
+  `psycopg` 3.3.4 and `psycopg-binary` 3.3.4.
+- `alembic upgrade head` passed with `Running upgrade  -> 0001_baseline`.
+- `alembic current` returned `0001_baseline (head)`.
+- `alembic downgrade base` passed.
+- A second `alembic upgrade head` passed and `current` again returned
+  `0001_baseline (head)`.
+- The disposable container was removed.
 
 Acceptance:
 
@@ -52,19 +66,13 @@ Acceptance:
 - Legacy stamping instructions remain correct.
 - Docs record exactly what was run and any blocker.
 
-2026-05-17 attempt:
+Result: **7A Postgres smoke approved in a disposable DB**. The prior Docker/WSL
+environment blocker is resolved. No production Postgres was used, and the
+legacy `stamp` path was not tested.
 
-- Branch/HEAD: `main` at `0ab562e`.
-- Result: **Postgres inconclusive**, not approved and not failed.
-- Blocker: Docker was not installed in the WSL distro; `psql` and
-  `pg_isready` were unavailable; no local listener existed on `5432`/`55432`;
-  `DATABASE_URL` and `EVALOPS_DB_URL` were unset.
-- No Postgres database was touched. Re-run the smoke with a disposable DB named
-  `evalops_alembic_smoke` before authoring `0002+`.
-
-Code review before commit: yes.
-
-Suggested model/effort: GPT-5.5 high.
+Next: do not spend another pass on 7A unless a new migration is created. Choose
+7D dead-letter/replay if SDK telemetry durability is the priority, or decide
+and split 7E if credential expiry is the priority.
 
 ### 2. Finish Updated 7D Only If SDK Durability Is In Scope
 
@@ -126,7 +134,7 @@ Likely frontend files:
 
 Risks:
 
-- Adding schema before 7A Postgres verification.
+- Adding schema without a dedicated migration PR and smoke.
 - Polling causing avoidable load or rate-limit noise.
 
 Tests:
@@ -214,7 +222,7 @@ Suggested model/effort: GPT-5.5 high.
 
 Blocking:
 
-- [ ] Postgres Alembic smoke is verified or explicitly waived.
+- [x] Postgres Alembic smoke is verified on disposable DB.
 - [x] Structured request logging/request ID is implemented by `9e9a517`.
 - [ ] 7D is either completed with dead-letter/replay or formally narrowed to
       the retry/drop work in `40cf27a`.
@@ -229,31 +237,26 @@ Non-blocking but tracked:
 Recommended verification commands per area:
 
 - `git status --short`
-- `cd apps/api && alembic upgrade head` on disposable SQLite/Postgres
+- for new migrations: `cd apps/api && alembic upgrade head` on disposable
+  SQLite/Postgres
 - `rg -n "_project_or_404" apps/api/app`
 - `cd apps/api && .venv/bin/python -m pytest tests/test_phase13_logging_request_id.py -q --tb=short -p no:warnings`
 - `cd packages/sdk-python && python -m pytest tests -q --tb=short`
 
 ## Next Prompt
 
-Use this prompt next:
+Use one of these prompts next, depending on priority:
 
 ```text
-Você está no EvalOps em main. Faça apenas verificação/documentação da 7A
-Postgres Alembic readiness, sem implementar código produtivo.
+Você está no EvalOps em main. Próximo passo recomendado: implementar apenas a
+lacuna 7D dead-letter/replay do SDK, preservando o retry/drop já entregue em
+40cf27a. Confirme branch/HEAD/status, não reescreva retry, adicione testes
+focados e não faça commit/push.
+```
 
-Leia:
-- AGENTS.md e CLAUDE.md se existirem;
-- docs/ops/database-migrations.md;
-- docs/plans/baseline.md;
-- docs/audits/evalops-phase7-status-after-7bc.md;
-- docker-compose.prod.yml;
-- apps/api/alembic/versions/0001_baseline_schema.py.
-
-Confirme branch/HEAD/status. Se houver Postgres/Docker disponível, rode smoke
-em DB descartável: alembic upgrade head, alembic current e rollback opcional.
-Se não houver, documente o bloqueio e o comando exato que deve ser rodado.
-
-Atualize docs apenas com evidência. Não altere backend/frontend/SDK. Não faça
-commit/push.
+```text
+Você está no EvalOps em main. Alternativa se credential expiry for prioridade:
+decida e divida 7E em backend ApiKey.expires_at e frontend polling. A 7A
+Postgres smoke já está validada, mas qualquer migration 0002+ precisa de PR
+próprio e smoke próprio. Confirme branch/HEAD/status e não faça commit/push.
 ```

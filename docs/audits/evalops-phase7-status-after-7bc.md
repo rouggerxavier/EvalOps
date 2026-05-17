@@ -2,7 +2,9 @@
 
 Date: 2026-05-17
 Branch inspected: `main`
-HEAD inspected: `f13f24c`
+HEAD inspected: `0812b76`
+Original status-pass snapshot: `f13f24c`; latest documentation verification:
+`0812b76`.
 Scope: documentation reconciliation only. No backend, frontend, SDK, test, infra,
 or lockfile changes were made as part of this status pass.
 
@@ -27,7 +29,7 @@ Sources used:
 
 | Subphase | Real status | Evidence | Remaining gaps | Next step |
 |---|---|---|---|---|
-| 7A Alembic / migrations | partial / Postgres inconclusive | `618e511` added `apps/api/alembic/`, `0001_baseline_schema.py`, `EVALOPS_USE_ALEMBIC` startup path, and `docs/ops/database-migrations.md`; `b6c962d` updated `docker-compose.prod.yml` with a dedicated `migrate` job; 2026-05-17 smoke attempt on `main` `0ab562e` found Docker/Postgres unavailable locally and touched no DB. | Postgres smoke still lacks execution evidence; `Base.metadata.create_all` and `ensure_schema_compatibility()` still exist for dev/test fallback; future schema changes still need new revisions. | Re-run focused 7A verification on a disposable Postgres before adding new schema work. |
+| 7A Alembic / migrations | Postgres smoke approved on disposable DB | `618e511` added `apps/api/alembic/`, `0001_baseline_schema.py`, `EVALOPS_USE_ALEMBIC` startup path, and `docs/ops/database-migrations.md`; `b6c962d` updated `docker-compose.prod.yml` with a dedicated `migrate` job; 2026-05-17 Docker Desktop + WSL integration resolved the prior local blocker and a disposable `postgres:16-alpine` container (`evalops-postgres-alembic-smoke`, DB `evalops_alembic_smoke`, port `55432`) accepted connections; after installing missing local venv dependency `psycopg[binary]` (`psycopg`/`psycopg-binary` 3.3.4), `alembic upgrade head` reached `0001_baseline`, `alembic current` returned `0001_baseline (head)`, `alembic downgrade base` passed, and `alembic upgrade head` passed again. The disposable container was removed. | `Base.metadata.create_all` and `ensure_schema_compatibility()` still exist for dev/test fallback; legacy DB `stamp` was not tested in this smoke; future schema changes still need new revisions, their own PR, and their own smoke. | 7A no longer blocks authoring `0002+`; next choose 7D dead-letter/replay or decide/split 7E by priority. |
 | 7B service extraction / ownership helper | partial | `618e511` added `app/ownership.py`, `trace_ingest_service.py`, `export_service.py`, `api_key_service.py`; `routes.py` and `routes_phase6.py` now call these services. | `routes_phase5.py` still has `_project_or_404` wrappers and call sites; routers remain large (`routes.py` 421 lines, `routes_phase5.py` 499 lines, `routes_phase6.py` 185 lines); some services still own framework exceptions/commits. | Treat as 7B follow-up, preferably after deployment blockers or when touching related routers for real bugs. |
 | 7C structured logging / request_id | done | `9e9a517` added `app/logging_config.py`, `app/request_id.py`, middleware in `app/main.py`, context updates in `app/deps.py`, and `tests/test_phase13_logging_request_id.py`. | No gap found against the original 7C objective. Operational validation in the target deploy environment is still useful. | Do not reimplement; only harden if runtime logging issues appear. |
 | 7D SDK retry / dead-letter | partial | `40cf27a` changed `packages/sdk-python/evalops/uploader.py` and `packages/sdk-python/tests/test_sdk.py`; current code has controlled retries, 408/429/5xx/exception retry behavior, bounded shutdown/flush logic, queue-full fallback, and `dropped_count`. | No local dead-letter directory, no `replay_dead_letter(...)`, no Retry-After honoring, and no jitter found. `packages/sdk-python/evalops/__init__.py` does not export replay. | Do gap analysis and implement only dead-letter/replay plus Retry-After/jitter if still desired; preserve the reliability fixes from `40cf27a`. |
@@ -92,16 +94,22 @@ work without fresh evidence:
 
 ---
 
-## 3. Still Required Before Calling Phase 7 Complete
+## 3. Resolved And Still Required Before Calling Phase 7 Complete
+
+Resolved blocker:
+
+- 7A Postgres migration smoke: approved on 2026-05-17 in a disposable
+  `postgres:16-alpine` container after Docker Desktop + WSL integration resolved
+  the prior environment blocker. The first Alembic attempt failed only because
+  `psycopg` was missing from the local API venv; installing
+  `psycopg[binary]>=3,<4` installed `psycopg`/`psycopg-binary` 3.3.4 and
+  unblocked the smoke. `alembic upgrade head`, `alembic current`,
+  `alembic downgrade base`, and a second `alembic upgrade head` all passed
+  against DB `evalops_alembic_smoke`; `current` reported
+  `0001_baseline (head)`. The disposable container was removed.
 
 Blocking or near-blocking items:
 
-- 7A Postgres migration smoke: the 2026-05-17 local attempt was inconclusive
-  because Docker was not installed in this WSL distro, `psql`/`pg_isready`
-  were unavailable, no local listener existed on `5432`/`55432`, and
-  `DATABASE_URL`/`EVALOPS_DB_URL` were unset. Re-run `alembic upgrade head`,
-  `alembic current`, and optional disposable rollback on a real disposable
-  Postgres environment, then record the result.
 - 7D dead-letter/replay gap: implement local dead-letter files and
   `replay_dead_letter(...)` only if SDK telemetry durability remains part of
   Phase 7.
@@ -168,8 +176,10 @@ part of 7D already landed. The updated order should be:
 Objective: prove the existing Alembic path works outside SQLite before adding
 more schema work.
 
-Likely files: docs only for this pass, then `docs/ops/database-migrations.md`
-and `docs/plans/baseline.md` for the recorded result.
+Status: completed on 2026-05-17 with disposable Postgres.
+
+Likely files for any future update: docs only for recording evidence, then
+`docs/ops/database-migrations.md` and `docs/plans/baseline.md`.
 
 Risks: false confidence if only SQLite is tested; legacy databases may require
 `alembic stamp 0001_baseline` instead of `upgrade head`.
@@ -182,8 +192,10 @@ Required tests/commands:
 
 Acceptance:
 
-- Empty Postgres upgrade reaches `0001_baseline`.
-- Existing/legacy stamping path is documented if used.
+- Empty Postgres upgrade reaches `0001_baseline`. Done on disposable DB
+  `evalops_alembic_smoke`.
+- Existing/legacy stamping path is documented if used. Not exercised by this
+  disposable smoke.
 - No production DB is mutated without explicit operator approval.
 
 Review before commit: yes.
@@ -307,8 +319,7 @@ Suggested model/effort: GPT-5.5 high for Redis/cleanup safety.
 
 Blocking for Phase 7 completion:
 
-- [ ] 7A: Alembic path verified on SQLite and Postgres, or Postgres gap
-      explicitly accepted as out-of-scope for the current deployment.
+- [x] 7A: Alembic path verified on SQLite and disposable Postgres.
 - [ ] 7B: service extraction status is either completed or explicitly marked as
       partial follow-up with remaining wrappers listed.
 - [x] 7C: structured JSON request logging with request ID exists in `9e9a517`.
@@ -344,7 +355,7 @@ Already satisfied by commits:
 Decisions needed:
 
 - Should Phase 7 require Postgres smoke before any new schema work? Recommended:
-  yes.
+  yes, and every new migration must still land in its own PR with its own smoke.
 - Should 7D write permanent `4xx` failures to dead-letter, or only retry-exhausted
   transient failures? The old plan implied no dead-letter for permanent client
   errors.

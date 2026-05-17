@@ -226,11 +226,16 @@ What was actually validated in Phase 7A:
 |---|---|
 | `alembic upgrade head` on empty SQLite | ✅ creates 26 tables identical to `create_all` (table names + columns + indexes diff = empty). |
 | `alembic downgrade base` round-trip on SQLite | ✅ drops every table; only `alembic_version` remains. |
-| `alembic upgrade head` on Postgres | ⏳ **inconclusive on 2026-05-17** — checkout `main` at `0ab562e`, but Docker was not installed in this WSL distro, `psql`/`pg_isready` were unavailable, no local listener existed on `5432`/`55432`, and `DATABASE_URL`/`EVALOPS_DB_URL` were unset. No Postgres DB was touched. |
+| `alembic upgrade head` on disposable Postgres | ✅ **approved on 2026-05-17** — Docker Desktop + WSL integration resolved the prior environment blocker. Disposable `postgres:16-alpine` container `evalops-postgres-alembic-smoke` with DB `evalops_alembic_smoke` on port `55432`; `pg_isready` initially returned `no response`, then `/var/run/postgresql:5432 - accepting connections`. First Alembic attempt failed with `ModuleNotFoundError: No module named 'psycopg'`, classified as a local venv dependency issue; installing `psycopg[binary]>=3,<4` installed `psycopg` 3.3.4 and `psycopg-binary` 3.3.4, and `import psycopg` passed. `alembic upgrade head` ran with `PostgresqlImpl`, transactional DDL, and `Running upgrade  -> 0001_baseline`; `alembic current` returned `0001_baseline (head)`. |
+| Disposable Postgres round-trip | ✅ `alembic downgrade base` passed, then `alembic upgrade head` passed again, and `alembic current` returned `0001_baseline (head)`. The disposable container was removed with `docker rm -f evalops-postgres-alembic-smoke`. |
 | Test regression (`test_health`, `test_auth_flow`, `test_phase8`, `test_phase12`) with default `create_all` path | see `docs/plans/baseline.md` Phase 7A section. |
 
-Postgres smoke remains required before adding future schema migrations. In a
-Docker-enabled environment, the intended disposable target is:
+This smoke used only a disposable local container and discardable local
+credentials (`evalops`/`evalops`); it did not use a production Postgres and did
+not test the legacy DB `alembic stamp 0001_baseline` path.
+
+Every future schema migration still needs its own PR and its own disposable
+Postgres smoke. The validated disposable target shape was:
 
 ```bash
 docker run --name evalops-postgres-alembic-smoke \
@@ -245,6 +250,10 @@ DATABASE_URL="postgresql+psycopg://evalops:evalops@localhost:55432/evalops_alemb
   .venv/bin/python -m alembic upgrade head
 DATABASE_URL="postgresql+psycopg://evalops:evalops@localhost:55432/evalops_alembic_smoke" \
   .venv/bin/python -m alembic current
+DATABASE_URL="postgresql+psycopg://evalops:evalops@localhost:55432/evalops_alembic_smoke" \
+  .venv/bin/python -m alembic downgrade base
+DATABASE_URL="postgresql+psycopg://evalops:evalops@localhost:55432/evalops_alembic_smoke" \
+  .venv/bin/python -m alembic upgrade head
 ```
 
 ---

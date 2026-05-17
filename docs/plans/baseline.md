@@ -45,7 +45,7 @@ Resumo de status documentado:
 
 | Subfase | Status atualizado | Evidência curta |
 |---|---|---|
-| 7A Alembic/migrations | parcial | Alembic e compose `migrate` existem; Postgres smoke tentado em 2026-05-17, mas inconclusivo por ausência local de Docker/Postgres. |
+| 7A Alembic/migrations | Postgres smoke aprovado em DB descartável | Alembic e compose `migrate` existem; Docker Desktop + WSL integration resolveu o bloqueio ambiental, e o smoke em `postgres:16-alpine` descartável validou `upgrade head`, `current`, `downgrade base` e novo `upgrade head`. |
 | 7B service extraction/ownership | parcial | Services e `ownership.py` existem; `_project_or_404` ainda aparece em `routes_phase5.py`. |
 | 7C structured logging/request_id | feito | `9e9a517`, `logging_config.py`, `request_id.py`, teste phase13. |
 | 7D SDK retry/dead-letter | parcial | `40cf27a` cobre retry/drop; dead-letter/replay ausentes. |
@@ -1260,11 +1260,12 @@ OpenTelemetry (Fase 7), `npm audit` (pré-existente), validação Docker real
 ## Fase 7A — Alembic + migrações formais (2026-05-14)
 
 ### Status
-⚠️ **Parcialmente validada**. G-19 fechado para SQLite; Postgres smoke
-pendente/inconclusivo por falta de ambiente descartável. Schema management
+✅ **Postgres smoke aprovado em DB descartável**. G-19 fechado para SQLite; em
+2026-05-17, Docker Desktop + WSL integration resolveu o bloqueio ambiental e o
+smoke em Postgres descartável validou `0001_baseline`. Schema management
 continua dual: Alembic ativado por env flag para prod, `create_all`
-permanece como caminho default para a suíte de testes. Não criar migration
-`0002+` antes de validar `0001_baseline` em Postgres descartável.
+permanece como caminho default para a suíte de testes. Toda nova migration
+`0002+` ainda precisa de PR próprio e smoke próprio.
 
 ### Gaps fechados
 - **G-19** — Alembic adotado. Diretório `apps/api/alembic/` com `env.py`
@@ -1353,13 +1354,31 @@ DATABASE_URL=sqlite:///./tmp_alembic.db .venv/bin/alembic downgrade base
 `alembic_version`.
 
 #### Postgres
-⏳ **Inconclusivo em 2026-05-17** — tentativa feita em `main` no HEAD
-`0ab562e`; Docker não estava instalado nesta distro WSL, `psql` e
-`pg_isready` não estavam disponíveis, não havia listener local em
-`5432`/`55432`, e `DATABASE_URL`/`EVALOPS_DB_URL` estavam unset. Nenhum
-Postgres foi tocado.
+✅ **Aprovado em 2026-05-17** — o bloqueio ambiental anterior foi resolvido com
+Docker Desktop + WSL integration. O smoke usou apenas um container local
+descartável:
 
-Smoke recomendado em ambiente com Postgres descartável:
+- container: `evalops-postgres-alembic-smoke`;
+- image: `postgres:16-alpine`;
+- DB: `evalops_alembic_smoke`;
+- port: `55432`;
+- usuário/senha descartáveis do container local: `evalops`/`evalops`.
+
+`pg_isready` retornou inicialmente `no response` e depois
+`/var/run/postgresql:5432 - accepting connections`.
+
+A primeira tentativa de Alembic falhou com
+`ModuleNotFoundError: No module named 'psycopg'`; isso foi classificado como
+problema da venv local, não falha do Alembic. A venv local foi corrigida com:
+
+```bash
+cd /home/rouggerxavier/dev/evalops/apps/api
+.venv/bin/python -m pip install "psycopg[binary]>=3,<4"
+```
+
+Resultado: `psycopg` 3.3.4, `psycopg-binary` 3.3.4 e `import psycopg` OK.
+
+Smoke executado:
 
 ```bash
 cd apps/api
@@ -1372,6 +1391,20 @@ DATABASE_URL=postgresql+psycopg://evalops:evalops@localhost:55432/evalops_alembi
 DATABASE_URL=postgresql+psycopg://evalops:evalops@localhost:55432/evalops_alembic_smoke \
   .venv/bin/python -m alembic upgrade head
 ```
+
+Resultado:
+
+- `Context impl PostgresqlImpl`;
+- transactional DDL;
+- `Running upgrade  -> 0001_baseline`;
+- `alembic current`: `0001_baseline (head)`;
+- `alembic downgrade base`: OK;
+- novo `alembic upgrade head`: OK;
+- `alembic current`: `0001_baseline (head)`;
+- container descartável removido com `docker rm -f evalops-postgres-alembic-smoke`.
+
+Este smoke não usou Postgres de produção e não testou `alembic stamp` em DB
+legado.
 
 #### Regressão
 Subconjunto de testes rodado nesta sessão com `create_all` ainda no
@@ -1429,7 +1462,6 @@ caminho prod end-to-end.
   ambos permanecem no ramo default do lifespan; remoção exige migrar
   as fixtures de teste para preservarem `alembic_version`, escopo de
   Fase 7B.
-- **Postgres smoke real** — bloqueado por ambiente; documentado.
 - **Autogenerate de revisões "delta"** — schema atual cabe em uma
   única revision baseline; não há delta a representar separadamente
   (todos os ALTERs documentados em `models.py` já estão consolidados
@@ -1450,10 +1482,11 @@ caminho prod end-to-end.
    `alembic stamp 0001_baseline` exatamente uma vez por DB; esquecer
    = upgrade futuro tenta recriar tabelas que existem. Mitigação: o
    runbook em `docs/ops/database-migrations.md` cobre o passo.
-3. **Postgres não validado nesta sessão**: smoke de 2026-05-17 ficou
-   inconclusivo por ausência local de Docker/Postgres. A validação em Postgres
-   descartável segue obrigatória antes de qualquer nova migration `0002+` e
-   antes de ativar `EVALOPS_USE_ALEMBIC=1` em qualquer Postgres real.
+3. **Novas migrations ainda exigem smoke próprio**: o smoke de 2026-05-17
+   valida `0001_baseline` em Postgres descartável, mas não autoriza mudanças de
+   schema futuras sem PR próprio, revision própria e smoke próprio. DB legado
+   ainda precisa do fluxo documentado de `alembic stamp 0001_baseline`; esse
+   caminho não foi exercitado neste smoke.
 4. **Flake de FS no WSL2 com múltiplos arquivos por chamada `pytest`**:
    já documentado em "Workaround SQLite" no topo do baseline; rodando
    isoladamente cada arquivo retorna verde. Solução estrutural (isolar
@@ -1461,10 +1494,10 @@ caminho prod end-to-end.
 
 ### Pode avançar para Fase 7B?
 
-⚠️ **Parcial** — a infraestrutura Alembic existe, mas a tentativa de smoke em
-Postgres de 2026-05-17 ficou inconclusiva por falta de Docker/Postgres local.
-Não criar nova revision (ex: `api_keys.expires_at` em 7E) antes de validar
-`0001_baseline` em Postgres descartável e confirmar `alembic current`.
+✅ **Sim para desbloquear a próxima decisão de schema** — a infraestrutura
+Alembic existe e `0001_baseline` foi validada em Postgres descartável com
+`alembic current` em `0001_baseline (head)`. Nova revision (ex:
+`api_keys.expires_at` em 7E) deve continuar em PR próprio com smoke próprio.
 
 ---
 
@@ -1474,8 +1507,8 @@ Não criar nova revision (ex: `api_keys.expires_at` em 7E) antes de validar
 
 ✅ Concluída. Routers afinados, regras de aplicação movidas para
 services, ownership/project lookup centralizado. Sem Alembic tocado
-(7A segue parcial/inconclusiva para Postgres), sem frontend, sem mudança de
-contrato público.
+(7A agora tem Postgres smoke aprovado em DB descartável), sem frontend, sem
+mudança de contrato público.
 
 ### Services extraídos
 
@@ -1579,8 +1612,8 @@ só resolvem ownership + chamam service. Regra de aplicação isolada em
 `domain/services`. Modelos SQLAlchemy permanecem sem regra de negócio.
 Próxima subfase sem schema (observabilidade / request_id / logging JSON, ou
 decisão de 7D) pode ser decidida separadamente. `ApiKey.expires_at` em 7E com
-nova migration/`0002+` só deve começar depois de validar `0001_baseline` em
-Postgres descartável.
+nova migration/`0002+` deixou de estar bloqueado por falta de smoke da
+`0001_baseline`, mas ainda deve ser feito em PR próprio com smoke próprio.
 
 ---
 
@@ -2097,16 +2130,20 @@ O arquivo temporário `tmp_fix7b_alembic.db` foi removido após o smoke.
 ```bash
 docker compose -f docker-compose.prod.yml config
 ```
-⏳ Pendente neste host: `docker` não existe neste WSL2.
+⏳ Ainda não registrado como aprovado para compose prod completo. Docker
+Desktop + WSL integration ficou disponível posteriormente e permitiu o smoke
+Postgres descartável da Fase 7A, mas este comando de compose prod não foi
+reexecutado e aprovado neste registro.
 
 ```bash
 docker-compose -f docker-compose.prod.yml config
 ```
-⏳ Pendente neste host: `docker-compose` também não existe neste WSL2.
+⏳ Sem aprovação separada via binário legado `docker-compose`. A evidência
+atual aprovada é o smoke Postgres descartável; compose prod completo continua
+pendente se aplicável ao deploy.
 
-Nenhum Docker/Compose foi instalado. A validação estrutural por Compose precisa
-ser rodada em ambiente com Docker Desktop/Compose habilitado antes de deploy
-real.
+A validação estrutural completa por Compose precisa ser rodada antes de deploy
+real se esse caminho continuar aplicável.
 
 Validação complementar sem Docker:
 
@@ -2123,12 +2160,16 @@ backend executada foi o smoke Alembic obrigatório em SQLite efêmero.
 
 ### Riscos remanescentes
 
-1. **Compose não validado localmente**: Docker/Compose indisponível neste WSL2.
-   Rodar `POSTGRES_PASSWORD=... JWT_SECRET=... docker compose -f docker-compose.prod.yml config`
-   no ambiente de deploy.
-2. **Postgres real não migrado nesta sessão**: não houve deploy real nem smoke
-   contra Postgres. Para DB legado, `alembic stamp 0001_baseline` continua
-   obrigatório uma única vez antes do compose automático.
+1. **Compose prod completo não validado end-to-end**: Docker Desktop + WSL
+   integration agora está disponível e permitiu o smoke Postgres descartável,
+   mas isso não equivale a aprovação do compose prod completo. Rodar
+   `POSTGRES_PASSWORD=... JWT_SECRET=... docker compose -f docker-compose.prod.yml config`
+   no ambiente de deploy se esse caminho continuar aplicável.
+2. **Postgres de produção não migrado nesta sessão**: não houve deploy real.
+   O smoke contra Postgres descartável foi executado posteriormente e está
+   documentado na seção Fase 7A. Para DB legado,
+   `alembic stamp 0001_baseline` continua obrigatório uma única vez antes do
+   compose automático.
 3. **API ainda usa imagem Python + install em runtime neste compose**: mantido
    como padrão existente para não ampliar escopo. Produção real deve preferir
    imagem API já buildada.
