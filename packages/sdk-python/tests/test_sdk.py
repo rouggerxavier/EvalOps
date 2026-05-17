@@ -2,7 +2,7 @@ import evalops
 import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Event, Thread
-from evalops.uploader import BackgroundUploader, UploaderConfig
+from evalops.uploader import BackgroundUploader, ReplayResult, UploaderConfig, _SendOutcome
 
 
 def _assert_returns_within(fn, timeout_s: float = 1.0) -> None:
@@ -166,7 +166,7 @@ def test_background_uploader_send_retries_after_exception(monkeypatch) -> None:
         uploader.shutdown()
 
 
-def test_background_uploader_send_retries_non_2xx(monkeypatch) -> None:
+def test_background_uploader_send_retries_non_2xx(monkeypatch, tmp_path) -> None:
     calls = {"n": 0}
 
     class _Resp:
@@ -194,6 +194,7 @@ def test_background_uploader_send_retries_non_2xx(monkeypatch) -> None:
             api_key="evk_prod_x",
             max_retries=2,
             retry_backoff_s=0.0,
+            dead_letter_dir=tmp_path,
         )
     )
     try:
@@ -215,11 +216,11 @@ def test_background_uploader_flush_drains_all_batches(monkeypatch) -> None:
     )
     sent_batches: list[int] = []
 
-    def _fake_send(traces: list[dict]) -> bool:
+    def _fake_send(traces: list[dict]) -> _SendOutcome:
         sent_batches.append(len(traces))
-        return True
+        return _SendOutcome(ok=True)
 
-    monkeypatch.setattr(uploader, "_send", _fake_send)
+    monkeypatch.setattr(uploader, "_send_with_outcome", _fake_send)
 
     try:
         for i in range(5):
@@ -245,11 +246,11 @@ def test_flush_returns_after_final_send_failure_and_counts_drops(monkeypatch) ->
     )
     send_calls = {"n": 0}
 
-    def _always_fail_send(traces: list[dict]) -> bool:
+    def _always_fail_send(traces: list[dict]) -> _SendOutcome:
         send_calls["n"] += 1
-        return False
+        return _SendOutcome(ok=False)
 
-    monkeypatch.setattr(uploader, "_send", _always_fail_send)
+    monkeypatch.setattr(uploader, "_send_with_outcome", _always_fail_send)
 
     try:
         for i in range(3):
@@ -275,10 +276,10 @@ def test_shutdown_returns_after_final_send_failure_and_counts_drops(monkeypatch)
         )
     )
 
-    def _always_fail_send(traces: list[dict]) -> bool:
-        return False
+    def _always_fail_send(traces: list[dict]) -> _SendOutcome:
+        return _SendOutcome(ok=False)
 
-    monkeypatch.setattr(uploader, "_send", _always_fail_send)
+    monkeypatch.setattr(uploader, "_send_with_outcome", _always_fail_send)
 
     for i in range(3):
         uploader.submit({"client_trace_id": f"ct_shutdown_fail_{i}"})
@@ -304,11 +305,11 @@ def test_shutdown_waits_for_in_flight_send_before_returning(monkeypatch) -> None
     shutdown_errors: list[BaseException] = []
     send_calls: list[list[dict]] = []
 
-    def _blocked_send(traces: list[dict]) -> bool:
+    def _blocked_send(traces: list[dict]) -> _SendOutcome:
         send_calls.append(traces)
         send_entered.set()
         release_send.wait(timeout=1.0)
-        return False
+        return _SendOutcome(ok=False)
 
     def _shutdown() -> None:
         try:
@@ -318,7 +319,7 @@ def test_shutdown_waits_for_in_flight_send_before_returning(monkeypatch) -> None
         finally:
             shutdown_returned.set()
 
-    monkeypatch.setattr(uploader, "_send", _blocked_send)
+    monkeypatch.setattr(uploader, "_send_with_outcome", _blocked_send)
 
     try:
         uploader.submit({"client_trace_id": "ct_shutdown_in_flight"})
@@ -390,6 +391,572 @@ def test_non_retryable_4xx_does_not_retry_unnecessarily(monkeypatch) -> None:
         _assert_returns_within(uploader.shutdown, timeout_s=1.0)
 
 
+def test_retry_exhausted_transient_failure_writes_dead_letter(monkeypatch, tmp_path) -> None:
+    calls = {"n": 0}
+
+    class _Resp:
+        status_code = 503
+
+    class _Client:
+        def __init__(self, *args, **kwargs) -> None:
+            return None
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> None:
+            return None
+
+        def post(self, *args, **kwargs):
+            calls["n"] += 1
+            return _Resp()
+
+    monkeypatch.setattr("evalops.uploader.httpx.Client", _Client)
+
+    uploader = BackgroundUploader(
+        UploaderConfig(
+            api_url="http://localhost:8000/v1",
+            api_key="evk_prod_secret",
+            max_retries=1,
+            retry_backoff_s=0.0,
+            flush_interval=60.0,
+            timeout=0.1,
+            dead_letter_dir=tmp_path,
+        )
+    )
+    try:
+        assert uploader._send([{"client_trace_id": "ct_dead", "input": {"msg": "payload"}}]) is False
+        files = list(tmp_path.glob("evalops-dead-letter-*.json"))
+        assert len(files) == 1
+        data = json.loads(files[0].read_text(encoding="utf-8"))
+        assert data["version"] == 1
+        assert data["trace_count"] == 1
+        assert data["failure_kind"] == "retry_exhausted"
+        assert data["http_status"] == 503
+        assert data["api_url"] == "http://localhost:8000/v1"
+        assert data["traces"][0]["client_trace_id"] == "ct_dead"
+        file_text = files[0].read_text(encoding="utf-8")
+        assert "evk_prod_secret" not in file_text
+        assert "X-EvalOps-Key" not in file_text
+        assert calls["n"] == 2
+    finally:
+        uploader.shutdown()
+
+
+def test_retry_exhausted_exception_writes_dead_letter(monkeypatch, tmp_path) -> None:
+    class _Client:
+        def __init__(self, *args, **kwargs) -> None:
+            return None
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> None:
+            return None
+
+        def post(self, *args, **kwargs):
+            raise RuntimeError("network down")
+
+    monkeypatch.setattr("evalops.uploader.httpx.Client", _Client)
+
+    uploader = BackgroundUploader(
+        UploaderConfig(
+            api_url="http://localhost:8000/v1",
+            api_key="evk_prod_secret",
+            max_retries=1,
+            retry_backoff_s=0.0,
+            flush_interval=60.0,
+            timeout=0.1,
+            dead_letter_dir=tmp_path,
+        )
+    )
+    try:
+        assert uploader._send([{"client_trace_id": "ct_exception_dead"}]) is False
+        files = list(tmp_path.glob("evalops-dead-letter-*.json"))
+        assert len(files) == 1
+        data = json.loads(files[0].read_text(encoding="utf-8"))
+        assert data["failure_kind"] == "retry_exhausted"
+        assert "http_status" not in data
+        assert data["traces"][0]["client_trace_id"] == "ct_exception_dead"
+    finally:
+        uploader.shutdown()
+
+
+def test_retry_exhausted_408_and_429_write_dead_letter(monkeypatch, tmp_path) -> None:
+    for status_code in (408, 429):
+        dead_dir = tmp_path / str(status_code)
+
+        class _Resp:
+            def __init__(self, code: int) -> None:
+                self.status_code = code
+
+        class _Client:
+            def __init__(self, *args, **kwargs) -> None:
+                return None
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb) -> None:
+                return None
+
+            def post(self, *args, **kwargs):
+                return _Resp(status_code)
+
+        monkeypatch.setattr("evalops.uploader.httpx.Client", _Client)
+
+        uploader = BackgroundUploader(
+            UploaderConfig(
+                api_url="http://localhost:8000/v1",
+                api_key="evk_prod_x",
+                max_retries=0,
+                retry_backoff_s=0.0,
+                flush_interval=60.0,
+                timeout=0.1,
+                dead_letter_dir=dead_dir,
+            )
+        )
+        try:
+            assert uploader._send([{"client_trace_id": f"ct_{status_code}_dead"}]) is False
+            files = list(dead_dir.glob("evalops-dead-letter-*.json"))
+            assert len(files) == 1
+            data = json.loads(files[0].read_text(encoding="utf-8"))
+            assert data["http_status"] == status_code
+            assert data["traces"][0]["client_trace_id"] == f"ct_{status_code}_dead"
+        finally:
+            uploader.shutdown()
+
+
+def test_dead_letter_api_url_metadata_strips_userinfo_query_and_fragment(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    def _failed_send(traces, config) -> _SendOutcome:
+        return _SendOutcome(ok=False, should_dead_letter=True, http_status=503)
+
+    monkeypatch.setattr("evalops.uploader._send_traces", _failed_send)
+
+    uploader = BackgroundUploader(
+        UploaderConfig(
+            api_url="https://alice:password@example.com/v1?api_key=secret#token",
+            api_key="evk_prod_secret",
+            max_retries=0,
+            flush_interval=60.0,
+            timeout=0.1,
+            dead_letter_dir=tmp_path,
+        )
+    )
+    try:
+        assert uploader._send([{"client_trace_id": "ct_api_url_sanitized"}]) is False
+        files = list(tmp_path.glob("evalops-dead-letter-*.json"))
+        assert len(files) == 1
+        data = json.loads(files[0].read_text(encoding="utf-8"))
+        file_text = files[0].read_text(encoding="utf-8")
+        assert data["api_url"] == "https://example.com/v1"
+        assert "?" not in data["api_url"]
+        assert "#" not in data["api_url"]
+        assert "alice" not in file_text
+        assert "password" not in file_text
+        assert "api_key" not in file_text
+        assert "secret" not in file_text
+        assert "token" not in file_text
+    finally:
+        uploader.shutdown()
+
+
+def test_dead_letter_dir_env_override(monkeypatch, tmp_path) -> None:
+    dead_dir = tmp_path / "env-dead"
+    monkeypatch.setenv("EVALOPS_DEAD_LETTER_DIR", str(dead_dir))
+
+    class _Resp:
+        status_code = 500
+
+    class _Client:
+        def __init__(self, *args, **kwargs) -> None:
+            return None
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> None:
+            return None
+
+        def post(self, *args, **kwargs):
+            return _Resp()
+
+    monkeypatch.setattr("evalops.uploader.httpx.Client", _Client)
+
+    uploader = BackgroundUploader(
+        UploaderConfig(
+            api_url="http://localhost:8000/v1",
+            api_key="evk_prod_x",
+            max_retries=0,
+            flush_interval=60.0,
+            timeout=0.1,
+        )
+    )
+    try:
+        assert uploader._send([{"client_trace_id": "ct_env_dead"}]) is False
+        assert len(list(dead_dir.glob("evalops-dead-letter-*.json"))) == 1
+    finally:
+        uploader.shutdown()
+
+
+def test_permanent_4xx_does_not_write_dead_letter(monkeypatch, tmp_path) -> None:
+    calls = {"n": 0}
+
+    class _Resp:
+        status_code = 422
+
+    class _Client:
+        def __init__(self, *args, **kwargs) -> None:
+            return None
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> None:
+            return None
+
+        def post(self, *args, **kwargs):
+            calls["n"] += 1
+            return _Resp()
+
+    monkeypatch.setattr("evalops.uploader.httpx.Client", _Client)
+
+    uploader = BackgroundUploader(
+        UploaderConfig(
+            api_url="http://localhost:8000/v1",
+            api_key="evk_prod_x",
+            max_retries=3,
+            retry_backoff_s=0.0,
+            flush_interval=60.0,
+            timeout=0.1,
+            dead_letter_dir=tmp_path,
+        )
+    )
+    try:
+        uploader.submit({"client_trace_id": "ct_permanent"})
+        _assert_returns_within(uploader.flush, timeout_s=1.0)
+        assert calls["n"] == 1
+        assert uploader.dropped_count == 1
+        assert list(tmp_path.glob("evalops-dead-letter-*.json")) == []
+    finally:
+        _assert_returns_within(uploader.shutdown, timeout_s=1.0)
+
+
+def test_requeueable_transient_failure_does_not_write_dead_letter(monkeypatch, tmp_path) -> None:
+    class _Resp:
+        status_code = 503
+
+    class _Client:
+        def __init__(self, *args, **kwargs) -> None:
+            return None
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> None:
+            return None
+
+        def post(self, *args, **kwargs):
+            return _Resp()
+
+    monkeypatch.setattr("evalops.uploader.httpx.Client", _Client)
+    monkeypatch.setattr(BackgroundUploader, "_loop", lambda self: None)
+
+    uploader = BackgroundUploader(
+        UploaderConfig(
+            api_url="http://localhost:8000/v1",
+            api_key="evk_prod_x",
+            max_retries=0,
+            retry_backoff_s=0.0,
+            flush_interval=60.0,
+            timeout=0.1,
+            dead_letter_dir=tmp_path,
+        )
+    )
+    try:
+        uploader.queue.put_nowait({"client_trace_id": "ct_requeue"})
+        assert uploader._send_buffered(requeue_on_failure=True) is True
+        assert uploader.dropped_count == 0
+        assert not uploader.queue.empty()
+        assert list(tmp_path.glob("evalops-dead-letter-*.json")) == []
+    finally:
+        if not uploader.queue.empty():
+            uploader.queue.get_nowait()
+        _assert_returns_within(uploader.shutdown, timeout_s=1.0)
+
+
+def test_queue_full_fallback_dead_letter_uses_local_send_outcome(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    worker_entered = Event()
+    release_worker = Event()
+    worker_replayed = Event()
+    fallback_sent = Event()
+    worker_calls = {"n": 0}
+
+    def _send_traces_stub(traces, config) -> _SendOutcome:
+        trace_id = traces[0]["client_trace_id"]
+        if trace_id == "ct_worker":
+            worker_calls["n"] += 1
+            if worker_calls["n"] == 1:
+                worker_entered.set()
+                release_worker.wait(timeout=1.0)
+                return _SendOutcome(ok=False, should_dead_letter=True, http_status=503)
+            worker_replayed.set()
+            return _SendOutcome(ok=True)
+        if trace_id == "ct_fallback":
+            fallback_sent.set()
+            return _SendOutcome(ok=False, should_dead_letter=True, http_status=503)
+        return _SendOutcome(ok=True)
+
+    monkeypatch.setattr("evalops.uploader._send_traces", _send_traces_stub)
+
+    uploader = BackgroundUploader(
+        UploaderConfig(
+            api_url="http://localhost:8000/v1",
+            api_key="evk_prod_x",
+            max_queue=1,
+            max_batch=1,
+            max_retries=0,
+            retry_backoff_s=0.0,
+            flush_interval=0.01,
+            submit_timeout_s=0.0,
+            timeout=0.1,
+            dead_letter_dir=tmp_path,
+        )
+    )
+    try:
+        uploader.submit({"client_trace_id": "ct_worker"})
+        assert worker_entered.wait(timeout=1.0), "worker did not enter send"
+
+        uploader.queue.put_nowait({"client_trace_id": "ct_queued"})
+        uploader.submit({"client_trace_id": "ct_fallback"})
+
+        assert fallback_sent.wait(timeout=1.0), "queue-full fallback did not send"
+        files = list(tmp_path.glob("evalops-dead-letter-*.json"))
+        assert len(files) == 1
+        data = json.loads(files[0].read_text(encoding="utf-8"))
+        assert data["http_status"] == 503
+        assert data["trace_count"] == 1
+        assert data["traces"][0]["client_trace_id"] == "ct_fallback"
+        assert uploader.dropped_count == 1
+
+        queued = uploader.queue.get_nowait()
+        assert queued["client_trace_id"] == "ct_queued"
+        release_worker.set()
+        assert worker_replayed.wait(timeout=1.0), "worker payload was not replayed"
+        assert len(list(tmp_path.glob("evalops-dead-letter-*.json"))) == 1
+        assert uploader.dropped_count == 1
+    finally:
+        release_worker.set()
+        _assert_returns_within(uploader.shutdown, timeout_s=1.0)
+
+
+def test_dead_letter_write_error_does_not_raise_or_log_payload(
+    monkeypatch,
+    tmp_path,
+    caplog,
+) -> None:
+    class _Resp:
+        status_code = 503
+
+    class _Client:
+        def __init__(self, *args, **kwargs) -> None:
+            return None
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> None:
+            return None
+
+        def post(self, *args, **kwargs):
+            return _Resp()
+
+    def _replace_fails(*args, **kwargs) -> None:
+        raise OSError("disk path contains ct_secret_payload")
+
+    monkeypatch.setattr("evalops.uploader.httpx.Client", _Client)
+    monkeypatch.setattr("evalops.uploader.os.replace", _replace_fails)
+
+    uploader = BackgroundUploader(
+        UploaderConfig(
+            api_url="http://localhost:8000/v1",
+            api_key="evk_prod_secret",
+            max_retries=0,
+            flush_interval=60.0,
+            timeout=0.1,
+            dead_letter_dir=tmp_path,
+        )
+    )
+    try:
+        with caplog.at_level("WARNING", logger="evalops.uploader"):
+            assert uploader._send([{"client_trace_id": "ct_secret_payload"}]) is False
+        assert "ct_secret_payload" not in caplog.text
+        assert "evk_prod_secret" not in caplog.text
+        assert "OSError" in caplog.text
+    finally:
+        uploader.shutdown()
+
+
+def test_replay_dead_letter_uses_explicit_api_url_and_removes_file(monkeypatch, tmp_path) -> None:
+    dead_file = tmp_path / "evalops-dead-letter-test.json"
+    dead_file.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "created_at": "2026-05-17T00:00:00Z",
+                "api_url": "http://malicious.local/v1",
+                "trace_count": 1,
+                "failure_kind": "retry_exhausted",
+                "http_status": 503,
+                "traces": [{"client_trace_id": "ct_replay"}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    posts: list[dict] = []
+
+    class _Resp:
+        status_code = 202
+
+    class _Client:
+        def __init__(self, *args, **kwargs) -> None:
+            return None
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> None:
+            return None
+
+        def post(self, url, *, headers, json):
+            posts.append({"url": url, "headers": headers, "json": json})
+            return _Resp()
+
+    monkeypatch.setattr("evalops.uploader.httpx.Client", _Client)
+
+    result = evalops.replay_dead_letter(
+        path=dead_file,
+        api_url="http://safe.local/v1",
+        api_key="evk_prod_replay",
+    )
+
+    assert result.files_seen == 1
+    assert result.replayed == 1
+    assert result.failed == 0
+    assert result.removed == 1
+    assert result.skipped == 0
+    assert result.errors == []
+    assert not dead_file.exists()
+    assert posts[0]["url"] == "http://safe.local/v1/traces"
+    assert posts[0]["json"]["traces"][0]["client_trace_id"] == "ct_replay"
+    assert posts[0]["headers"]["X-EvalOps-Key"] == "evk_prod_replay"
+
+
+def test_replay_dead_letter_keeps_file_when_send_fails(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr("evalops.uploader.sleep", lambda seconds: None)
+    dead_file = tmp_path / "evalops-dead-letter-test.json"
+    dead_file.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "created_at": "2026-05-17T00:00:00Z",
+                "trace_count": 1,
+                "failure_kind": "retry_exhausted",
+                "traces": [{"client_trace_id": "ct_replay_failed"}],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    class _Resp:
+        status_code = 503
+
+    class _Client:
+        def __init__(self, *args, **kwargs) -> None:
+            return None
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> None:
+            return None
+
+        def post(self, *args, **kwargs):
+            return _Resp()
+
+    monkeypatch.setattr("evalops.uploader.httpx.Client", _Client)
+
+    result = evalops.replay_dead_letter(
+        path=dead_file,
+        api_url="http://safe.local/v1",
+        api_key="evk_prod_replay",
+    )
+
+    assert result.files_seen == 1
+    assert result.replayed == 0
+    assert result.failed == 1
+    assert result.removed == 0
+    assert dead_file.exists()
+
+
+def test_replay_dead_letter_uses_current_config_when_credentials_omitted(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    calls: dict[str, object] = {}
+
+    def _replay_stub(path=None, *, api_url, api_key, dead_letter_dir=None) -> ReplayResult:
+        calls["path"] = path
+        calls["api_url"] = api_url
+        calls["api_key"] = api_key
+        calls["dead_letter_dir"] = dead_letter_dir
+        return ReplayResult(replayed=1)
+
+    class _Uploader:
+        config = UploaderConfig(api_url="http://current.local/v1", api_key="evk_prod_current")
+
+    previous_uploader = evalops._tracer._uploader
+    monkeypatch.setattr(evalops, "_replay_dead_letter", _replay_stub)
+    evalops._tracer._uploader = _Uploader()
+    try:
+        result = evalops.replay_dead_letter(path=tmp_path / "evalops-dead-letter-test.json")
+    finally:
+        evalops._tracer._uploader = previous_uploader
+
+    assert result.replayed == 1
+    assert calls["api_url"] == "http://current.local/v1"
+    assert calls["api_key"] == "evk_prod_current"
+
+
+def test_replay_dead_letter_skips_invalid_unknown_and_unexpected_files(tmp_path) -> None:
+    invalid_json = tmp_path / "evalops-dead-letter-invalid.json"
+    unknown_version = tmp_path / "evalops-dead-letter-unknown.json"
+    unexpected_file = tmp_path / "notes.json"
+    invalid_json.write_text("{", encoding="utf-8")
+    unknown_version.write_text(json.dumps({"version": 999, "traces": []}), encoding="utf-8")
+    unexpected_file.write_text("{}", encoding="utf-8")
+
+    result = evalops.replay_dead_letter(
+        dead_letter_dir=tmp_path,
+        api_url="http://safe.local/v1",
+        api_key="evk_prod_replay",
+    )
+
+    assert result.files_seen == 2
+    assert result.replayed == 0
+    assert result.failed == 0
+    assert result.skipped == 2
+    assert unexpected_file.exists()
+    assert any("invalid JSON" in error for error in result.errors)
+    assert any("unsupported dead-letter version" in error for error in result.errors)
+
+
 def test_background_uploader_queue_full_fallback_no_silent_drop(monkeypatch) -> None:
     uploader = BackgroundUploader(
         UploaderConfig(
@@ -403,11 +970,11 @@ def test_background_uploader_queue_full_fallback_no_silent_drop(monkeypatch) -> 
     )
     sent = {"n": 0}
 
-    def _fake_send(traces: list[dict]) -> bool:
+    def _fake_send(traces: list[dict]) -> _SendOutcome:
         sent["n"] += 1
-        return True
+        return _SendOutcome(ok=True)
 
-    monkeypatch.setattr(uploader, "_send", _fake_send)
+    monkeypatch.setattr(uploader, "_send_with_outcome", _fake_send)
 
     try:
         uploader.submit({"client_trace_id": "ct_first"})
