@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 
 from app.db import Base, SessionLocal, engine
 from app.main import app
-from app.models import User
+from app.models import EvaluationRun, User
 from app.security import create_access_token
 
 client = TestClient(app)
@@ -210,6 +210,15 @@ CONTEXT = {
     }
 }
 
+LEAKY_EVALUATOR_ERROR = "Traceback SELECT /home/app/.venv token evk_prod_deadbeef Bearer abc"
+LEAK_NEEDLES = ("Traceback", "SELECT", "/home/", "evk_", "Bearer", "token evk_prod_deadbeef")
+
+
+def _assert_no_error_leak(value: object) -> None:
+    blob = str(value)
+    for needle in LEAK_NEEDLES:
+        assert needle not in blob, f"leak detected: {needle!r} in {blob!r}"
+
 
 class TestRegexMatch:
     def test_must_match_passes(self):
@@ -329,6 +338,36 @@ class TestJsonSchemaValid:
         })
         assert result.passed is False
 
+    def test_invalid_json_error_does_not_expose_payload(self):
+        from app.domain.evaluators.json_schema_valid import run
+        sensitive = f"not json {LEAKY_EVALUATOR_ERROR}"
+        ctx = {"trace": {"output": {"assistant_message": sensitive}}}
+        result = run(ctx, {"target": "trace.output.assistant_message"})
+        assert result.passed is False
+        assert result.reasoning == "invalid_json"
+        assert result.raw_output["parse_error"] == "invalid_json"
+        _assert_no_error_leak(result.reasoning)
+        _assert_no_error_leak(result.raw_output)
+
+    def test_schema_error_does_not_expose_instance_or_schema(self):
+        from app.domain.evaluators.json_schema_valid import run
+        ctx = {
+            "trace": {
+                "output": {
+                    "assistant_message": json.dumps({"api_key": "evk_prod_deadbeef", "sql": "SELECT * FROM users"})
+                }
+            }
+        }
+        result = run(ctx, {
+            "target": "trace.output.assistant_message",
+            "schema": {"type": "object", "required": ["safe_field"]},
+        })
+        assert result.passed is False
+        assert result.reasoning == "schema_validation_failed"
+        assert result.raw_output["schema_error"] == "schema_validation_failed"
+        _assert_no_error_leak(result.reasoning)
+        _assert_no_error_leak(result.raw_output)
+
 
 class TestExactMatch:
     def test_exact_match_passes(self):
@@ -398,6 +437,24 @@ class TestCosineSimilarity:
         assert result.passed is False
         assert result.score == pytest.approx(0.0)
 
+    def test_embedding_failure_is_sanitized(self, monkeypatch):
+        import app.domain.evaluators.cosine_similarity as cs_mod
+
+        def _boom(*_args, **_kwargs):
+            raise RuntimeError(LEAKY_EVALUATOR_ERROR)
+
+        monkeypatch.setattr(cs_mod, "get_embedding", _boom)
+
+        from app.domain.evaluators.cosine_similarity import run
+        result = run(CONTEXT, {
+            "target_a": "trace.output.assistant_message",
+            "target_b": "x",
+        })
+        assert result.passed is False
+        assert result.raw_output["error"] == "embedding_failed"
+        _assert_no_error_leak(result.reasoning)
+        _assert_no_error_leak(result.raw_output)
+
 
 class TestLlmJudge:
     def test_valid_response(self, monkeypatch):
@@ -457,6 +514,26 @@ class TestLlmJudge:
         assert result.passed is False
         assert result.score == pytest.approx(0.4)
 
+    def test_llm_call_failure_is_sanitized(self, monkeypatch):
+        import app.domain.evaluators.llm_judge as lj_mod
+
+        def _boom(*_args, **_kwargs):
+            raise RuntimeError(LEAKY_EVALUATOR_ERROR)
+
+        monkeypatch.setattr(lj_mod, "call_llm", _boom)
+
+        from app.domain.evaluators.llm_judge import run
+        result = run(CONTEXT, {
+            "model": "openai/gpt-4o-mini",
+            "prompt": "Rate: {{ trace.output.assistant_message }}",
+            "cost_cap_usd": 1.0,
+        })
+        assert result.passed is False
+        assert result.raw_output["error"] == "llm_call_failed"
+        assert result.cost_usd >= 0
+        _assert_no_error_leak(result.reasoning)
+        _assert_no_error_leak(result.raw_output)
+
 
 # ── Aggregation tests ─────────────────────────────────────────────────────────
 
@@ -513,6 +590,47 @@ class TestEvalAPI:
         assert run_data["passed"] is True
         assert len(run_data["scores"]) == 1
         assert run_data["scores"][0]["evaluator_slug"] == "length_check"
+
+    def test_evaluation_api_does_not_expose_evaluator_error(self, monkeypatch):
+        import app.domain.evaluators.llm_judge as lj_mod
+
+        def _boom(*_args, **_kwargs):
+            raise RuntimeError(LEAKY_EVALUATOR_ERROR)
+
+        monkeypatch.setattr(lj_mod, "call_llm", _boom)
+        headers, _, project_id, api_key = _bootstrap()
+        trace_id = _ingest_trace(api_key, project_id)
+        rubric_yaml = """
+slug: sanitized-evaluator-error
+name: Sanitized Evaluator Error
+description: Evaluator failure should not leak internals
+threshold: 0.5
+aggregate: mean
+evaluators:
+  - id: judge
+    type: llm_judge
+    weight: 1.0
+    config:
+      model: openai/gpt-4o-mini
+      prompt: "Rate: {{ trace.output.assistant_message }}"
+      cost_cap_usd: 1.0
+"""
+        rubric_resp = client.post(
+            f"/v1/projects/{project_id}/rubrics",
+            headers=headers,
+            json={"yaml_source": rubric_yaml},
+        )
+        assert rubric_resp.status_code == 201, rubric_resp.text
+        run_resp = client.post(
+            "/v1/evaluations/run",
+            headers=headers,
+            json={"trace_id": trace_id, "rubric_id": rubric_resp.json()["rubric"]["id"]},
+        )
+        assert run_resp.status_code == 201, run_resp.text
+        score = run_resp.json()["run"]["scores"][0]
+        assert score["reasoning"] == "LLM call failed: llm_call_failed"
+        assert score["raw_output"]["error"] == "llm_call_failed"
+        _assert_no_error_leak(run_resp.text)
 
     def test_invalid_yaml_returns_422(self):
         headers, _, project_id, _ = _bootstrap()
@@ -758,3 +876,205 @@ evaluators:
         # Score was created with error
         assert len(run_data["scores"]) == 1
         assert run_data["scores"][0]["reasoning"] == "judge_budget_exhausted"
+
+
+def _ingest_named(api_key: str, client_trace_id: str) -> str:
+    now = datetime.now(timezone.utc)
+    resp = client.post(
+        "/v1/traces",
+        headers={"X-EvalOps-Key": api_key},
+        json={
+            "traces": [
+                {
+                    "client_trace_id": client_trace_id,
+                    "name": "test.trace",
+                    "environment": "prod",
+                    "started_at": now.isoformat(),
+                    "ended_at": (now + timedelta(seconds=1)).isoformat(),
+                    "status": "ok",
+                    "tags": {},
+                    "spans": [
+                        {
+                            "client_span_id": "cs_1",
+                            "type": "llm_call",
+                            "name": "openai.chat",
+                            "started_at": now.isoformat(),
+                            "ended_at": (now + timedelta(milliseconds=800)).isoformat(),
+                            "status": "ok",
+                            "provider": "openai",
+                            "model": "gpt-4o-mini",
+                            "messages_in": [{"role": "user", "content": "What is the capital of France?"}],
+                            "messages_out": [{"role": "assistant", "content": "The capital of France is Paris."}],
+                        }
+                    ],
+                }
+            ]
+        },
+    )
+    assert resp.status_code == 202, resp.text
+    return resp.json()["results"][0]["trace_id"]
+
+
+def test_list_project_evaluations_excludes_soft_deleted_trace() -> None:
+    headers, _, project_id, api_key = _bootstrap()
+    active = _ingest_named(api_key, "ct_eval_active")
+    deleted = _ingest_named(api_key, "ct_eval_deleted")
+
+    rubric_id = client.post(
+        f"/v1/projects/{project_id}/rubrics",
+        headers=headers,
+        json={"yaml_source": MINIMAL_RUBRIC},
+    ).json()["rubric"]["id"]
+
+    run_active = client.post(
+        "/v1/evaluations/run", headers=headers,
+        json={"trace_id": active, "rubric_id": rubric_id},
+    ).json()["run"]["id"]
+    run_deleted = client.post(
+        "/v1/evaluations/run", headers=headers,
+        json={"trace_id": deleted, "rubric_id": rubric_id},
+    ).json()["run"]["id"]
+
+    assert client.delete(f"/v1/traces/{deleted}", headers=headers).status_code == 204
+
+    listed = client.get(f"/v1/projects/{project_id}/evaluations", headers=headers)
+    assert listed.status_code == 200, listed.text
+    run_ids = [r["id"] for r in listed.json()["data"]]
+    assert run_active in run_ids
+    assert run_deleted not in run_ids
+
+    # Old run row is NOT deleted, only filtered from the project listing.
+    with SessionLocal() as db:
+        assert db.get(EvaluationRun, run_deleted) is not None
+
+
+# ── Fix-7B.5 (A-08): cost_cap_usd is real + judge cost is recorded ───────────
+
+class TestLlmJudgeCostCap:
+    def test_cost_cap_blocks_before_spending_when_estimate_exceeds(self, monkeypatch):
+        """A tiny cap must block the call entirely — call_llm never runs."""
+        import app.domain.evaluators.llm_judge as lj_mod
+
+        def _must_not_call(*a, **kw):
+            raise AssertionError("call_llm invoked despite cost cap")
+
+        monkeypatch.setattr(lj_mod, "call_llm", _must_not_call)
+        from app.domain.evaluators.llm_judge import run
+
+        result = run(CONTEXT, {
+            "model": "openai/gpt-4o-mini",
+            "prompt": "Rate: {{ trace.output.assistant_message }}",
+            "cost_cap_usd": 1e-9,
+        })
+        assert result.passed is False
+        assert result.reasoning == "cost_cap_exceeded"
+        assert result.raw_output["error"] == "cost_cap_exceeded"
+        assert result.cost_usd > 0  # estimated cost recorded for observability
+
+    def test_cost_cap_allows_when_estimate_within_cap(self, monkeypatch):
+        import app.domain.evaluators.llm_judge as lj_mod
+        monkeypatch.setattr(
+            lj_mod, "call_llm",
+            lambda *a, **kw: '{"score": 0.85, "reasoning": "ok"}',
+        )
+        from app.domain.evaluators.llm_judge import run
+
+        result = run(CONTEXT, {
+            "model": "openai/gpt-4o-mini",
+            "prompt": "Rate: {{ trace.output.assistant_message }}",
+            "cost_cap_usd": 1.0,
+        })
+        assert result.passed is True
+        assert result.score == pytest.approx(0.85)
+        assert result.cost_usd > 0  # judge cost is no longer a dead 0.0
+
+    def test_cost_cap_error_does_not_leak_internals(self, monkeypatch):
+        import app.domain.evaluators.llm_judge as lj_mod
+        monkeypatch.setattr(
+            lj_mod, "call_llm",
+            lambda *a, **kw: (_ for _ in ()).throw(AssertionError("nope")),
+        )
+        from app.domain.evaluators.llm_judge import run
+
+        result = run(CONTEXT, {
+            "model": "openai/gpt-4o-mini",
+            "prompt": "Rate: {{ trace.output.assistant_message }}",
+            "cost_cap_usd": 1e-12,
+        })
+        blob = f"{result.reasoning} {result.raw_output}"
+        for leak in ("Traceback", "SELECT", "sqlite", "Bearer", "/home/", "\wsl", "OPENAI_API_KEY"):
+            assert leak not in blob
+        assert set(result.raw_output) == {"error", "estimated_cost_usd", "cost_cap_usd"}
+
+
+JUDGE_COST_RUBRIC = """
+slug: judge-cost-rubric
+name: Judge Cost Rubric
+description: llm_judge with a generous cap
+threshold: 0.5
+aggregate: mean
+evaluators:
+  - id: judge
+    type: llm_judge
+    weight: 1.0
+    config:
+      model: openai/gpt-4o-mini
+      prompt: "Rate: {{ trace.output.assistant_message }}"
+      pass_threshold: 0.5
+      cost_cap_usd: 1.0
+"""
+
+
+def test_llm_judge_records_cost_usd_on_evaluation_run(monkeypatch):
+    """EvaluationRun.cost_usd must reflect the judge cost (was always 0.0)."""
+    import app.domain.evaluators.llm_judge as lj_mod
+    monkeypatch.setattr(
+        lj_mod, "call_llm",
+        lambda *a, **kw: '{"score": 0.9, "reasoning": "great"}',
+    )
+
+    headers, _, project_id, api_key = _bootstrap()
+    trace_id = _ingest_trace(api_key, project_id)
+    rubric_id = client.post(
+        f"/v1/projects/{project_id}/rubrics",
+        headers=headers,
+        json={"yaml_source": JUDGE_COST_RUBRIC},
+    ).json()["rubric"]["id"]
+
+    run_r = client.post(
+        "/v1/evaluations/run",
+        headers=headers,
+        json={"trace_id": trace_id, "rubric_id": rubric_id},
+    )
+    assert run_r.status_code == 201, run_r.text
+    run_data = run_r.json()["run"]
+    assert float(run_data["cost_usd"]) > 0.0
+    assert float(run_data["scores"][0]["cost_usd"]) > 0.0
+
+
+def test_duplicate_llm_judge_evaluation_still_returns_409(monkeypatch):
+    """Fix-7B.5 must not regress the G-11 duplicate-run 409 contract."""
+    import app.domain.evaluators.llm_judge as lj_mod
+    monkeypatch.setattr(
+        lj_mod, "call_llm",
+        lambda *a, **kw: '{"score": 0.9, "reasoning": "great"}',
+    )
+    headers, _, project_id, api_key = _bootstrap()
+    trace_id = _ingest_trace(api_key, project_id)
+    rubric_id = client.post(
+        f"/v1/projects/{project_id}/rubrics",
+        headers=headers,
+        json={"yaml_source": JUDGE_COST_RUBRIC},
+    ).json()["rubric"]["id"]
+
+    first = client.post(
+        "/v1/evaluations/run", headers=headers,
+        json={"trace_id": trace_id, "rubric_id": rubric_id},
+    )
+    assert first.status_code == 201, first.text
+    dup = client.post(
+        "/v1/evaluations/run", headers=headers,
+        json={"trace_id": trace_id, "rubric_id": rubric_id},
+    )
+    assert dup.status_code == 409
+    assert dup.json()["detail"]["error"] == "evaluation_run_duplicate"

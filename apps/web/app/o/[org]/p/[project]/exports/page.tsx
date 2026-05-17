@@ -2,16 +2,17 @@ import Link from "next/link";
 import { Download, Plus, RefreshCw } from "lucide-react";
 
 import { AuthRequiredPanel } from "@/components/AuthRequiredPanel";
-import { CopyTextButton } from "@/components/CopyTextButton";
 import { createExportAction } from "@/lib/actions";
 import {
   getExport,
+  getExportDownloadPath,
   getOrganizationSubscription,
   getOrganizationUsage,
   hasAuthToken,
   resolveProject,
 } from "@/lib/api";
 import { formatCost, formatCount, formatDateTime } from "@/lib/format";
+import { safeErrorMessage } from "@/lib/safe-error";
 import type { ExportJob } from "@/lib/types";
 
 type Props = {
@@ -155,7 +156,7 @@ export default async function ExportsPage({ params, searchParams }: Props) {
   try {
     resolvedProject = await resolveProject(org, project);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Falha ao resolver projeto.";
+    const message = safeErrorMessage(error, "Falha ao resolver projeto.");
     return (
       <div className="evo-page">
         <div className="evo-page-header">
@@ -178,17 +179,17 @@ export default async function ExportsPage({ params, searchParams }: Props) {
   const [usageResult, subResult, exportRows] = await Promise.all([
     getOrganizationUsage(resolvedProject.org_id)
       .then((usage) => ({ usage, error: null as string | null }))
-      .catch((error) => ({ usage: null, error: error instanceof Error ? error.message : "Falha ao carregar uso." })),
+      .catch((error) => ({ usage: null, error: safeErrorMessage(error, "Falha ao carregar uso.") })),
     getOrganizationSubscription(resolvedProject.org_id)
       .then((subscription) => ({ subscription, error: null as string | null }))
-      .catch((error) => ({ subscription: null, error: error instanceof Error ? error.message : "Falha ao carregar plano." })),
+      .catch((error) => ({ subscription: null, error: safeErrorMessage(error, "Falha ao carregar plano.") })),
     Promise.all(
       knownIds.map(async (id): Promise<ExportRow> => {
         try {
           const job = await getExport(id);
           return { id, job, error: null };
         } catch (error) {
-          return { id, job: null, error: error instanceof Error ? error.message : "Falha ao consultar export." };
+          return { id, job: null, error: safeErrorMessage(error, "Falha ao consultar export.") };
         }
       }),
     ),
@@ -207,6 +208,11 @@ export default async function ExportsPage({ params, searchParams }: Props) {
   });
 
   const idsValue = knownIds.join(",");
+  const sanitizedQueryError = qp.error ? safeErrorMessage(qp.error, "Falha ao carregar exports.") : null;
+  const currentViewHref = `${basePath}${queryString({
+    tab: tab === "all" ? undefined : tab,
+    ids: idsValue || undefined,
+  })}`;
   const tabHref = (nextTab: string) =>
     `${basePath}${queryString({
       tab: nextTab === "all" ? undefined : nextTab,
@@ -235,7 +241,7 @@ export default async function ExportsPage({ params, searchParams }: Props) {
       </div>
 
       {qp.created === "1" && <div style={alertStyle("ok")}>Export criado e adicionado na lista de jobs conhecidos.</div>}
-      {qp.error && <div style={alertStyle("err")}>{qp.error}</div>}
+      {sanitizedQueryError && <div style={alertStyle("err")}>{sanitizedQueryError}</div>}
 
       <section className="evo-kpi-grid" style={{ marginBottom: 16 }}>
         <div className="evo-metric" style={{ minHeight: 112 }}>
@@ -339,8 +345,11 @@ export default async function ExportsPage({ params, searchParams }: Props) {
                         );
                       }
 
-                      const isComplete = row.job.status.toLowerCase() === "completed";
-                      const filePath = row.job.file_path ?? "";
+                      const status = row.job.status.toLowerCase();
+                      const isComplete = status === "completed" || status === "ready";
+                      const isRunning = status === "running" || status === "queued";
+                      const isFailed = status === "failed" || status === "error";
+                      const isDownloadReady = isComplete && Boolean(row.job.file_path);
 
                       return (
                         <tr key={row.id}>
@@ -364,23 +373,35 @@ export default async function ExportsPage({ params, searchParams }: Props) {
                           <td className="evo-mono evo-muted" style={{ fontSize: 12 }}>nao disponivel</td>
                           <td>
                             <div className="evo-row" style={{ justifyContent: "flex-end" }}>
-                              {isComplete && filePath ? (
-                                <CopyTextButton
-                                  text={filePath}
-                                  label="Copiar path"
-                                  copiedLabel="Path copiado"
+                              {isDownloadReady ? (
+                                <Link
+                                  href={getExportDownloadPath(row.job.id, currentViewHref)}
                                   className="evo-btn evo-btn--sm"
-                                />
-                              ) : null}
-                              <button
-                                type="button"
-                                className="evo-btn evo-btn--sm"
-                                disabled
-                                style={{ opacity: 0.6 }}
-                              >
-                                <Download size={13} />
-                                Download
-                              </button>
+                                  download
+                                >
+                                  <Download size={13} />
+                                  Download
+                                </Link>
+                              ) : (
+                                <button
+                                  type="button"
+                                  className="evo-btn evo-btn--sm"
+                                  disabled
+                                  style={{ opacity: 0.6 }}
+                                  title={
+                                    isRunning
+                                      ? "Export ainda em andamento"
+                                      : isFailed
+                                      ? "Export com falha"
+                                      : isComplete
+                                      ? "Arquivo indisponível"
+                                      : "Export indisponível"
+                                  }
+                                >
+                                  <Download size={13} />
+                                  {isRunning ? "Processando" : isFailed ? "Falhou" : "Download"}
+                                </button>
+                              )}
                             </div>
                           </td>
                         </tr>
@@ -403,7 +424,7 @@ export default async function ExportsPage({ params, searchParams }: Props) {
               <ol style={{ margin: 0, paddingLeft: 18, color: "var(--text-muted)", fontSize: 13, lineHeight: 1.8 }}>
                 <li>Crie um export com filtros reais.</li>
                 <li>O job criado entra na lista desta pagina via ID.</li>
-                <li>Use o path retornado para operacoes internas autorizadas.</li>
+                <li>Quando o status ficar concluido, use o botao Download para baixar o JSONL.</li>
               </ol>
             </div>
           )}
@@ -493,6 +514,30 @@ export default async function ExportsPage({ params, searchParams }: Props) {
                         value={usageResult.usage.exports_created}
                         limit={subResult.subscription.plan.monthly_export_limit}
                       />
+                      <UsageBar
+                        label="Spans"
+                        value={usageResult.usage.spans_ingested}
+                        limit={subResult.subscription.plan.monthly_span_limit}
+                      />
+                      <UsageBar
+                        label="Tokens"
+                        value={usageResult.usage.tokens_ingested}
+                        limit={subResult.subscription.plan.monthly_token_limit}
+                      />
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "baseline",
+                          borderTop: "1px solid var(--border-subtle)",
+                          paddingTop: 10,
+                        }}
+                      >
+                        <span style={{ color: "var(--text-muted)", fontSize: 12 }}>Budget mensal de judge</span>
+                        <span className="evo-mono" style={{ color: "var(--text)", fontSize: 13 }}>
+                          {formatCost(subResult.subscription.plan.monthly_judge_budget_usd)}
+                        </span>
+                      </div>
                     </>
                   ) : (
                     <p style={{ margin: 0, color: "var(--warn)", fontSize: 12 }}>
@@ -510,14 +555,14 @@ export default async function ExportsPage({ params, searchParams }: Props) {
 
           <section className="evo-card">
             <div className="evo-card__header">
-              <h3 className="evo-card__title">Acoes indisponiveis no contrato atual</h3>
+              <h3 className="evo-card__title">Contrato atual</h3>
             </div>
             <div className="evo-card__body" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               <p style={{ margin: 0, color: "var(--text-faint)", fontSize: 12 }}>
-                O backend atual nao expone endpoint para listar historico global, cancelar job ou baixar arquivo por URL publica.
+                O backend atual nao expoe endpoint para listar historico global nem cancelar jobs.
               </p>
               <p style={{ margin: 0, color: "var(--text-faint)", fontSize: 12 }}>
-                Por isso os botoes de download/retry global ficam limitados ao que o contrato retorna hoje.
+                O download de exports concluidos usa o endpoint autenticado do proprio contrato.
               </p>
             </div>
           </section>
@@ -526,5 +571,3 @@ export default async function ExportsPage({ params, searchParams }: Props) {
     </div>
   );
 }
-
-

@@ -111,11 +111,13 @@ Driver: `psycopg>=3.2` (sync). `postgresql+asyncpg://` URLs are
 silently rewritten to `postgresql+psycopg://` because the project uses
 sync SQLAlchemy.
 
-`docker-compose.prod.yml` documents the Postgres URL today; Phase 7A
-does **not** change the compose entrypoint. Operators running prod
-should add `alembic upgrade head` to the deployment step before
-launching `uvicorn` (a follow-up subfase will land this change
-together with logging/observability work).
+`docker-compose.prod.yml` includes a dedicated `migrate` service. It waits
+for Postgres health, installs the API package and psycopg driver, then runs
+`alembic upgrade head`. The `api` service depends on
+`migrate: service_completed_successfully`, so a failed migration prevents the
+API service from starting. The API service also sets `EVALOPS_USE_ALEMBIC=1`
+as a guard for standalone starts and never relies on `create_all` in the
+production compose path.
 
 ---
 
@@ -177,6 +179,8 @@ If a Phase 2-6 ALTER was forgotten on the legacy DB (e.g.
 `audit_logs.organization_id` still NOT NULL, `traces.deleted_at`
 missing), apply it manually first — the relevant SQL is in
 `docs/plans/baseline.md` and inline in `app/models.py` — then stamp.
+
+After stamping once, the production compose migration job can be used normally.
 
 ### C) Test/CI
 

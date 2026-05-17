@@ -6,6 +6,7 @@ from typing import Any
 
 from app.domain.evaluators.base import EvaluatorResult
 from app.domain.rubrics.resolver import resolve_dotpath
+from app.safe_errors import safe_message
 
 
 def _dot(a: list[float], b: list[float]) -> float:
@@ -76,11 +77,12 @@ def run(context: dict, config: dict[str, Any]) -> EvaluatorResult:
             latency_ms=latency_ms,
         )
     except Exception as exc:  # noqa: BLE001
+        safe = safe_message(exc, fallback="embedding_failed", context="cosine_similarity")
         latency_ms = int((time.monotonic() - t0) * 1000)
         return EvaluatorResult(
             score=0.0,
             passed=False,
-            reasoning=f"Embedding error: {exc}",
-            raw_output={"error": str(exc)},
+            reasoning=f"Embedding error: {safe}",
+            raw_output={"error": safe},
             latency_ms=latency_ms,
         )

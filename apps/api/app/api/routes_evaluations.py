@@ -10,9 +10,10 @@ from app.domain.services.eval_service import (
     rubric_uses_llm_judge,
     run_evaluation,
 )
-from app.domain.services.usage_service import enforce_quota, increment_usage
+from app.domain.services.usage_service import apply_usage_with_quota, increment_usage
 from app.models import EvaluationRun, EvaluationScore, Rubric, RubricVersion, Trace, User
 from app.ownership import load_project, load_trace
+from app.safe_errors import safe_message
 from app.schemas import EvaluationRunOut, EvaluationRunRequest, EvaluationScoreOut
 
 router = APIRouter(prefix="/v1")
@@ -84,7 +85,6 @@ def trigger_evaluation(
         )
 
     project = load_project(db, user.id, trace.project_id)
-    enforce_quota(db, project, "evaluations_run", 1)
 
     # G-12: when the rubric uses an llm_judge evaluator, gate at 402 if the
     # plan budget is already exhausted. Per-evaluator budget skipping inside
@@ -102,6 +102,7 @@ def trigger_evaluation(
             )
 
     try:
+        apply_usage_with_quota(db, project, evals=1)
         run = run_evaluation(
             trace_id=payload.trace_id,
             rubric_id=payload.rubric_id,
@@ -110,15 +111,38 @@ def trigger_evaluation(
             db=db,
             rubric_version_num=rubric_version_row.version,
         )
+        # Apply only cost here; eval count was reserved atomically above.
+        increment_usage(db, trace.organization_id, cost_usd=float(run.cost_usd or 0))
+        record_audit(
+            db, "evaluation.run",
+            organization_id=trace.organization_id,
+            actor_user_id=user.id,
+            target_type="evaluation_run",
+            target_id=run.id,
+            payload={
+                "trace_id": run.trace_id,
+                "rubric_id": run.rubric_id,
+                "status": run.status,
+                "passed": bool(run.passed) if run.passed is not None else None,
+            },
+        )
+        db.commit()
+    except HTTPException:
+        db.rollback()
+        raise
     except ValueError as exc:
+        db.rollback()
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=safe_message(exc, fallback="invalid_evaluation", context="run_evaluation"),
         ) from exc
-    except IntegrityError:
+    except IntegrityError as exc:
         # G-11: race condition safety net — another request created the row
         # between our pre-check and the insert. Translate to a clean 409.
         db.rollback()
         existing = _existing_run(db, trace.id, rubric.id, rubric_version_row.version)
+        if existing is None:
+            raise exc
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail={
@@ -126,21 +150,9 @@ def trigger_evaluation(
                 "existing_run_id": existing.id if existing else None,
             },
         )
-    increment_usage(db, trace.organization_id, evals=1, cost_usd=float(run.cost_usd or 0))
-    record_audit(
-        db, "evaluation.run",
-        organization_id=trace.organization_id,
-        actor_user_id=user.id,
-        target_type="evaluation_run",
-        target_id=run.id,
-        payload={
-            "trace_id": run.trace_id,
-            "rubric_id": run.rubric_id,
-            "status": run.status,
-            "passed": bool(run.passed) if run.passed is not None else None,
-        },
-    )
-    db.commit()
+    except Exception:
+        db.rollback()
+        raise
 
     return {"run": _run_detail(run, db)}
 
@@ -169,7 +181,7 @@ def list_project_evaluations(
     runs = (
         db.query(EvaluationRun)
         .join(Trace, EvaluationRun.trace_id == Trace.id)
-        .filter(Trace.project_id == project.id)
+        .filter(Trace.project_id == project.id, Trace.deleted_at.is_(None))
         .order_by(EvaluationRun.created_at.desc())
         .limit(limit)
         .all()

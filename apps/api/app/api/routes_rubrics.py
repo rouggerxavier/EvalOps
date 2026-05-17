@@ -7,6 +7,7 @@ from app.domain.rubrics.parser import parse_rubric_yaml
 from app.domain.services.audit_service import record_audit
 from app.models import EvaluatorRow, Project, Rubric, RubricVersion, User
 from app.ownership import get_owned_project, get_owned_rubric
+from app.safe_errors import safe_message
 from app.schemas import RubricCreate, RubricOut, RubricVersionCreate, RubricVersionOut
 from app.security import new_id
 
@@ -53,7 +54,10 @@ def create_rubric(
     try:
         spec = parse_rubric_yaml(payload.yaml_source)
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=safe_message(exc, fallback="invalid_rubric", context="parse_rubric_yaml"),
+        ) from exc
 
     existing = (
         db.query(Rubric)
@@ -163,7 +167,10 @@ def create_rubric_version(
     try:
         spec = parse_rubric_yaml(payload.yaml_source)
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=safe_message(exc, fallback="invalid_rubric", context="parse_rubric_yaml"),
+        ) from exc
 
     new_version_num = rubric.current_version + 1
     parsed_dict = spec.model_dump()

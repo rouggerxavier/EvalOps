@@ -12,10 +12,13 @@ from app.domain.evaluators.registry import REGISTRY
 from app.domain.rubrics.resolver import build_trace_context
 from app.domain.services.usage_service import judge_budget_for_org
 from app.models import EvaluationRun, EvaluationScore, EvaluatorRow, Project, Rubric, RubricVersion, Span, Trace
+from app.safe_errors import is_safe_public_text, safe_message
 from app.security import new_id
 
 # Legacy fallback retained for callers without an org context.
 MONTHLY_JUDGE_BUDGET_USD = 20.0
+
+_EVALUATOR_ERROR_KEYS = ("error", "parse_error", "schema_error")
 
 
 def _utcnow() -> datetime:
@@ -83,6 +86,44 @@ def rubric_uses_llm_judge(rubric_version_id: str, db: Session) -> bool:
     )
 
 
+def _safe_result_text(value: object, *, fallback: str, context: str) -> str | None:
+    if value is None:
+        return None
+    text = str(value)
+    if is_safe_public_text(text):
+        return text
+    return safe_message(text, fallback=fallback, context=context)
+
+
+def _sanitize_evaluator_result(result: EvaluatorResult, evaluator_type: str) -> EvaluatorResult:
+    """Defense-in-depth before persisting evaluator output.
+
+    Evaluators should sanitize their own failures, but EvaluationScore is a
+    public API surface. Guard error-shaped outputs here so a future evaluator
+    cannot accidentally persist SQL, stack traces, local paths or secrets.
+    """
+    raw_output = dict(result.raw_output or {})
+    has_error_output = any(key in raw_output for key in _EVALUATOR_ERROR_KEYS)
+    if has_error_output:
+        for key in _EVALUATOR_ERROR_KEYS:
+            if key in raw_output and raw_output[key] not in (None, True, False):
+                raw_output[key] = _safe_result_text(
+                    raw_output[key],
+                    fallback="evaluator_failed",
+                    context=f"evaluator_result:{evaluator_type}:{key}",
+                )
+        result.raw_output = raw_output
+
+    if not result.passed and result.reasoning:
+        result.reasoning = _safe_result_text(
+            result.reasoning,
+            fallback="evaluator_failed",
+            context=f"evaluator_result:{evaluator_type}:reasoning",
+        ) or "evaluator_failed"
+
+    return result
+
+
 def run_evaluation(
     trace_id: str,
     rubric_id: str,
@@ -91,7 +132,10 @@ def run_evaluation(
     db: Session,
     rubric_version_num: int | None = None,
 ) -> EvaluationRun:
-    """Run evaluation synchronously. Returns the completed EvaluationRun."""
+    """Run evaluation synchronously. Returns the completed EvaluationRun.
+
+    The caller owns the final commit/rollback boundary.
+    """
     run_start = time.monotonic()
 
     # Load trace + spans
@@ -179,14 +223,18 @@ def run_evaluation(
         try:
             run_fn = REGISTRY[ev_row.type]
             result: EvaluatorResult = run_fn(context, ev_row.config)
+            result = _sanitize_evaluator_result(result, ev_row.type)
             any_succeeded = True
             all_failed = False
         except Exception as exc:  # noqa: BLE001
+            safe = safe_message(
+                exc, fallback="evaluator_failed", context=f"evaluator:{ev_row.type}"
+            )
             result = EvaluatorResult(
                 score=0.0,
                 passed=False,
-                reasoning=f"Evaluator error: {exc}",
-                raw_output={"error": str(exc)},
+                reasoning=f"Evaluator error: {safe}",
+                raw_output={"error": safe},
             )
 
         score_rec = EvaluationScore(
@@ -264,6 +312,5 @@ def run_evaluation(
     run.latency_ms = int((time.monotonic() - run_start) * 1000)
 
     db.add(run)
-    db.commit()
-    db.refresh(run)
+    db.flush()
     return run

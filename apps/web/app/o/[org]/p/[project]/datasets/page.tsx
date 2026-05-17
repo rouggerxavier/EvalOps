@@ -5,6 +5,7 @@ import { AuthRequiredPanel } from "@/components/AuthRequiredPanel";
 import { addDatasetItemAction, buildDatasetFromTracesAction, createDatasetAction } from "@/lib/actions";
 import { getDatasetItems, getDatasets, hasAuthToken, resolveProject } from "@/lib/api";
 import { formatDateTime } from "@/lib/format";
+import { safeErrorMessage } from "@/lib/safe-error";
 import type { Dataset, DatasetItem } from "@/lib/types";
 
 type Props = {
@@ -121,7 +122,7 @@ export default async function DatasetsPage({ params, searchParams }: Props) {
       ),
     );
   } catch (error) {
-    loadError = error instanceof Error ? error.message : "Falha ao carregar datasets.";
+    loadError = safeErrorMessage(error, "Falha ao carregar datasets.");
   }
 
   if (loadError) {

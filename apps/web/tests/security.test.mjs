@@ -8,6 +8,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 // --- mirror of lib/config.ts ------------------------------------------------
 
@@ -186,6 +187,7 @@ const SAFE_HTTP_MESSAGES = {
   403: "Sem permissão para esta ação.",
   404: "Recurso não encontrado.",
   409: "Conflito: o recurso já existe ou foi modificado.",
+  410: "Export expirado. Gere um novo arquivo.",
   413: "Payload muito grande.",
   422: "Dados inválidos. Verifique os campos e tente novamente.",
   429: "Muitas requisições. Aguarde e tente novamente.",
@@ -198,11 +200,22 @@ const LEAK_PATTERNS = [
   /sqlalchemy/i,
   /sqlite/i,
   /psycopg/i,
-  /\bselect\b.{1,40}\bfrom\b/i,
-  /\binsert\b.{1,20}\binto\b/i,
+  /postgres/i,
+  /\b(?:IntegrityError|OperationalError|ProgrammingError)\b/,
+  /\b(?:no such table|database is locked|constraint failed|unique constraint failed|foreign key constraint failed)\b/i,
+  /\b(?:relation|column|table)\s+['"]?[\w.]+['"]?\s+does not exist\b/i,
+  /\b(?:select|insert|update|delete)\b.{1,80}\b(?:from|into|set|where|values)\b/is,
   /file ".*\.py"/i,
-  /evk_[a-z0-9_]{6,}/i,
   /line \d+, in /i,
+  /(?:^|[\s'"(=])(?:\/(?:home|users|var|tmp|etc|root|opt|mnt)\/|[A-Za-z]:\\)/i,
+  /\.venv[\\/]/i,
+  / object at 0x[0-9a-fA-F]+/i,
+  /eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/,
+  /\bevk_[a-z0-9_]{4,}/i,
+  /\bsk-[A-Za-z0-9_-]{8,}/,
+  /\bbearer\s+\S{6,}/i,
+  /\bset-cookie\b/i,
+  /\b(?:password|secret|api[_-]?key|access[_-]?token|refresh[_-]?token|authorization)\b\s*[=:]\s*\S/i,
 ];
 
 function sanitizeApiError(message) {
@@ -247,6 +260,11 @@ test("G-23: 409 maps to safe conflict message", () => {
   assert.equal(sanitizeApiError(msg), SAFE_HTTP_MESSAGES[409]);
 });
 
+test("G-23: 410 maps to export-expired message", () => {
+  const msg = "API 410: export_expired";
+  assert.equal(sanitizeApiError(msg), SAFE_HTTP_MESSAGES[410]);
+});
+
 test("G-23: 429 maps to rate-limit message", () => {
   const msg = "API 429: too_many_requests";
   assert.equal(sanitizeApiError(msg), SAFE_HTTP_MESSAGES[429]);
@@ -265,4 +283,276 @@ test("G-23: unknown non-API error maps to generic", () => {
 test("G-23: 400 maps to validation message", () => {
   const msg = "API 400: {\"detail\":\"invalid_cursor\"}";
   assert.equal(sanitizeApiError(msg), SAFE_HTTP_MESSAGES[400]);
+});
+
+// --- A-02 / Fix-7B.2: frontend logout contract ----------------------------
+// Next.js server actions are TS + runtime-bound, and node --test here runs
+// plain JS. We validate the expected contract shape mirrored from
+// lib/auth.ts + lib/auth-actions.ts.
+
+async function logoutWithApiFor(baseUrl, token, fetchImpl) {
+  const res = await fetchImpl(`${baseUrl}/auth/logout`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    cache: "no-store",
+  });
+  if (!res.ok) {
+    throw new Error(`logout_failed_${res.status}`);
+  }
+}
+
+async function logoutActionFlowFor({ token, baseUrl, fetchImpl, clearLocal }) {
+  try {
+    if (token) {
+      await logoutWithApiFor(baseUrl, token, fetchImpl);
+    }
+  } catch {
+    // local logout must still happen
+  }
+  await clearLocal();
+}
+
+test("Fix-7B.2: logout calls POST /auth/logout with Authorization bearer", async () => {
+  const calls = [];
+  await logoutActionFlowFor({
+    token: "jwt_abc",
+    baseUrl: "https://api.evalops.example.com/v1",
+    fetchImpl: async (url, init) => {
+      calls.push([url, init]);
+      return { ok: true, status: 204 };
+    },
+    clearLocal: async () => {},
+  });
+
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0][0], "https://api.evalops.example.com/v1/auth/logout");
+  assert.equal(calls[0][1].method, "POST");
+  assert.equal(calls[0][1].headers.Authorization, "Bearer jwt_abc");
+});
+
+test("Fix-7B.2: logout clears local session after revoke attempt", async () => {
+  const steps = [];
+  await logoutActionFlowFor({
+    token: "jwt_abc",
+    baseUrl: "https://api.evalops.example.com/v1",
+    fetchImpl: async () => {
+      steps.push("revoke");
+      return { ok: true, status: 204 };
+    },
+    clearLocal: async () => {
+      steps.push("clear");
+    },
+  });
+
+  assert.deepEqual(steps, ["revoke", "clear"]);
+});
+
+test("Fix-7B.2: backend logout failure still clears local session", async () => {
+  const steps = [];
+  await logoutActionFlowFor({
+    token: "jwt_abc",
+    baseUrl: "https://api.evalops.example.com/v1",
+    fetchImpl: async () => {
+      steps.push("revoke");
+      throw new Error("network_down");
+    },
+    clearLocal: async () => {
+      steps.push("clear");
+    },
+  });
+
+  assert.deepEqual(steps, ["revoke", "clear"]);
+});
+
+test("Fix-7B.2: logout without token is idempotent and does not call backend", async () => {
+  let called = false;
+  let cleared = false;
+  await logoutActionFlowFor({
+    token: null,
+    baseUrl: "https://api.evalops.example.com/v1",
+    fetchImpl: async () => {
+      called = true;
+      return { ok: true, status: 204 };
+    },
+    clearLocal: async () => {
+      cleared = true;
+    },
+  });
+
+  assert.equal(called, false);
+  assert.equal(cleared, true);
+});
+
+test("Fix-7B.2: source contract has logout helper using POST + bearer", () => {
+  const src = readFileSync(new URL("../lib/auth.ts", import.meta.url), "utf8");
+  assert.match(src, /getApiBaseUrl\(\)\}\/auth\/logout/);
+  assert.match(src, /method:\s*"POST"/);
+  assert.match(src, /Authorization:\s*`Bearer \$\{token\}`/);
+});
+
+test("Fix-7B.2: source contract tries revoke before local clear", () => {
+  const src = readFileSync(new URL("../lib/auth-actions.ts", import.meta.url), "utf8");
+  assert.match(src, /if \(sessionToken\)/);
+  assert.match(src, /await logoutWithApi\(sessionToken\)/);
+  assert.match(src, /await clearSessionCookie\(\)/);
+
+  const revokeIdx = src.indexOf("await logoutWithApi(sessionToken);");
+  const clearIdx = src.indexOf("await clearSessionCookie();");
+  assert.ok(revokeIdx !== -1 && clearIdx > revokeIdx);
+});
+
+// --- A-12 / Fix-7B.6: page-level error sanitization -----------------------
+// `lib/safe-error.ts` is the shared, client-safe sanitizer. Mirror its
+// `safeErrorMessage` wrapper (reusing the G-23 sanitizeApiError mirror
+// above) and assert the page/error boundaries route through it instead
+// of rendering raw `error.message`.
+
+function safeErrorMessageFor(error, fallback) {
+  if (error instanceof Error) return sanitizeApiError(error.message);
+  if (typeof error === "string") return sanitizeApiError(error);
+  return fallback;
+}
+
+test("Fix-7B.6: safeErrorMessage scrubs Error carrying SQL", () => {
+  const e = new Error("API 500: SELECT * FROM users; -- secret");
+  assert.equal(safeErrorMessageFor(e, "fallback"), GENERIC_ERROR);
+});
+
+test("Fix-7B.6: safeErrorMessage scrubs raw traceback string", () => {
+  assert.equal(
+    safeErrorMessageFor('Traceback (most recent call last): File "a.py"', "fb"),
+    GENERIC_ERROR,
+  );
+});
+
+test("Fix-7B.6: safeErrorMessage maps known HTTP status to friendly text", () => {
+  assert.equal(
+    safeErrorMessageFor(new Error("API 404: not_found"), "fb"),
+    SAFE_HTTP_MESSAGES[404],
+  );
+});
+
+test("Fix-7B.6: safeErrorMessage uses fallback for non-Error/non-string", () => {
+  assert.equal(safeErrorMessageFor({ weird: true }, "Falha ao carregar."), "Falha ao carregar.");
+});
+
+test("Fix-7B.6: shared sanitizer module is client-safe (no use server)", () => {
+  const src = readFileSync(new URL("../lib/safe-error.ts", import.meta.url), "utf8");
+  assert.equal(/["']use server["']/.test(src), false);
+  assert.match(src, /export function sanitizeApiError/);
+  assert.match(src, /export function safeErrorMessage/);
+});
+
+test("Fix-7B.6: actions.ts reuses shared sanitizer (no duplicate copy)", () => {
+  const src = readFileSync(new URL("../lib/actions.ts", import.meta.url), "utf8");
+  assert.match(src, /from "@\/lib\/safe-error"/);
+  assert.equal(/const LEAK_PATTERNS = \[/.test(src), false);
+});
+
+for (const section of ["datasets", "exports", "keys"]) {
+  test(`Fix-7B.6: ${section}/page.tsx sanitizes load errors`, () => {
+    const src = readFileSync(
+      new URL(`../app/o/[org]/p/[project]/${section}/page.tsx`, import.meta.url),
+      "utf8",
+    );
+    assert.match(src, /safeErrorMessage\(/);
+    assert.equal(/error instanceof Error \? error\.message/.test(src), false);
+  });
+
+  test(`Fix-7B.6: ${section}/error.tsx does not render raw error.message`, () => {
+    const src = readFileSync(
+      new URL(`../app/o/[org]/p/[project]/${section}/error.tsx`, import.meta.url),
+      "utf8",
+    );
+    assert.match(src, /safeErrorMessage\(error,/);
+    assert.equal(/\{error\.message/.test(src), false);
+  });
+}
+
+// --- Fix-7B.7: frontend contract/UX cleanup -------------------------------
+
+test("Fix-7B.7: exports page uses real authenticated download route", () => {
+  const src = readFileSync(new URL("../app/o/[org]/p/[project]/exports/page.tsx", import.meta.url), "utf8");
+  assert.match(src, /getExportDownloadPath\(/);
+  assert.match(src, /href=\{getExportDownloadPath\(row\.job\.id,\s*currentViewHref\)\}/);
+  assert.match(src, /download/);
+});
+
+test("Fix-7B.7: export pending or failed state does not expose clickable fake download", () => {
+  const src = readFileSync(new URL("../app/o/[org]/p/[project]/exports/page.tsx", import.meta.url), "utf8");
+  assert.match(src, /disabled/);
+  assert.match(src, /Processando/);
+  assert.match(src, /Falhou/);
+});
+
+test("Fix-7B.7: exports copy does not claim download endpoint is missing", () => {
+  const src = readFileSync(new URL("../app/o/[org]/p/[project]/exports/page.tsx", import.meta.url), "utf8");
+  assert.equal(/nao existe endpoint de download/i.test(src), false);
+  assert.equal(/download nao existe/i.test(src), false);
+  assert.equal(/nao implementado/i.test(src), false);
+});
+
+test("Fix-7B.7: export download route proxies backend with auth and safe redirect", () => {
+  const src = readFileSync(new URL("../app/api/exports/[exportId]/download/route.ts", import.meta.url), "utf8");
+  assert.match(src, /getAuthToken/);
+  assert.match(src, /\/exports\/\$\{encodeURIComponent\(exportId\)\}\/download/);
+  assert.equal(/\/exports\/\$\{exportId\}\/download/.test(src), false);
+  assert.match(src, /Authorization:\s*`Bearer \$\{token\}`/);
+  assert.match(src, /sanitizeApiError/);
+  assert.match(src, /410/);
+});
+
+test("Fix-7B.7: planned controls are explicitly disabled in touched pages", () => {
+  const overview = readFileSync(new URL("../app/o/[org]/p/[project]/page.tsx", import.meta.url), "utf8");
+  const evaluations = readFileSync(new URL("../app/o/[org]/p/[project]/evaluations/page.tsx", import.meta.url), "utf8");
+  const traceDetail = readFileSync(new URL("../app/o/[org]/p/[project]/traces/[trace]/page.tsx", import.meta.url), "utf8");
+
+  assert.match(overview, /data-status="planned"/);
+  assert.match(evaluations, /data-status="planned"/);
+  assert.match(traceDetail, /data-status="planned"/);
+  assert.match(traceDetail, /disabled/);
+});
+
+test("Fix-7B.7: actionable controls in touched pages use real links/forms", () => {
+  const overview = readFileSync(new URL("../app/o/[org]/p/[project]/page.tsx", import.meta.url), "utf8");
+  const evaluations = readFileSync(new URL("../app/o/[org]/p/[project]/evaluations/page.tsx", import.meta.url), "utf8");
+  const exportsPage = readFileSync(new URL("../app/o/[org]/p/[project]/exports/page.tsx", import.meta.url), "utf8");
+
+  assert.match(overview, /href=\{`\/o\/\$\{org\}\/p\/\$\{project\}\/evaluations`\}/);
+  assert.match(evaluations, /href="#run-evaluation"/);
+  assert.match(exportsPage, /action=\{createExportAction\}/);
+});
+
+test("Fix-7B.7: frontend types include usage/quota and redaction fields", () => {
+  const src = readFileSync(new URL("../lib/types.ts", import.meta.url), "utf8");
+  for (const token of [
+    "redacted: boolean",
+    "spans_ingested: number",
+    "tokens_ingested: number",
+    "monthly_span_limit: number",
+    "monthly_token_limit: number",
+    "monthly_judge_budget_usd: number",
+    "next_cursor: string | null",
+    "cost_usd: number",
+  ]) {
+    assert.match(src, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  }
+});
+
+test("Fix-7B.7: touched pages sanitize query-driven error surfaces", () => {
+  const exportsPage = readFileSync(new URL("../app/o/[org]/p/[project]/exports/page.tsx", import.meta.url), "utf8");
+  const evaluations = readFileSync(new URL("../app/o/[org]/p/[project]/evaluations/page.tsx", import.meta.url), "utf8");
+  const traceDetail = readFileSync(new URL("../app/o/[org]/p/[project]/traces/[trace]/page.tsx", import.meta.url), "utf8");
+
+  assert.match(exportsPage, /safeErrorMessage\(qp\.error/);
+  assert.match(evaluations, /safeErrorMessage\(qp\.error/);
+  assert.match(traceDetail, /safeErrorMessage\(qp\.error/);
+  assert.equal(/\{qp\.error\}/.test(evaluations), false);
+  assert.equal(/\{qp\.error\}/.test(traceDetail), false);
+});
+
+test("Fix-7B.7: exports usage panel surfaces judge budget safely", () => {
+  const src = readFileSync(new URL("../app/o/[org]/p/[project]/exports/page.tsx", import.meta.url), "utf8");
+  assert.match(src, /monthly_judge_budget_usd/);
+  assert.match(src, /formatCost\(subResult\.subscription\.plan\.monthly_judge_budget_usd\)/);
 });

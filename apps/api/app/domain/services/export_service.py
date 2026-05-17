@@ -15,14 +15,18 @@ from sqlalchemy.orm import Session
 
 from app.config import exports_dir
 from app.domain.services.audit_service import record_audit
-from app.domain.services.usage_service import enforce_quota, increment_usage
+from app.domain.services.usage_service import apply_usage_with_quota, enforce_quota
 from app.models import ExportJob, HumanFeedback, Project, Trace, utcnow
+from app.safe_errors import safe_message
 from app.schemas import ExportJobCreate
 from app.security import new_id
 
 
 def _filter_traces(db: Session, project_id: str, filters: dict | None) -> list[Trace]:
-    query = db.query(Trace).filter(Trace.project_id == project_id)
+    query = db.query(Trace).filter(
+        Trace.project_id == project_id,
+        Trace.deleted_at.is_(None),
+    )
     filters = filters or {}
     if isinstance(filters.get("environment"), str):
         query = query.filter(Trace.environment == filters["environment"])
@@ -100,7 +104,7 @@ def create_jsonl_export(
         job.row_count = row_count
         job.expires_at = utcnow() + timedelta(days=7)
         job.completed_at = utcnow()
-        increment_usage(db, project.organization_id, exports=1)
+        apply_usage_with_quota(db, project, exports=1)
         record_audit(
             db, "export.created",
             organization_id=project.organization_id,
@@ -113,7 +117,7 @@ def create_jsonl_export(
         db.commit()
     except Exception as exc:  # noqa: BLE001
         job.status = "error"
-        job.error = str(exc)
+        job.error = safe_message(exc, fallback="export_failed", context="create_jsonl_export")
         job.completed_at = utcnow()
         db.add(job)
         db.commit()

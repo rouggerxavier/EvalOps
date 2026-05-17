@@ -48,7 +48,7 @@ export async function getAuthToken(): Promise<string | null> {
   return FALLBACK_TOKEN ?? null;
 }
 
-async function getSessionCookieToken(): Promise<string | null> {
+export async function getSessionCookieToken(): Promise<string | null> {
   const store = await cookies();
   const cookie = store.get(SESSION_COOKIE);
   if (cookie?.value) return cookie.value;
@@ -83,6 +83,17 @@ export async function clearSessionCookie(): Promise<void> {
     path: "/",
     maxAge: 0,
   });
+}
+
+export async function logoutWithApi(token: string): Promise<void> {
+  const res = await fetch(`${getApiBaseUrl()}/auth/logout`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    cache: "no-store",
+  });
+  if (!res.ok) {
+    throw new AuthError(`logout_failed_${res.status}`, res.status);
+  }
 }
 
 async function callAuth(path: string, payload: unknown): Promise<AuthResponseBody> {

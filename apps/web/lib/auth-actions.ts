@@ -5,7 +5,9 @@ import { redirect } from "next/navigation";
 import {
   AuthError,
   clearSessionCookie,
+  getSessionCookieToken,
   loginWithApi,
+  logoutWithApi,
   registerWithApi,
 } from "./auth";
 
@@ -80,6 +82,15 @@ export async function registerAction(formData: FormData): Promise<void> {
 }
 
 export async function logoutAction(): Promise<void> {
+  try {
+    const sessionToken = await getSessionCookieToken();
+    if (sessionToken) {
+      await logoutWithApi(sessionToken);
+    }
+  } catch {
+    // Best effort revoke on backend; local logout must still succeed.
+  }
+
   await clearSessionCookie();
   redirect("/");
 }

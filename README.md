@@ -87,6 +87,27 @@ cd apps/web && npm run build
 python apps/api/scripts/smoke_hosted.py --base-url http://localhost:8000
 ```
 
+## Production deploy notes
+
+`docker-compose.prod.yml` targets PostgreSQL and runs Alembic before the API
+serves traffic:
+
+```bash
+POSTGRES_PASSWORD=... JWT_SECRET=... docker compose -f docker-compose.prod.yml up
+```
+
+For a brand-new database, the `migrate` service runs `alembic upgrade head`.
+For an existing database created before Alembic, stamp the baseline once before
+starting the production stack:
+
+```bash
+cd apps/api
+DATABASE_URL=postgresql+psycopg://evalops:...@postgres:5432/evalops alembic stamp 0001_baseline
+```
+
+See [docs/ops/database-migrations.md](docs/ops/database-migrations.md) for the
+full migration runbook.
+
 ## Documentation map
 
 - Product overview: [docs/00-project-overview.md](docs/00-project-overview.md)

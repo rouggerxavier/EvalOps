@@ -213,7 +213,10 @@ export default async function TracesListPage({ params, searchParams }: Props) {
                       </span>
                     </td>
                     <td>
-                      <StatusBadge status={trace.status} />
+                      <div className="evo-row" style={{ gap: 6 }}>
+                        <StatusBadge status={trace.status} />
+                        {trace.redacted ? <span className="evo-tag">redigido</span> : null}
+                      </div>
                     </td>
                     <td>
                       <span className="evo-tag">{trace.environment}</span>

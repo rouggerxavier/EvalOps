@@ -15,19 +15,28 @@ do roadmap (`docs/plans/evalops-remediation-roadmap.md`).
 
 ## Workaround SQLite (obrigatório em todas as execuções backend)
 
-A suíte completa `pytest apps/api/tests -q` apresenta falhas intermitentes por
-**SQLite database is locked** quando rodada sem reset do arquivo entre arquivos
-de teste. Workaround obrigatório:
+> **Atualização Fix-7B.3 (2026-05-15) — workaround não é mais obrigatório.**
+> `apps/api/tests/conftest.py` agora reata `app.db` (engine/`SessionLocal`/
+> `DATABASE_URL`) a um SQLite temporário por execução, em diretório de OS
+> único, usando `NullPool`. Sem conexões paradas em pool, `drop_all`/
+> `create_all` sempre obtêm o lock exclusivo do SQLite, eliminando o
+> `database is locked`. Validação: `cd apps/api && .venv/bin/python -m pytest
+> tests -q --tb=short -p no:warnings` → **131 passed** em 3 execuções
+> consecutivas sem `rm -f` entre elas. O bloco abaixo fica registrado apenas
+> como **fallback histórico**.
+
+A suíte completa `pytest apps/api/tests -q` apresentava falhas intermitentes
+por **SQLite database is locked** quando rodada sem reset do arquivo entre
+arquivos de teste. Workaround histórico (não mais necessário):
 
 ```bash
 cd apps/api && rm -f evalops.db* && python -m pytest <alvos> -q --tb=short -p no:warnings
 ```
 
-Sempre apagar `evalops.db*` antes de cada invocação do `pytest`. Executar
-arquivos em grupos pequenos (≤ 8 arquivos por chamada) para mitigar o lock.
-A suíte completa em uma única chamada **ainda não é confiável** — esta
-limitação fica registrada como dívida até a Fase 6 (G-25, Postgres em prod) ou
-Fase 7 (isolamento de DB por worker / fixtures).
+Antes do Fix-7B.3 era obrigatório apagar `evalops.db*` antes de cada invocação
+do `pytest` e executar arquivos em grupos pequenos (≤ 8 arquivos por chamada)
+para mitigar o lock. A suíte completa numa única chamada **não era confiável**.
+Resolvido em Fix-7B.3 via isolamento de engine test-only no `conftest.py`.
 
 ---
 
@@ -1504,3 +1513,799 @@ só resolvem ownership + chamam service. Regra de aplicação isolada em
 `domain/services`. Modelos SQLAlchemy permanecem sem regra de negócio.
 Próxima subfase (observabilidade / request_id / logging JSON, ou
 `ApiKey.expires_at` em 7E) pode começar sobre base limpa.
+
+---
+
+## Fix-7B.1 — Soft delete consistency
+
+Cobre achados de auditoria **A-01 (P0)**, **A-03 (P1)**, **A-04 (P1)**,
+**A-05 (P1)**. Objetivo: `Trace.deleted_at` respeitado em todos os
+fluxos operacionais normais. Nenhuma outra subfase implementada.
+
+### Arquivos alterados
+
+- `apps/api/app/domain/services/export_service.py`
+- `apps/api/app/api/routes_phase5.py`
+- `apps/api/app/api/routes_evaluations.py`
+- `apps/api/app/domain/services/trace_ingest_service.py`
+- `apps/api/tests/test_phase10_audit_privacy_exports.py` (testes)
+- `apps/api/tests/test_phase5_prompts_datasets_experiments.py` (testes)
+- `apps/api/tests/test_phase4_rubrics_eval.py` (testes)
+
+### A-01 — Export respeita soft delete
+
+`_filter_traces` agora filtra `Trace.deleted_at.is_(None)` junto com
+`project_id`. Como `row_count` e a serialização de feedback/spans/eventos
+derivam exclusivamente da lista retornada por `_filter_traces`, traces
+soft-deletados ficam ausentes do JSONL **e** não contam para
+`row_count`. Sem mudança de schema/contrato.
+
+### A-03 — Dataset build respeita soft delete
+
+`build_dataset_from_traces` adiciona `Trace.deleted_at.is_(None)` ao
+query base. Se nenhum trace ativo sobrar, o loop não itera e o endpoint
+retorna `202 {"created": 0}` — comportamento controlado, compatível com
+o contrato atual.
+
+### A-04 — Evaluations por projeto respeitam soft delete
+
+`list_project_evaluations` adiciona `Trace.deleted_at.is_(None)` ao
+join com `Trace`. Runs antigos **não** são apagados; apenas filtrados
+do fluxo de listagem por projeto. Acesso direto via DB/`run_id`
+permanece (linha histórica intacta).
+
+### A-05 — Contrato de reingest de `client_trace_id` deletado
+
+`_existing_trace_id` agora carrega o trace mesmo quando deletado. Se
+`deleted_at IS NOT NULL`, levanta `HTTPException(409,
+{"error":"trace_deleted","client_trace_id":"..."})`. O loop de
+`ingest_trace_batch` propaga `HTTPException` (re-raise antes do
+`except Exception` genérico) para o 409 chegar ao cliente em vez de ir
+para a lista `errors`. Não recria trace (colidiria com
+`uq_traces_project_client`) e não restaura automaticamente.
+Idempotência de trace **ativo** inalterada.
+
+### Testes adicionados
+
+- `test_export_excludes_soft_deleted_trace` — assert trace deletado
+  ausente do JSONL e `row_count == 1`.
+- `test_reingest_deleted_client_trace_id_returns_409` — 409 com
+  `detail.error == "trace_deleted"`, nenhuma linha nova criada.
+- `test_reingest_active_client_trace_id_still_idempotent` — regressão.
+- `test_build_dataset_from_traces_ignores_soft_deleted` — `created == 1`,
+  item do trace deletado ausente.
+- `test_list_project_evaluations_excludes_soft_deleted_trace` — run do
+  trace deletado fora da listagem, row do run ainda presente no DB.
+
+### Comandos e resultados
+
+| Comando | Resultado |
+|---|---|
+| `pytest tests/test_phase10_audit_privacy_exports.py` | ✅ incl. nos 84 abaixo |
+| `pytest tests/test_phase5_prompts_datasets_experiments.py` | ✅ idem |
+| `pytest tests/test_phase4_rubrics_eval.py` | ✅ idem |
+| `pytest tests/test_phase2_tracing.py` | ✅ idem |
+| 4 arquivos-alvo juntos | ✅ 84 passed |
+| Regressão focada (phase8/9/10/11/12/5) | ✅ 69 passed |
+| `pytest tests` completo | ✅ 136 passed |
+
+Fix-7B.3 já estabilizou isolamento SQLite; suíte completa roda verde
+sem `rm -f evalops.db*`.
+
+### Pode avançar para Fix-7B.2?
+
+✅ **Sim** — A-01/A-03/A-04/A-05 fechados, suíte completa verde,
+nenhum escopo proibido tocado (sem hard delete, sem endpoint admin,
+sem restore, sem mudança de schema/migration, sem frontend/SDK).
+
+---
+
+## Fix-7B.2 — Logout real no frontend
+
+Objetivo desta subfase: fechar o achado **A-02**, garantindo revogação
+server-side (`POST /v1/auth/logout`) antes de limpar sessão local.
+
+### Arquivos alterados
+
+- `apps/web/lib/auth.ts`
+- `apps/web/lib/auth-actions.ts`
+- `apps/web/tests/security.test.mjs`
+- `docs/plans/baseline.md`
+
+### Fluxo de logout após Fix-7B.2
+
+1. `logoutAction()` tenta obter o JWT atual da sessão via cookie HttpOnly
+   (`getSessionCookieToken()`).
+2. Se existir token, chama `logoutWithApi(token)`:
+   `POST ${API_BASE_URL}/auth/logout` com header
+   `Authorization: Bearer <token>`.
+3. Independente de sucesso/erro da revogação remota, executa
+   `clearSessionCookie()`.
+4. Redireciona para `/`.
+
+### Comportamento em falha de backend/rede
+
+- Falha na chamada de logout remoto é tratada como **best effort**:
+  exceção é absorvida em `logoutAction()`.
+- Sessão local é sempre limpa (cookie invalidado com `maxAge: 0`).
+- Não há exposição de stack, token, path interno ou detalhe sensível na UI.
+
+### Testes web adicionados (contrato)
+
+Arquivo: `apps/web/tests/security.test.mjs`
+
+- `Fix-7B.2: logout calls POST /auth/logout with Authorization bearer`
+- `Fix-7B.2: logout clears local session after revoke attempt`
+- `Fix-7B.2: backend logout failure still clears local session`
+- `Fix-7B.2: logout without token is idempotent and does not call backend`
+- `Fix-7B.2: source contract has logout helper using POST + bearer`
+- `Fix-7B.2: source contract tries revoke before local clear`
+
+### Regressão backend (contrato existente)
+
+`tests/test_phase9_auth_hardening.py` permaneceu verde, incluindo:
+
+- invalidação de token após logout,
+- persistência de `jti` em denylist,
+- idempotência de logout,
+- logout sem token/invalid token retornando 204.
+
+### Comandos executados e resultados
+
+```bash
+cd apps/web && npm run test
+```
+✅ `29 passed`
+
+```bash
+cd apps/web && npx tsc --noEmit
+```
+✅ passou (observação: uma execução concorrente inicial falhou por referências
+temporárias de `.next/types`; reexecução após `next build` ficou verde).
+
+```bash
+cd apps/web && npm run build
+```
+✅ build Next.js concluído com sucesso.
+
+```bash
+cd apps/api && .venv/bin/python -m pytest tests/test_phase9_auth_hardening.py -q --tb=short -p no:warnings
+```
+✅ `14 passed`
+
+Regressão opcional executada:
+
+```bash
+cd apps/api && .venv/bin/python -m pytest tests/test_phase8_p0_security.py tests/test_phase10_audit_privacy_exports.py tests/test_phase11_contracts_ux.py tests/test_phase12_quota_eval_storage.py -q --tb=short -p no:warnings
+```
+✅ `46 passed`
+
+### Pode avançar para Fix-7B.4?
+
+✅ **Sim** — Fix-7B.2 foi implementada isoladamente; nenhuma outra subfase
+Fix-7B foi executada neste trabalho.
+
+---
+
+## Fix-7B.4 — Quota/concurrency transaction hardening (2026-05-15)
+
+### Status
+✅ **Concluída** (A-06 + A-07).
+
+### Resumo da mudança
+
+- `usage_service.py` ganhou API interna atômica `apply_usage_with_quota(...)`
+  para validar quota e aplicar incrementos na mesma transação.
+- `get_or_create_counter(...)` foi endurecida para race de criação de
+  `UsageCounter` com tratamento de `IntegrityError` e recarga da linha
+  vencedora.
+- Lock pessimista para linha existente foi mantido via `with_for_update()`
+  quando `lock=True` e dialeto Postgres.
+- Ingest deixou de fazer commit intermediário antes de usage: trace/spans/events
+  + usage agora fecham no mesmo commit por item.
+- Evaluation deixou de fazer commit dentro de `run_evaluation`; o commit passou
+  para o router, junto de quota/usage/audit, eliminando sucesso parcial.
+- Export passou a aplicar usage com a API atômica; em falha de usage o job
+  permanece com `status=error` (não `completed`).
+
+### Arquivos alterados
+
+- `apps/api/app/domain/services/usage_service.py`
+- `apps/api/app/domain/services/trace_ingest_service.py`
+- `apps/api/app/domain/services/eval_service.py`
+- `apps/api/app/api/routes_evaluations.py`
+- `apps/api/app/domain/services/export_service.py`
+- `apps/api/tests/test_phase12_quota_eval_storage.py`
+- `docs/plans/baseline.md`
+
+### Testes adicionados/ajustados (phase12)
+
+- Quota no limite incrementa corretamente.
+- Quota acima do limite retorna 402 sem incremento adicional.
+- Batch rejeitado por quota não persiste `Trace`/`Span`/`Event`.
+- Race de criação de `UsageCounter` recupera sem 500.
+- Caminho Postgres com lock chama `with_for_update`; SQLite continua
+  compatível.
+- Falha simulada de usage em ingest faz rollback do trace.
+- Falha simulada de usage em evaluation faz rollback do run.
+- Falha simulada de usage em export marca job como `error`.
+- Falha simulada de audit em export permanece fire-and-forget
+  (export `completed`).
+
+### Comandos executados e resultados
+
+`python` não existe no PATH desta máquina; os comandos foram executados com
+`.venv/bin/python`.
+
+Além disso, o runtime desta máquina (Python 3.14) apresentou deadlock no
+`fastapi.testclient.TestClient` síncrono. Foi usado **apenas em runtime**
+`PYTHONPATH=/tmp/evalops_testpatch` (arquivo `sitecustomize.py` temporário em
+`/tmp`) para contornar o deadlock durante os testes; **nenhum arquivo do
+repositório foi alterado por esse workaround**.
+
+```bash
+cd apps/api && PYTHONPATH=/tmp/evalops_testpatch .venv/bin/python -m pytest tests/test_phase12_quota_eval_storage.py -q --tb=short -p no:warnings
+```
+✅ `24 passed`
+
+```bash
+cd apps/api && PYTHONPATH=/tmp/evalops_testpatch .venv/bin/python -m pytest tests/test_phase8_p0_security.py tests/test_phase10_audit_privacy_exports.py tests/test_phase4_rubrics_eval.py -q --tb=short -p no:warnings
+```
+✅ `78 passed`
+
+```bash
+cd apps/api && PYTHONPATH=/tmp/evalops_testpatch .venv/bin/python -m pytest tests/test_phase9_auth_hardening.py tests/test_phase11_contracts_ux.py tests/test_phase5_prompts_datasets_experiments.py -q --tb=short -p no:warnings
+```
+✅ `28 passed`
+
+```bash
+cd apps/api && PYTHONPATH=/tmp/evalops_testpatch .venv/bin/python -m pytest tests/test_health.py tests/test_auth_flow.py tests/test_phase1_identity_access.py tests/test_phase2_tracing.py tests/test_phase3_analytics.py tests/test_phase6_feedback_export_usage.py tests/test_phase7_e2e_mvp_flow.py -q --tb=short -p no:warnings
+```
+✅ `15 passed`
+
+Opcional:
+
+```bash
+cd apps/api && PYTHONPATH=/tmp/evalops_testpatch .venv/bin/python -m pytest tests -q --tb=short -p no:warnings
+```
+✅ `145 passed`
+
+### Riscos remanescentes
+
+- **SQLite vs Postgres**: os testes de lock Postgres continuam estruturais
+  (sem banco Postgres real no CI local); semântica real de lock/contenção em
+  multi-worker Postgres ainda depende de smoke de integração com Postgres.
+- **Audit**: permanece fire-and-forget por design (falha de audit não bloqueia
+  operação principal), mantido intencionalmente.
+
+### Pode avançar para Fix-7B.5?
+
+✅ **Sim** — esta entrega ficou restrita à Fix-7B.4; nenhuma outra subfase
+Fix-7B foi implementada neste trabalho.
+
+---
+
+## Fix-7B.5 — Judge budget e LLM cost consistency (2026-05-15)
+
+### Status
+✅ **Concluída** (A-08 P1).
+
+### Resumo da mudança
+
+- `app/infra/llm/pricing.py`: adicionada estimativa determinística de custo de
+  judge — `estimate_judge_cost_usd(model, prompt, response, assumed_output_tokens)`,
+  `split_provider_model()`, `estimate_tokens()` (heurística ~4 chars/token,
+  arredonda para cima) e `DEFAULT_JUDGE_PER_1K` (fallback conservador = tier
+  gpt-4.1) para provider/model fora da tabela. `compute_cost_usd` original
+  **não foi alterado** (continua usado por `trace_ingest_service`).
+- `app/domain/evaluators/llm_judge.py`: `cost_cap_usd` deixou de ser campo
+  morto. Estimativa pré-chamada (input real + `max_output_tokens`, default 512);
+  se exceder o cap, **bloqueia antes de gastar** e retorna erro estruturado
+  `cost_cap_exceeded`. Todos os caminhos de retorno (falha de LLM, parse fail,
+  sucesso) agora preenchem `EvaluatorResult.cost_usd` com a estimativa.
+- `app/domain/services/eval_service.py`: **sem alteração** — já somava
+  `result.cost_usd` em `EvaluationRun.cost_usd`; agora o valor é real.
+- `app/domain/services/experiment_service.py`: nova exceção
+  `ExperimentBudgetError`. `execute_experiment` aplica o mesmo gate de judge
+  budget (pré-check + parada consistente quando o gasto cumulativo de judge
+  ultrapassa o budget mid-run). Fecha o bypass onde experiments rodavam
+  `llm_judge` via REGISTRY sem gate.
+- `app/api/routes_phase5.py`: pré-check 402 espelhando a rota de evaluation
+  (quando o rubric do experiment usa `llm_judge` e o budget está esgotado);
+  `ExperimentBudgetError` adicionada ao `except` → run `status=error` com
+  mensagem segura.
+
+### Contrato final de `cost_cap_usd`
+
+- Tipo: float USD, default `0.01`, por evaluator `llm_judge` (config do rubric).
+- Semântica: teto de custo **estimado** de uma única invocação do judge.
+- Pré-chamada estima `input (prompt renderizado) + max_output_tokens` (default
+  512) usando a tabela de pricing (fallback conservador se model desconhecido).
+- Se a estimativa pré-chamada **excede** o cap → **não chama o LLM**; retorna
+  `EvaluatorResult(score=0, passed=False, reasoning="cost_cap_exceeded",
+  raw_output={error, estimated_cost_usd, cost_cap_usd}, cost_usd=estimativa)`.
+- Erro é estável e não vaza stack/SQL/path/segredo.
+
+### Custo real vs estimado
+
+**Estimado**, determinístico. O contrato síncrono de `call_llm` retorna apenas
+texto (sem token usage), e chamada de LLM real é proibida em teste. Custo =
+`estimate_tokens(prompt)*price_in + estimate_tokens(response)*price_out`
+(ou `max_output_tokens` pré-chamada). Mesmo prompt + mesma resposta ⇒ mesmo
+custo, portanto testável sem rede.
+
+### Como `EvaluationRun.cost_usd` é preenchido
+
+`llm_judge.run()` seta `EvaluatorResult.cost_usd`; `eval_service.run_evaluation`
+soma em `total_cost` e grava em `run.cost_usd`; a rota aplica
+`increment_usage(cost_usd=run.cost_usd)`. Evaluators não-LLM continuam custo
+`0.0`, logo não consomem judge budget.
+
+### Como o judge budget por plano é aplicado
+
+`Plan.monthly_judge_budget_usd` → `judge_budget_for_org` (fallback seguro 20.0
+quando ausente/zero/sem subscription). Gasto do mês = `Σ EvaluationRun.cost_usd`
+do projeto no mês corrente. Rota `/evaluations/run`: se o rubric usa `llm_judge`
+e `spent >= budget` → **402** `judge_budget_exhausted`. Safety net por evaluator
+em `eval_service` mantido. Como o custo agora é real, o budget acumula de runs
+reais (antes nunca acumulava).
+
+### Como experiments com `llm_judge` foram protegidos
+
+Pré-check 402 na rota `/experiments/{id}/run` (mesmo gate da evaluation) +
+gate defensivo em `execute_experiment` (pré-check e parada cumulativa
+mid-run via `ExperimentBudgetError`). Experiments sem `llm_judge`
+(`rubric_uses_llm_judge` falso) não são afetados.
+
+### Testes adicionados/alterados
+
+- `tests/test_phase4_rubrics_eval.py`: `TestLlmJudgeCostCap` (cap bloqueia
+  antes de gastar / cap permite dentro do limite / erro não vaza internals),
+  `test_llm_judge_records_cost_usd_on_evaluation_run`,
+  `test_duplicate_llm_judge_evaluation_still_returns_409`.
+- `tests/test_phase5_prompts_datasets_experiments.py`: experiment com
+  `llm_judge` bloqueado em 402 quando budget esgotado / experiment sem
+  `llm_judge` não bloqueado / experiment com `llm_judge` roda quando há budget.
+- `tests/test_phase12_quota_eval_storage.py`: **sem alteração** — G-12 já
+  cobria block/allow por plano; continua verde com custo real.
+
+### Comandos executados e resultados
+
+Não existe `.venv` neste ambiente; foi criada `apps/api/.venv` com
+`python3 -m venv` (Python 3.12) + `pip install -e ".[dev]"`. Os comandos foram
+executados via WSL Ubuntu (o repo é montado em `\wsl.localhost`):
+
+```bash
+wsl.exe -d Ubuntu -- bash -lc 'cd /home/inovatecjp/rougger/evalops/apps/api && \
+  .venv/bin/python -m pytest tests/test_phase4_rubrics_eval.py \
+  tests/test_phase5_prompts_datasets_experiments.py \
+  tests/test_phase12_quota_eval_storage.py -q --tb=short -p no:warnings'
+```
+✅ `93 passed in 151.13s`
+
+```bash
+wsl.exe -d Ubuntu -- bash -lc 'cd /home/inovatecjp/rougger/evalops/apps/api && \
+  .venv/bin/python -m pytest tests -q --tb=short -p no:warnings'
+```
+✅ `153 passed in 262.30s`
+
+Nota: para respeitar a regra "não rodar a mesma suíte mais de 2 vezes", os
+três comandos individuais foram consolidados na regressão focada (1ª execução)
+e a regressão ampliada (2ª execução); cada suíte-alvo rodou exatamente 2x.
+
+### Riscos remanescentes
+
+- **Custo estimado, não real**: enquanto o caminho de LLM for síncrono e sem
+  token usage, o custo é heurístico (~4 chars/token). Conservador, mas pode
+  divergir do faturamento real do provider.
+- **Pré-chamada usa `max_output_tokens` assumido (512)**: se a resposta real
+  for muito maior, o custo registrado pós-chamada reflete o real estimado, mas
+  o gate pré-chamada pode deixar passar um caso de borda; mitigado pelo budget
+  mensal que consome o custo real estimado.
+- **Mid-run em experiments**: a parada cumulativa usa `result["cost_usd"]` do
+  rubric (apenas `llm_judge` gera custo); se um futuro evaluator não-judge
+  passar a gerar custo, o tracking precisará discriminar por tipo.
+
+### Pode avançar para Fix-7B.8 ou Fix-7B.6?
+
+✅ **Sim** — entrega restrita à Fix-7B.5 (A-08 P1); nenhuma outra subfase
+Fix-7B foi implementada. Regressões de Fix-7B.1/.2/.4 e duplicate-409
+continuam verdes.
+
+---
+
+## Fix-7B.8 — Deploy/Alembic/npm audit (2026-05-15)
+
+### Escopo
+
+Subfase restrita aos achados:
+
+- **A-10 P1** — `npm audit` com advisories em Next/PostCSS.
+- **A-11 P1** — `docker-compose.prod.yml` desalinhado com Alembic.
+
+Não houve alteração de lógica de negócio backend, soft delete, logout,
+quota/concurrency, judge budget, SDK, Redis, cleanup jobs ou redesign de UI.
+
+### Estratégia de Alembic/deploy
+
+`docker-compose.prod.yml` agora usa um job separado `migrate`:
+
+1. `postgres` sobe com healthcheck.
+2. `migrate` aguarda Postgres saudável, instala o pacote API + `psycopg` e
+   executa `alembic upgrade head`.
+3. `api` depende de `migrate: service_completed_successfully`, então uma
+   migration com erro impede a API de iniciar.
+4. `api` também recebe `EVALOPS_USE_ALEMBIC=1` como guardrail para não cair no
+   caminho `create_all` em produção.
+
+Para DBs legados criados antes do Alembic, o runbook permanece: validar schema
+Phase 1-6, rodar `alembic stamp 0001_baseline` uma vez e só depois usar o
+compose com `upgrade head` automático.
+
+Docs atualizadas:
+
+- `README.md` — notas de deploy/migration.
+- `docs/ops/database-migrations.md` — descreve `migrate` service e fallback de
+  stamp para DB legado.
+- `.env.example` — documenta `EVALOPS_USE_ALEMBIC`, `EVALOPS_EXPORTS_DIR` e
+  limits já usados pelo backend.
+
+### npm audit / frontend
+
+Estado inicial:
+
+```bash
+cd apps/web && timeout 300 npm audit --omit=dev
+```
+❌ `2 vulnerabilities (1 moderate, 1 high)`:
+`next@15.3.9` com advisories high e `postcss@8.4.31` com advisory moderate.
+
+```bash
+cd apps/web && timeout 300 npm audit
+```
+❌ mesmo resultado: `next` high + `postcss <8.5.10` moderate.
+
+Correção controlada, sem `npm audit fix`:
+
+- `next`: `15.3.9` → `15.5.18`.
+- `postcss`: `8.4.31` → `8.5.14` via `overrides.postcss`, porque
+  `next@15.5.18` ainda declara `postcss: 8.4.31` como dependência transitiva.
+
+Validação pós-upgrade:
+
+```bash
+cd apps/web && timeout 300 npm audit --omit=dev
+```
+✅ `found 0 vulnerabilities`
+
+```bash
+cd apps/web && timeout 300 npm audit
+```
+✅ `found 0 vulnerabilities`
+
+```bash
+cd apps/web && npm ls next postcss
+```
+✅ `next@15.5.18` com `postcss@8.5.14 overridden`.
+
+### Build/test/typecheck frontend
+
+```bash
+cd apps/web && timeout 600 npm run test
+```
+✅ `29 pass`, `0 fail`.
+
+```bash
+cd apps/web && timeout 600 npm run build
+```
+✅ build Next.js 15.5.18 concluído. Observação não bloqueante:
+`app/globals.css` ainda emite warning autoprefixer em `end` vs `flex-end`
+(pré-existente/estético, não corrigido nesta subfase para evitar mudança de UI).
+
+```bash
+cd apps/web && timeout 600 npx tsc --noEmit
+```
+✅ typecheck sem erros.
+
+`next build` regenerou `apps/web/next-env.d.ts` adicionando a referência
+`./.next/types/routes.d.ts`; nenhum componente, página, layout ou microcopy foi
+alterado.
+
+### Alembic smoke
+
+```bash
+cd apps/api
+rm -f tmp_fix7b_alembic.db
+timeout 300 env DATABASE_URL=sqlite:///./tmp_fix7b_alembic.db \
+  .venv/bin/alembic upgrade head
+```
+✅ SQLite efêmero migrou até `0001_baseline`:
+`Running upgrade  -> 0001_baseline, baseline schema (Phase 1-6 consolidated).`
+
+O arquivo temporário `tmp_fix7b_alembic.db` foi removido após o smoke.
+
+### Docker Compose config
+
+```bash
+docker compose -f docker-compose.prod.yml config
+```
+⏳ Pendente neste host: `docker` não existe neste WSL2.
+
+```bash
+docker-compose -f docker-compose.prod.yml config
+```
+⏳ Pendente neste host: `docker-compose` também não existe neste WSL2.
+
+Nenhum Docker/Compose foi instalado. A validação estrutural por Compose precisa
+ser rodada em ambiente com Docker Desktop/Compose habilitado antes de deploy
+real.
+
+Validação complementar sem Docker:
+
+```bash
+python3 -c "import yaml, pathlib; data=yaml.safe_load(pathlib.Path('docker-compose.prod.yml').read_text()); print(','.join(sorted(data['services'].keys())))"
+```
+✅ YAML parseou e listou `api,migrate,postgres`.
+
+### Regressão backend
+
+Não foi rodada suíte backend adicional porque esta subfase não alterou
+`app/config.py`, `app/db.py`, `apps/api/alembic/` ou lógica backend. A validação
+backend executada foi o smoke Alembic obrigatório em SQLite efêmero.
+
+### Riscos remanescentes
+
+1. **Compose não validado localmente**: Docker/Compose indisponível neste WSL2.
+   Rodar `POSTGRES_PASSWORD=... JWT_SECRET=... docker compose -f docker-compose.prod.yml config`
+   no ambiente de deploy.
+2. **Postgres real não migrado nesta sessão**: não houve deploy real nem smoke
+   contra Postgres. Para DB legado, `alembic stamp 0001_baseline` continua
+   obrigatório uma única vez antes do compose automático.
+3. **API ainda usa imagem Python + install em runtime neste compose**: mantido
+   como padrão existente para não ampliar escopo. Produção real deve preferir
+   imagem API já buildada.
+4. **Autoprefixer warning em CSS**: build passa; a alteração de CSS foi evitada
+   por não ser necessária ao fix de audit/deploy.
+
+### Pode avançar para Fix-7B.6 ou Fix-7B.7?
+
+✅ **Sim** — Fix-7B.8 ficou isolada em deploy/Alembic/npm audit; nenhuma outra
+subfase Fix-7B foi implementada.
+
+---
+
+## Fix-7B.6.1 — Sanitize evaluator-returned errors (2026-05-16)
+
+### Escopo
+
+Correção curta do blocker P1 identificado na auditoria Fix-7B.6:
+
+- `llm_judge` e `cosine_similarity` retornavam `str(exc)` em
+  `EvaluatorResult.reasoning` e `raw_output.error`.
+- `json_schema_valid` podia retornar mensagens cruas de parse/schema contendo
+  payload, schema ou input sensível.
+- Esses campos são persistidos em score/evaluation e podem ser expostos pela
+  API de evaluations.
+
+Não houve alteração de soft delete, logout, quota/concurrency, judge budget
+além da preservação do contrato existente, Docker/Alembic, SDK, Redis,
+cleanup jobs, API key expiration, polling frontend ou UI.
+
+### Correção aplicada
+
+- `apps/api/app/domain/evaluators/llm_judge.py`: falhas de `call_llm` agora
+  passam por `safe_message(..., context="llm_judge")`; `reasoning` e
+  `raw_output.error` recebem somente texto público seguro. O contrato
+  `cost_cap_exceeded`, `cost_usd` e `cost_cap_usd` foi preservado.
+- `apps/api/app/domain/evaluators/cosine_similarity.py`: exceções de embedding
+  ou cálculo agora passam por `safe_message(..., context="cosine_similarity")`;
+  `reasoning` e `raw_output.error` não carregam mais `str(exc)` cru.
+- `apps/api/app/domain/evaluators/json_schema_valid.py`: erro de JSON inválido
+  retorna o slug `invalid_json`; erro de schema retorna
+  `schema_validation_failed`. O schema, a instância e o payload bruto deixam de
+  ser expostos em `reasoning`/`raw_output`.
+- `apps/api/app/domain/services/eval_service.py`: defesa em profundidade
+  sanitiza `EvaluatorResult.reasoning` de resultados falhos e chaves
+  `error`/`parse_error`/`schema_error` em `raw_output` antes de persistir.
+
+### Testes adicionados
+
+`apps/api/tests/test_phase4_rubrics_eval.py` cobre:
+
+- `llm_judge` com `call_llm` levantando erro contendo `Traceback`, SQL, path
+  local, token `evk_` e bearer token.
+- `cosine_similarity` com embedding falhando com erro equivalente.
+- `json_schema_valid` com JSON inválido e schema error contendo payload
+  sensível.
+- API de evaluation persistindo/retornando score sem expor o erro bruto do
+  evaluator.
+
+### Comandos executados e resultados
+
+O worktree isolado não possui `.venv`; os testes foram executados a partir do
+codigo em `/tmp/evalops-fix-7b6-audit-ab588aa` usando o Python do venv existente
+em `/home/rouggerxavier/dev/evalops/apps/api/.venv/bin/python`.
+
+```bash
+cd /tmp/evalops-fix-7b6-audit-ab588aa/apps/api && \
+  timeout 600 /home/rouggerxavier/dev/evalops/apps/api/.venv/bin/python \
+  -m pytest tests/test_phase4_rubrics_eval.py -q --tb=short -p no:warnings
+```
+✅ `62 passed in 4.50s`
+
+```bash
+cd /tmp/evalops-fix-7b6-audit-ab588aa/apps/api && \
+  timeout 600 /home/rouggerxavier/dev/evalops/apps/api/.venv/bin/python \
+  -m pytest tests/test_phase10_audit_privacy_exports.py -q --tb=short -p no:warnings
+```
+✅ `25 passed in 3.12s`
+
+```bash
+cd /tmp/evalops-fix-7b6-audit-ab588aa/apps/api && \
+  timeout 600 /home/rouggerxavier/dev/evalops/apps/api/.venv/bin/python \
+  -m pytest tests/test_phase12_quota_eval_storage.py -q --tb=short -p no:warnings
+```
+✅ `24 passed in 2.98s`
+
+```bash
+cd /tmp/evalops-fix-7b6-audit-ab588aa/apps/api && \
+  timeout 1200 /home/rouggerxavier/dev/evalops/apps/api/.venv/bin/python \
+  -m pytest tests -q --tb=short -p no:warnings
+```
+✅ `182 passed in 16.51s`
+
+Frontend validation:
+
+- `apps/web/node_modules` não existe neste worktree isolado.
+- Nenhum `npm install` foi executado, conforme restrição do prompt.
+- `npm run test`, `npm run build` e `npx tsc --noEmit` ficam pendentes para um
+  worktree com dependências frontend instaladas.
+
+### Busca final por vazamento
+
+```bash
+rg "str\\(exc\\)|repr\\(exc\\)|raw_output.*error|reasoning.*exc|Evaluator error" \
+  apps/api/app/domain/evaluators apps/api/app/domain/services/eval_service.py
+```
+
+Matches remanescentes justificados:
+
+- `eval_service.py` usa `raw_output={"error": "judge_budget_exhausted"}`:
+  slug estruturado e seguro.
+- `eval_service.py` usa `reasoning=f"Evaluator error: {safe}"` e
+  `raw_output={"error": safe}`: `safe` vem de `safe_message`.
+- `cosine_similarity.py` e `llm_judge.py` usam `raw_output={"error": safe}`:
+  `safe` vem de `safe_message`.
+- `json_schema_valid.py` usa `parse_error`/`schema_error` com slugs seguros.
+- `llm_judge.py` ainda mantém `raw_output.raw = raw_text[:500]` quando a
+  resposta do LLM não é JSON válido. Esse campo não é exceção nem
+  `raw_output.error`; fica como risco residual para auditoria posterior se o
+  provider puder ecoar input sensível em respostas inválidas.
+
+### Riscos remanescentes
+
+1. A validação frontend não foi executada neste worktree por ausência de
+   `node_modules`.
+2. A correção foi aplicada no worktree isolado em detached `ab588aa`, porque o
+   worktree principal estava bloqueado por `README.md` dirty e arquivos
+   untracked que não deveriam ser tocados sem autorização.
+3. `raw_output.raw` de resposta inválida do `llm_judge` continua limitado a
+   500 caracteres, mas não foi alterado por estar fora do blocker específico
+   `str(exc)`/`raw_output.error`.
+
+### Pode avançar para Fix-7B.7?
+
+✅ **Sim, do ponto de vista backend da Fix-7B.6.1**: o blocker P1 de
+`EvaluatorResult.reasoning`/`raw_output.error` foi corrigido e a regressão
+backend completa passou. Antes de commit/merge no worktree principal, integrar
+esta mudança em `fix-7b` após resolver o bloqueio local de `README.md` dirty.
+
+## Fix-7B.7 — Frontend contract/UX cleanup (2026-05-16)
+
+### Resumo
+
+Subfase focada em contrato e UX do dashboard sem redesign amplo. O frontend foi
+alinhado ao backend para download real de exports concluídos, atualização de
+tipos de plano/uso/redaction e remoção de botões com aparência de ação sem
+comportamento real.
+
+### Arquivos alterados
+
+- `apps/web/app/api/exports/[exportId]/download/route.ts`
+- `apps/web/app/o/[org]/p/[project]/exports/page.tsx`
+- `apps/web/app/o/[org]/p/[project]/evaluations/page.tsx`
+- `apps/web/app/o/[org]/p/[project]/page.tsx`
+- `apps/web/app/o/[org]/p/[project]/traces/[trace]/page.tsx`
+- `apps/web/app/o/[org]/p/[project]/traces/page.tsx`
+- `apps/web/lib/api.ts`
+- `apps/web/lib/safe-error.ts`
+- `apps/web/lib/types.ts`
+- `apps/web/tests/security.test.mjs`
+
+### Decisões de UX/contrato
+
+- Export download:
+  - botão `Download` agora usa rota frontend autenticada
+    `/api/exports/{id}/download`, que proxia `GET /v1/exports/{id}/download`
+    com bearer da sessão.
+  - erros `404/409/410` voltam para a página de exports com mensagem segura.
+  - jobs `running/queued/failed` não expõem CTA enganoso de download.
+- Estados planejados:
+  - ações futuras ficaram `disabled` + `data-status="planned"` + `title`
+    acionável.
+- Microcopy:
+  - removidas mensagens que insinuavam inexistência de download quando o
+    endpoint já existe.
+  - mantida linguagem operacional e não técnica.
+- Segurança de erro:
+  - `safe-error.ts` passou a mapear `410` para `Export expirado. Gere um novo arquivo.`
+  - páginas tocadas sanitizam `qp.error` antes de renderizar.
+
+### Botões conectados/desabilitados/removidos
+
+- **Conectados a ação real**
+  - `overview`: `Atualizar` (link para a própria página com query atual),
+    `Rodar avaliação` (link para `/evaluations`), ícone `Exportar` (link para
+    `/exports`).
+  - `evaluations`: `Rodar agora` (âncora para o formulário real de run),
+    `Nova rubric` (link para `/rubrics`).
+  - `exports`: `Download` real para jobs concluídos.
+- **Desabilitados como planejado**
+  - `overview`: filtro de janela (`Últimos 7 dias`) sem backend correspondente.
+  - `evaluations`: menu `MoreHorizontal` sem ações implementadas.
+  - `trace detail`: `Flagear`, `Reexecutar`, `Comparar`.
+
+### Tipos/helpers atualizados
+
+- `Trace.redacted`
+- `OrgUsage.spans_ingested`
+- `OrgUsage.tokens_ingested`
+- `OrgSubscription.plan.monthly_span_limit`
+- `OrgSubscription.plan.monthly_token_limit`
+- `OrgSubscription.plan.monthly_judge_budget_usd`
+- helper `getExportDownloadPath(exportId, redirectPath)` em `lib/api.ts`
+
+### Estado final de loading/empty/error
+
+- loading manteve padrão existente (sem redesign).
+- empty states preservados com próxima ação real (ex.: criar export, ir para
+  rubricas/traces).
+- erros de query/action nas páginas tocadas passam por sanitização e não
+  renderizam texto bruto técnico.
+
+### Testes executados
+
+Frontend:
+
+```bash
+cd apps/web && npm run test
+```
+✅ `51 pass, 0 fail`
+
+```bash
+cd apps/web && npm run build
+```
+✅ build OK
+
+```bash
+cd apps/web && npx tsc --noEmit
+```
+✅ typecheck OK
+
+Backend contrato (integração com endpoint de export):
+
+```bash
+cd apps/api && timeout 600 .venv/bin/python -m pytest \
+  tests/test_phase10_audit_privacy_exports.py \
+  tests/test_phase11_contracts_ux.py \
+  tests/test_phase12_quota_eval_storage.py \
+  -q --tb=short -p no:warnings
+```
+✅ `54 passed in 19.86s`
+
+### Riscos remanescentes
+
+1. A página de exports continua dependente de IDs conhecidos em query (`ids`),
+   porque o contrato ainda não oferece histórico global de jobs.
+2. Ações planejadas (`flag`, `reexecute`, `compare`, menu por evaluation) foram
+   explicitadas como futuras, mas continuam sem implementação funcional.

@@ -6,7 +6,12 @@ from sqlalchemy.orm import Session
 from app.db import get_db
 from app.deps import get_current_user
 from app.domain.services.audit_service import record_audit
+from app.domain.services.eval_service import (
+    judge_budget_status,
+    rubric_uses_llm_judge,
+)
 from app.domain.services.experiment_service import (
+    ExperimentBudgetError,
     ExperimentValidationError,
     execute_experiment,
     validate_variants,
@@ -26,6 +31,7 @@ from app.models import (
     Prompt,
     PromptVersion,
     Rubric,
+    RubricVersion,
     Span,
     Trace,
     User,
@@ -46,6 +52,7 @@ from app.schemas import (
     PromptVersionCreate,
     PromptVersionOut,
 )
+from app.safe_errors import safe_message
 from app.security import new_id
 
 router = APIRouter(prefix="/v1")
@@ -299,7 +306,10 @@ def build_dataset_from_traces(
     db: Session = Depends(get_db),
 ) -> dict:
     dataset = _dataset_or_404(dataset_id, user.id, db)
-    query = db.query(Trace).filter(Trace.project_id == dataset.project_id)
+    query = db.query(Trace).filter(
+        Trace.project_id == dataset.project_id,
+        Trace.deleted_at.is_(None),
+    )
     if payload.environment:
         query = query.filter(Trace.environment == payload.environment)
     if payload.status:
@@ -372,7 +382,8 @@ def create_experiment(
         validate_variants(variants_dump, payload.baseline_variant)
     except ExperimentValidationError as exc:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=safe_message(exc, fallback="invalid_experiment", context="validate_variants"),
         )
     row = Experiment(
         id=new_id("exp"),
@@ -398,6 +409,36 @@ def run_experiment(
     db: Session = Depends(get_db),
 ) -> dict:
     experiment = _experiment_or_404(experiment_id, user.id, db)
+
+    # Fix-7B.5 (A-08): mirror the evaluation route's judge budget gate so an
+    # experiment whose rubric uses llm_judge cannot bypass the plan budget.
+    # Pre-check at 402 before any ExperimentRun row or LLM spend.
+    rubric = db.get(Rubric, experiment.rubric_id)
+    if rubric is not None:
+        rubric_version_row = (
+            db.query(RubricVersion)
+            .filter(
+                RubricVersion.rubric_id == rubric.id,
+                RubricVersion.version == rubric.current_version,
+            )
+            .one_or_none()
+        )
+        if rubric_version_row is not None and rubric_uses_llm_judge(
+            rubric_version_row.id, db
+        ):
+            has_budget, spent, budget = judge_budget_status(
+                experiment.project_id, db
+            )
+            if not has_budget:
+                raise HTTPException(
+                    status_code=status.HTTP_402_PAYMENT_REQUIRED,
+                    detail={
+                        "error": "judge_budget_exhausted",
+                        "spent_usd": round(spent, 6),
+                        "budget_usd": round(budget, 6),
+                    },
+                )
+
     run = ExperimentRun(
         id=new_id("exr"),
         experiment_id=experiment.id,
@@ -420,10 +461,14 @@ def run_experiment(
         run.comparisons = result["comparisons"]
         run.criteria_failures = result["criteria_failures"]
         run.run_metadata = result["run_metadata"]
-    except (ValueError, ExperimentValidationError) as exc:
+    except (ValueError, ExperimentValidationError, ExperimentBudgetError) as exc:
+        # ExperimentBudgetError carries only the stable code
+        # "judge_budget_exhausted" — safe to surface, no stack/SQL/path.
         run.status = "error"
         run.passed = False
-        run.run_metadata = {"error": str(exc)}
+        run.run_metadata = {
+            "error": safe_message(exc, fallback="experiment_failed", context="experiment_run")
+        }
     run.completed_at = utcnow()
     db.add(run)
     _exp_project = db.get(Project, experiment.project_id)
