@@ -13,6 +13,57 @@ do roadmap (`docs/plans/evalops-remediation-roadmap.md`).
 
 ---
 
+## Snapshot documental pós-7B/7C (2026-05-17)
+
+Este snapshot não executou testes de produto; a tarefa foi apenas reconciliar
+documentação com o estado atual de `main`.
+
+Estado verificado:
+
+- Branch: `main`.
+- HEAD: `f13f24c`.
+- `origin/main`: `f13f24c`.
+- Worktree inicial: limpa (`git status --short` sem saída).
+- Branches remotas: apenas `origin/HEAD -> origin/main` e `origin/main`.
+- Commits relevantes em `main`:
+  - `618e511 refactor(evalops): extract services and ownership helpers`.
+  - `9e9a517 feat(evalops): add structured request logging`.
+  - `40cf27a fix(evalops): harden sdk execution reliability`.
+  - `b6c962d fix(evalops): align deploy migrations and resolve web audit`.
+
+Documentação adicionada/atualizada:
+
+- `docs/audits/evalops-phase7-status-after-7bc.md` — inventário real da Fase
+  7 após merge de 7B/7C e Fix-7B.
+- `docs/plans/evalops-phase7-next-steps.md` — próxima ordem operacional
+  recomendada a partir de `main`.
+- `docs/plans/evalops-phase7-execution-plan.md` — marcado como plano histórico
+  com aviso para usar os novos documentos.
+- `docs/plans/evalops-remediation-roadmap.md` — status da Fase 7 atualizado.
+
+Resumo de status documentado:
+
+| Subfase | Status atualizado | Evidência curta |
+|---|---|---|
+| 7A Alembic/migrations | parcial | Alembic e compose `migrate` existem; Postgres smoke pendente. |
+| 7B service extraction/ownership | parcial | Services e `ownership.py` existem; `_project_or_404` ainda aparece em `routes_phase5.py`. |
+| 7C structured logging/request_id | feito | `9e9a517`, `logging_config.py`, `request_id.py`, teste phase13. |
+| 7D SDK retry/dead-letter | parcial | `40cf27a` cobre retry/drop; dead-letter/replay ausentes. |
+| 7E `ApiKey.expires_at`/polling | pendente | `ApiKey` não tem `expires_at`; traces têm refresh manual, não polling. |
+| 7F Redis/cleanup | pendente/follow-up | Rate limit in-memory; sem cleanup job para `RevokedToken`/`ExportJob`. |
+
+Validação desta rodada documental:
+
+- `git diff --check`
+- `git diff --stat`
+- `git diff --name-only`
+- `git status --short`
+- `git ls-files --others --exclude-standard` para listar os docs novos ainda
+  untracked; `git diff --stat` e `git diff --name-only` mostram apenas arquivos
+  rastreados.
+
+---
+
 ## Workaround SQLite (obrigatório em todas as execuções backend)
 
 > **Atualização Fix-7B.3 (2026-05-15) — workaround não é mais obrigatório.**

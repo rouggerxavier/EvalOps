@@ -6,6 +6,16 @@ Fonte: `docs/plans/evalops-remediation-roadmap.md` (seção "Fase 7"),
 `docs/plans/baseline.md`, auditoria de código do checkout atual.
 Pré-requisito: Fases 1–6 concluídas (✅ confirmado em `evalops-remediation-roadmap.md`).
 
+> **Atualização pós-merge 7B/7C (2026-05-17)**: este plano agora é
+> principalmente histórico. O estado real em `main` (`f13f24c`) mudou:
+> 7A está materialmente implementada com Alembic e compose de migração, 7B está
+> **parcial**, 7C está **feito** em `9e9a517`, e 7D está **parcial** porque
+> `40cf27a` já implementou retry/drop reliability no SDK. Use
+> `docs/audits/evalops-phase7-status-after-7bc.md` para o inventário atual e
+> `docs/plans/evalops-phase7-next-steps.md` para a próxima ordem operacional.
+> Não use a seção antiga de 7D como prompt de implementação sem aplicar a
+> reinterpretação documentada nesses arquivos.
+
 > **Escopo**: este documento **planeja**. Nenhuma migration, refatoração, novo
 > arquivo produtivo ou commit pode ser feito a partir deste plano sem PR
 > separado por subfase. O documento divide a Fase 7 em **6 subfases** menores
