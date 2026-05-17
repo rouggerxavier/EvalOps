@@ -1,4 +1,5 @@
 import os
+import time
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, status
@@ -13,6 +14,8 @@ from app.api.routes_phase5 import router as phase5_router
 from app.api.routes_phase6 import router as phase6_router
 from app.config import max_body_bytes
 from app.db import Base, SessionLocal, engine, ensure_schema_compatibility
+from app.logging_config import access_logger, configure_logging
+from app.request_id import reset_request_context, sanitize_request_id, set_request_context, set_request_org, set_request_user
 
 
 def _use_alembic() -> bool:
@@ -41,6 +44,7 @@ def _run_alembic_upgrade() -> None:
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    configure_logging()
     if _use_alembic():
         _run_alembic_upgrade()
     else:
@@ -50,6 +54,13 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title="EvalOps API", version="0.1.0", lifespan=lifespan)
+
+
+def _route_template(request: Request) -> str | None:
+    route = request.scope.get("route")
+    if route is None:
+        return None
+    return getattr(route, "path", None) or getattr(route, "path_format", None)
 
 
 @app.middleware("http")
@@ -86,6 +97,58 @@ async def body_size_limit(request: Request, call_next):
 
     request._receive = _receive  # type: ignore[attr-defined]
     return await call_next(request)
+
+
+@app.middleware("http")
+async def _request_context_middleware(request: Request, call_next):
+    """Attach request context and log JSON request lifecycle events."""
+    t0 = time.monotonic()
+    rid = sanitize_request_id(request.headers.get("x-request-id"))
+    request.state.request_id = rid
+    context_tokens = set_request_context(request_id=rid)
+    status_code = 500
+    exc_summary: str | None = None
+    try:
+        access_logger.info(
+            "request.start",
+            extra={
+                "request_id": rid,
+                "method": request.method,
+                "path": request.url.path,
+                "route": _route_template(request),
+            },
+        )
+        response = await call_next(request)
+        status_code = response.status_code
+        response.headers["X-Request-ID"] = rid
+        return response
+    except Exception as exc:
+        exc_summary = type(exc).__name__
+        raise
+    finally:
+        latency_ms = round((time.monotonic() - t0) * 1000, 1)
+        user_id = getattr(request.state, "user_id", None)
+        org_id = getattr(request.state, "org_id", None)
+        if user_id:
+            set_request_user(user_id)
+        if org_id:
+            set_request_org(org_id)
+        extra: dict = {
+            "request_id": rid,
+            "method": request.method,
+            "path": request.url.path,
+            "route": _route_template(request),
+            "status_code": status_code,
+            "latency_ms": latency_ms,
+        }
+        if user_id:
+            extra["user_id"] = user_id
+        if org_id:
+            extra["org_id"] = org_id
+        if exc_summary:
+            extra["error"] = exc_summary
+        access_logger.info("request.end", extra=extra)
+        reset_request_context(context_tokens)
 
 
 app.include_router(auth_router)

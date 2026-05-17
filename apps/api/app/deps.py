@@ -1,15 +1,17 @@
 from datetime import datetime, timezone
 
-from fastapi import Depends, Header, HTTPException, status
+from fastapi import Depends, Header, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.domain.services.rate_limit_service import check_api_key_rate_limit
 from app.models import ApiKey, Membership, Project, RevokedToken, User
+from app.request_id import set_request_org, set_request_user
 from app.security import decode_access_token, verify_api_key
 
 
 def get_current_user(
+    request: Request,
     authorization: str | None = Header(default=None),
     db: Session = Depends(get_db),
 ) -> User:
@@ -29,6 +31,8 @@ def get_current_user(
     user = db.get(User, user_id)
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="unauthorized")
+    request.state.user_id = user.id
+    set_request_user(user.id)
     return user
 
 
@@ -44,6 +48,7 @@ def ensure_org_membership(db: Session, user_id: str, org_id: str) -> Membership:
 
 
 def get_project_from_api_key(
+    request: Request,
     x_evalops_key: str | None = Header(default=None),
     db: Session = Depends(get_db),
 ) -> Project:
@@ -76,4 +81,6 @@ def get_project_from_api_key(
     project = db.get(Project, selected.project_id)
     if not project or project.archived_at is not None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="not_found")
+    request.state.org_id = project.organization_id
+    set_request_org(project.organization_id)
     return project
