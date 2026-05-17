@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from contextlib import AbstractContextManager
+from pathlib import Path
 from typing import Any, Callable
 
 from evalops.tracer import EvalOpsTracer
+from evalops.uploader import ReplayResult, replay_dead_letter as _replay_dead_letter
 
 _tracer = EvalOpsTracer()
 
@@ -45,6 +47,28 @@ def span(name: str, type: str = "chain") -> AbstractContextManager[Any]:
 
 def flush() -> None:
     _tracer.flush()
+
+
+def replay_dead_letter(
+    path: str | Path | None = None,
+    *,
+    api_url: str | None = None,
+    api_key: str | None = None,
+    dead_letter_dir: str | Path | None = None,
+) -> ReplayResult:
+    config = _tracer._uploader.config if _tracer._uploader is not None else None
+    resolved_api_url = api_url or (config.api_url if config is not None else None)
+    resolved_api_key = api_key or (config.api_key if config is not None else None)
+    if resolved_api_url is None:
+        return ReplayResult(errors=["api_url is required when evalops is not initialized"])
+    if resolved_api_key is None:
+        return ReplayResult(errors=["api_key is required when evalops is not initialized"])
+    return _replay_dead_letter(
+        path=path,
+        api_url=resolved_api_url,
+        api_key=resolved_api_key,
+        dead_letter_dir=dead_letter_dir,
+    )
 
 
 def instrument_openai() -> bool:
