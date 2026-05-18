@@ -1,10 +1,11 @@
 import Link from "next/link";
-import { AlertCircle, ChevronRight, Clock, Download, Flag, RefreshCw } from "lucide-react";
+import { AlertCircle, ChevronRight, Clock, Download, Flag } from "lucide-react";
 
 import { AuthRequiredPanel } from "@/components/AuthRequiredPanel";
 import { TracesFilterBar } from "@/components/TracesFilterBar";
 import { getTraces, hasAuthToken, resolveProject } from "@/lib/api";
 import { formatCost, formatDateTime, formatLatency } from "@/lib/format";
+import { TracesAutoRefresh } from "./traces-auto-refresh";
 
 type Props = {
   params: Promise<{ org: string; project: string }>;
@@ -75,12 +76,9 @@ export default async function TracesListPage({ params, searchParams }: Props) {
     : null;
 
   const exportsHref = `/o/${org}/p/${project}/exports`;
-  const refreshHref = (() => {
-    const p = new URLSearchParams(currentParams);
-    if (tab !== "all") p.set("tab", tab);
-    const s = p.toString();
-    return s ? `${tabBase}?${s}` : tabBase;
-  })();
+  const hasCursor = Boolean(qp.cursor);
+  const autoRefreshDisabledReason = hasCursor ? "Pausado em página paginada" : undefined;
+  const autoRefreshEnabled = !hasCursor && rows.length > 0;
 
   return (
     <div className="evo-page">
@@ -91,13 +89,15 @@ export default async function TracesListPage({ params, searchParams }: Props) {
             {rows.length.toLocaleString("pt-BR")} no intervalo selecionado
           </p>
         </div>
-        <div className="evo-row">
+        <div className="evo-row" style={{ flexWrap: "wrap", justifyContent: "flex-end" }}>
           <Link href={exportsHref} className="evo-btn evo-btn--sm">
             <Download size={13} /> Exportar JSONL
           </Link>
-          <Link href={refreshHref} className="evo-btn evo-btn--sm" title="Atualizar lista">
-            <RefreshCw size={13} />
-          </Link>
+          <TracesAutoRefresh
+            enabledByDefault={autoRefreshEnabled}
+            intervalMs={30_000}
+            disabledReason={autoRefreshDisabledReason}
+          />
         </div>
       </div>
 

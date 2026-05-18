@@ -556,3 +556,44 @@ test("Fix-7B.7: exports usage panel surfaces judge budget safely", () => {
   assert.match(src, /monthly_judge_budget_usd/);
   assert.match(src, /formatCost\(subResult\.subscription\.plan\.monthly_judge_budget_usd\)/);
 });
+
+// --- Phase 7E frontend polling -------------------------------------------
+
+test("Phase 7E: traces auto-refresh client component uses bounded router refresh polling", () => {
+  const src = readFileSync(
+    new URL("../app/o/[org]/p/[project]/traces/traces-auto-refresh.tsx", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(src, /"use client"/);
+  assert.match(src, /useRouter/);
+  assert.match(src, /router\.refresh\(\)/);
+  assert.match(src, /window\.setInterval/);
+  assert.match(src, /window\.clearInterval/);
+  assert.match(src, /visibilitychange/);
+  assert.match(src, /document\.hidden/);
+  assert.match(src, /removeEventListener\("visibilitychange"/);
+  assert.match(src, /DEFAULT_INTERVAL_MS = 30_000/);
+  assert.match(src, /onClick=\{refreshNow\}/);
+  assert.match(src, /Atualizar agora/);
+  assert.match(src, /useEffect\(\(\) => \{\s*if \(!enabledByDefault\) \{\s*setEnabled\(false\);/s);
+  assert.match(src, /\}, \[enabledByDefault\]\);/);
+  assert.match(src, /aria-pressed=\{enabled\}/);
+});
+
+test("Phase 7E: traces page keeps server data loading and wires auto-refresh without hardcoded routes", () => {
+  const page = readFileSync(new URL("../app/o/[org]/p/[project]/traces/page.tsx", import.meta.url), "utf8");
+  const component = readFileSync(
+    new URL("../app/o/[org]/p/[project]/traces/traces-auto-refresh.tsx", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(page, /getTraces\(\{/);
+  assert.match(page, /<TracesAutoRefresh/);
+  assert.match(page, /enabledByDefault=\{autoRefreshEnabled\}/);
+  assert.match(page, /disabledReason=\{autoRefreshDisabledReason\}/);
+  assert.match(page, /Pausado em página paginada/);
+  assert.equal(/fetch\(/.test(component), false);
+  assert.equal(/https?:\/\//.test(component), false);
+  assert.equal(/\/o\/\$\{org\}/.test(component), false);
+});
