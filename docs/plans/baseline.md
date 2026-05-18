@@ -13,6 +13,53 @@ do roadmap (`docs/plans/evalops-remediation-roadmap.md`).
 
 ---
 
+## Snapshot documental pós-7E-frontend (2026-05-18)
+
+Esta rodada foi somente documental. Não foram executados testes de produto,
+builds frontend, formatters globais, migrations, commit ou push.
+
+Estado verificado:
+
+- Branch: `main`.
+- HEAD: `f44ed19`.
+- `origin/main`: `f44ed19`.
+- Worktree inicial: limpa (`git status --short` sem saída).
+- Checkout local sincronizado com `origin/main`.
+- Merge relevante de frontend: PR #7 em `f44ed19`, com commit
+  `1b21b2b feat(web): add traces auto refresh`.
+- Merge relevante de backend (já documentado): PR #6 em
+  `b4ffed2ded2cd01c78cdbd23ab710ea149aa8f7d`.
+
+Documentação atualizada:
+
+- `docs/plans/evalops-phase7-next-steps.md` — ordem operacional pós-merge 7E.
+- `docs/audits/evalops-phase7-status-after-7bc.md` — status consolidado após
+  backend + frontend de 7E.
+- `docs/plans/evalops-remediation-roadmap.md` — resumo da Fase 7 alinhado.
+- `docs/plans/evalops-phase7e-api-key-expiry-polling-spec.md` — spec histórica
+  consolidada como implementada/integrada.
+
+Resumo de status documentado:
+
+| Subfase | Status atualizado | Evidência curta |
+|---|---|---|
+| 7A Alembic/migrations | feito | Postgres smoke aprovado em DB descartável; novas migrations continuam exigindo smoke próprio. |
+| 7B service extraction/ownership | parcial/follow-up | Services e `ownership.py` existem; wrappers em `routes_phase5.py` seguem como dívida oportunística. |
+| 7C structured logging/request_id | feito | `9e9a517`, middleware/contexto e teste phase13. |
+| 7D SDK retry/dead-letter | feito | Retry/drop + dead-letter/replay integrados até PR #5. |
+| 7E-backend `ApiKey.expires_at` | feito | PR #6, migration `0002_api_keys_expires_at`, enforcement e teste phase7E. |
+| 7E-frontend polling | feito | PR #7 (`f44ed19`) com `1b21b2b`; `TracesAutoRefresh`, `router.refresh`, `setInterval` com cleanup, pause em hidden/visibilitychange, guard de cursor e teste web. |
+| 7F Redis/cleanup | pendente/follow-up operacional | Rate limit segue in-memory; cleanup de `RevokedToken`/`ExportJob` expirados segue pendente. |
+
+Validação desta rodada documental:
+
+- `git diff --check`
+- `git diff --stat`
+- `git diff --name-only`
+- `git status --short`
+
+---
+
 ## Snapshot documental pós-7E-backend (2026-05-17)
 
 Esta rodada foi somente documental. Não foram executados testes de produto,

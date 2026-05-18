@@ -2,11 +2,11 @@
 
 Data: 2026-05-13
 Fonte: `docs/audits/evalops-important-rules-audit.md`
-Status: Fases 0–6 concluídas. Fase 7 foi parcialmente integrada em `main`:
+Status: Fases 0–6 concluídas. Fase 7 foi majoritariamente integrada em `main`:
 7A está concluída com Postgres smoke em DB descartável; 7B está parcial;
 7C está concluída em `9e9a517`; 7D está concluída após retry/drop e
-dead-letter/replay; 7E-backend está concluída pelo PR #6, enquanto
-7E-frontend polling e 7F continuam pendentes/follow-up. Ver
+dead-letter/replay; 7E-backend está concluída pelo PR #6; 7E-frontend polling
+está concluída pelo PR #7; 7F continua pendente/follow-up operacional. Ver
 `docs/audits/evalops-phase7-status-after-7bc.md` e
 `docs/plans/evalops-phase7-next-steps.md`.
 Branch alvo: `main`.
@@ -27,7 +27,7 @@ Branch alvo: `main`.
 | 7C — Structured logging + request_id | ✅ Concluída | `9e9a517` adicionou `logging_config.py`, `request_id.py`, middleware e `tests/test_phase13_logging_request_id.py`. |
 | 7D — SDK retry + dead-letter | ✅ Concluída | Retry/drop reliability e dead-letter/replay foram entregues até PR #5; não reimplementar sem novo achado. |
 | 7E-backend — ApiKey.expires_at | ✅ Concluída | PR #6 (`b4ffed2`) adicionou `ApiKey.expires_at`, migration `0002_api_keys_expires_at`, schemas/service wiring, enforcement de expirada com 401 genérico e testes phase7E. |
-| 7E-frontend — traces polling | ⏭️ Pendente / follow-up | Polling automático de traces não foi implementado; `traces/page.tsx` segue com refresh manual. |
+| 7E-frontend — traces polling | ✅ Concluída | PR #7 (`f44ed19`) com `1b21b2b` adicionou `TracesAutoRefresh`, `router.refresh()` real, `setInterval` com cleanup, pause por `document.hidden`/`visibilitychange`, guard de cursor e validação em `apps/web/tests/security.test.mjs`. |
 | 7F — Redis rate limit + cleanup jobs | ⏭️ Pendente / follow-up | Rate limit segue in-memory; Redis existe no compose dev, mas não é usado pelo serviço; cleanup de `RevokedToken`/`ExportJob` expirados não existe. |
 
 ---
@@ -443,16 +443,16 @@ Regras obrigatórias para todas as fases de implementação:
 
 ### Fase 7 — Arquitetura e manutenção
 
-> **Aviso pós-merge 7E-backend (2026-05-17)**: esta seção é **histórica/legada** e
+> **Aviso pós-merge 7E-backend + 7E-frontend (2026-05-18)**: esta seção é **histórica/legada** e
 > não deve ser usada como prompt operacional. O estado atual está em
 > `docs/audits/evalops-phase7-status-after-7bc.md`; a próxima ordem operacional
 > está em `docs/plans/evalops-phase7-next-steps.md`.
 >
-> Estado reconciliado em `main` (`b4ffed2`): 7A está concluída com Postgres
+> Estado reconciliado em `main` (`f44ed19`): 7A está concluída com Postgres
 > smoke em DB descartável; 7B está **parcial** com services e `ownership.py`
 > presentes, mas wrappers restantes; 7C está concluída em `9e9a517`; 7D está
 > concluída após retry/drop e dead-letter/replay; 7E-backend está concluída pelo
-> PR #6; 7E-frontend polling e 7F seguem pendentes/follow-up.
+> PR #6; 7E-frontend polling está concluída pelo PR #7; 7F segue pendente/follow-up.
 
 - **Objetivo**: refatorar agora que regras estão corretas. Adicionar observabilidade e Alembic.
 - **Gaps cobertos**: G-19, G-22, G-26, G-27, G-29, G-30 + extração de services + dedup de `_project_or_404`.
@@ -472,7 +472,8 @@ Regras obrigatórias para todas as fases de implementação:
   - `packages/sdk-python/evalops/uploader.py` — não refazer retry/drop,
     flush/shutdown, `dropped_count` ou dead-letter/replay; 7D já foi entregue
     até PR #5.
-  - `apps/web/app/o/[org]/p/[project]/traces/page.tsx` — polling/SWR.
+  - `apps/web/app/o/[org]/p/[project]/traces/page.tsx` — polling já entregue
+    no PR #7; histórico, não reimplementar sem novo achado.
 - **Mudanças esperadas**:
   - Router thin: parse → dep auth → call service → response. Sem queries SQL além de resolver ownership.
   - Helper único de project ownership.
@@ -481,7 +482,8 @@ Regras obrigatórias para todas as fases de implementação:
     `9e9a517`; histórico).
   - SDK Python: preservar retry/drop reliability e dead-letter/replay já
     entregues; não reimplementar 7D sem novo achado.
-  - Frontend traces: auto-refresh leve (a cada 15s, parável).
+  - Frontend traces: auto-refresh já entregue no PR #7; histórico, não
+    reimplementar sem novo achado.
 - **Mudanças proibidas**:
   - Introduzir hexagonal completa, repositories abstratos, agregados DDD pesados.
   - Reescrever auth.
@@ -815,7 +817,8 @@ Total estimado: 8–11 semanas em ritmo sustentável.
 - Não introduzir Redis fora do escopo 7F. Se o foco for produção/multi-worker/readiness operacional, seguir `docs/plans/evalops-phase7-next-steps.md` e tratar 7F como a etapa correta. Caso contrário, manter 7F como follow-up operacional. OpenTelemetry, S3, workers, 2FA e refresh token rotation continuam fora deste roadmap imediato.
 - Não reescrever Plan / Subscription / quota schema. Somente adicionar colunas.
 - Não migrar de SQLite para Postgres em dev/test. Postgres é só prod (Fase 6).
-- Não conectar polling automático no front antes de paginação real estar madura (Fase 5).
+- Não reabrir polling automático no front sem novo achado; 7E-frontend já foi
+  entregue no PR #7.
 
 ### Fases que podem ser implementadas por Codex/Sonnet
 - **Fase 0**: Sonnet Medium é suficiente.
