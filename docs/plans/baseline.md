@@ -13,7 +13,56 @@ do roadmap (`docs/plans/evalops-remediation-roadmap.md`).
 
 ---
 
-## Snapshot documental pós-7B/7C (2026-05-17)
+## Snapshot documental pós-7E-backend (2026-05-17)
+
+Esta rodada foi somente documental. Não foram executados testes de produto,
+builds frontend, formatters globais, migrations, commit ou push.
+
+Estado verificado:
+
+- Branch: `main`.
+- HEAD: `b4ffed2`.
+- `origin/main`: `b4ffed2`.
+- Worktree inicial: limpa (`git status --short` sem saída).
+- Checkout local sincronizado com `origin/main`.
+- Merge relevante: PR #6 em
+  `b4ffed2ded2cd01c78cdbd23ab710ea149aa8f7d`.
+- Observação de higiene git: `origin/phase-7e-api-key-expiry` ainda apareceu em
+  `git branch -r` neste checkout, embora o contexto informado dissesse que a
+  branch remota tinha sido removida.
+
+Documentação atualizada:
+
+- `docs/audits/evalops-phase7-status-after-7bc.md` — status pós-7E-backend.
+- `docs/plans/evalops-phase7-next-steps.md` — próxima ordem operacional.
+- `docs/plans/evalops-remediation-roadmap.md` — tabela resumida da Fase 7.
+- `docs/plans/evalops-phase7e-api-key-expiry-polling-spec.md` — spec marcada
+  como parcialmente histórica, com backend entregue e polling pendente.
+- `docs/ops/database-migrations.md` — referência operacional atualizada para
+  reconhecer `0002_api_keys_expires_at`.
+
+Resumo de status documentado:
+
+| Subfase | Status atualizado | Evidência curta |
+|---|---|---|
+| 7A Alembic/migrations | feito | Postgres smoke aprovado em DB descartável para `0001_baseline`; novas migrations continuam exigindo smoke próprio. |
+| 7B service extraction/ownership | parcial/follow-up | Services e `ownership.py` existem; wrappers em `routes_phase5.py` continuam como dívida oportunística. |
+| 7C structured logging/request_id | feito | `9e9a517`, middleware/request context e teste phase13. |
+| 7D SDK retry/dead-letter | feito | Retry/drop e dead-letter/replay foram integrados até PR #5. |
+| 7E-backend `ApiKey.expires_at` | feito | PR #6, migration `0002_api_keys_expires_at`, `ApiKey.expires_at`, enforcement em `get_project_from_api_key` e teste phase7E. |
+| 7E-frontend polling | pendente/follow-up | `traces/page.tsx` segue com refresh manual; polling não foi implementado. |
+| 7F Redis/cleanup | pendente/follow-up operacional | Rate limit segue in-memory; cleanup de `RevokedToken`/`ExportJob` expirados segue pendente. |
+
+Validação desta rodada documental:
+
+- `git diff --check`
+- `git diff --stat`
+- `git diff --name-only`
+- `git status --short`
+
+---
+
+## Snapshot documental histórico pós-7B/7C (2026-05-17)
 
 Este snapshot não executou testes de produto; a tarefa foi apenas reconciliar
 documentação com o estado atual de `main`.
@@ -49,7 +98,7 @@ Resumo de status documentado:
 | 7B service extraction/ownership | parcial | Services e `ownership.py` existem; `_project_or_404` ainda aparece em `routes_phase5.py`. |
 | 7C structured logging/request_id | feito | `9e9a517`, `logging_config.py`, `request_id.py`, teste phase13. |
 | 7D SDK retry/dead-letter | parcial | `40cf27a` cobre retry/drop; dead-letter/replay ausentes. |
-| 7E `ApiKey.expires_at`/polling | pendente | `ApiKey` não tem `expires_at`; traces têm refresh manual, não polling. |
+| 7E `ApiKey.expires_at`/polling | histórico: pendente naquele snapshot | Antes do PR #6, `ApiKey.expires_at` ainda estava ausente; ver snapshot pós-7E-backend acima para o estado atual. |
 | 7F Redis/cleanup | pendente/follow-up | Rate limit in-memory; sem cleanup job para `RevokedToken`/`ExportJob`. |
 
 Validação desta rodada documental:

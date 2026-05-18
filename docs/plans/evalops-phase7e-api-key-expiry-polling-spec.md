@@ -2,11 +2,12 @@
 
 Date: 2026-05-17
 Branch inspected: `main`
-HEAD inspected: `2db73ba`
-Scope: specification, gap analysis, architecture, UI/UX planning, and future
-implementation prompt only. No backend, frontend, SDK, schema, migration,
-formatter, `git add`, commit, push, merge, rebase, or amend was performed for
-this document.
+HEAD inspected: `b4ffed2`
+Scope: specification, gap analysis, architecture, UI/UX planning, and post-merge
+status tracking. The original pre-implementation backend plan is preserved as
+historical context, but 7E-backend has now shipped. No backend, frontend, SDK,
+schema, migration, formatter, `git add`, commit, push, merge, rebase, or amend
+was performed for this documentation update.
 
 Primary sources:
 
@@ -22,6 +23,8 @@ Primary sources:
 - `apps/api/app/domain/services/api_key_service.py`
 - `apps/api/app/api/routes.py`
 - `apps/api/alembic/versions/0001_baseline_schema.py`
+- `apps/api/alembic/versions/0002_api_keys_expires_at.py`
+- `apps/api/tests/test_phase7e_api_key_expiry.py`
 - `apps/api/tests/test_phase9_auth_hardening.py`
 - `apps/api/tests/test_phase10_audit_privacy_exports.py`
 - `apps/api/tests/test_phase11_contracts_ux.py`
@@ -40,9 +43,9 @@ checkout.
 
 Phase 7 is no longer the original linear plan. Current `main` already has 7A
 Alembic baseline with disposable Postgres smoke recorded, 7C structured
-logging/request ID, and 7D SDK dead-letter/replay merged through PR #5. 7B
-remains partial/follow-up. 7E is still pending and should be split before
-implementation.
+logging/request ID, 7D SDK retry/dead-letter/replay merged through PR #5, and
+7E-backend merged through PR #6. 7B remains partial/follow-up. 7E-frontend
+polling remains pending.
 
 7E combines two different concerns in older docs:
 
@@ -51,15 +54,26 @@ implementation.
 - Frontend traces polling: refresh the traces list automatically without manual
   navigation.
 
-These are not the same risk profile. Backend expiry changes schema, auth
-behavior, public API response/request shapes, and requires Alembic revision
-`0002` plus a fresh SQLite/Postgres smoke. Frontend polling is product/UX
-behavior and can increase API load if it is implemented too broadly.
+These are not the same risk profile. Backend expiry changed schema, auth
+behavior, and public API response/request shapes through Alembic revision
+`0002`. Frontend polling is product/UX behavior and can increase API load if it
+is implemented too broadly.
 
-7A Postgres smoke makes 7E-backend possible now because `0001_baseline` has
-already been proven on an empty disposable Postgres DB. That does not authorize
-unreviewed schema changes: every new migration still needs its own PR, upgrade
-/ downgrade validation, and disposable Postgres smoke.
+PR #6 implemented the backend split:
+
+- Merge commit: `b4ffed2ded2cd01c78cdbd23ab710ea149aa8f7d`.
+- Backend commit: `2ff9070 feat(evalops): add api key expiration`.
+- Migration: `apps/api/alembic/versions/0002_api_keys_expires_at.py`.
+- Model/schema/service/auth: `ApiKey.expires_at` is persisted, exposed, and
+  enforced in `get_project_from_api_key`.
+- Expired keys return generic 401 and are rejected before scope, rate-limit, and
+  `last_used_at` update.
+- Tests: `apps/api/tests/test_phase7e_api_key_expiry.py`.
+- Remote CI and Vercel checks passed before merge.
+
+This documentation pass did not rerun product tests or migrations and did not
+touch production data. Every future migration still needs its own PR, upgrade /
+downgrade validation, and disposable Postgres smoke.
 
 Do not do in 7E:
 
@@ -78,29 +92,27 @@ Do not do in 7E:
 
 | Component | Current status | Evidence | Observation |
 |---|---|---|---|
-| `models.ApiKey` | Exists with `id`, `project_id`, `prefix`, `hash`, `name`, `environment`, `scopes`, `rate_limit_per_minute`, `created_at`, `last_used_at`, `revoked_at`; no `expires_at`. | `apps/api/app/models.py:59-72` | Existing lifecycle is create/list/revoke/last-used only. |
-| API key schemas | `ApiKeyCreate` accepts `name`, `environment`, `scopes`; `ApiKeyOut` returns metadata and `revoked_at`; no `expires_at`. | `apps/api/app/schemas.py:38-58` | Public API shape must be extended carefully. |
-| `api_key_service.py` | Lists, creates, and revokes keys; create hardcodes rate limit `60`; no expiry validation/persistence. | `apps/api/app/domain/services/api_key_service.py:17-108` | Natural home for create/list expiry wiring. |
-| `deps.get_project_from_api_key` | Prefix lookup filters `revoked_at IS NULL`, verifies hash, checks `ingest` scope, then rate limit, then updates `last_used_at`. | `apps/api/app/deps.py:50-86` | Expiry enforcement is absent and should happen before rate limit and `last_used_at`. |
+| `models.ApiKey` | Includes nullable `expires_at`. | `apps/api/app/models.py` | Backend storage gap closed by PR #6. |
+| API key schemas | `ApiKeyCreate`, `ApiKeyOut`, and `ApiKeyCreateOut` include nullable `expires_at`; past/equal expiry is rejected. | `apps/api/app/schemas.py` | Public API shape is extended compatibly for omitted/null expiry. |
+| `api_key_service.py` | Lists, creates, and revokes keys; create persists nullable expiry and list/create return it. | `apps/api/app/domain/services/api_key_service.py` | Backend lifecycle gap closed. |
+| `deps.get_project_from_api_key` | Verifies key, rejects expired keys with generic 401 before scope, rate limit, and `last_used_at`. | `apps/api/app/deps.py` | Expired keys do not get treated as valid ingestion attempts. |
 | API key routes | `GET /projects/{project_id}/api-keys`, `POST /projects/{project_id}/api-keys`, and revoke endpoint delegate to service. | `apps/api/app/api/routes.py:153-180` | Router surface is small enough for targeted backend expiry change. |
-| Alembic `0001_baseline` | Baseline creates `api_keys` without `expires_at`; `RevokedToken` and `ExportJob` already have `expires_at`. | `apps/api/alembic/versions/0001_baseline_schema.py:155-172`, `:60-67`, `:188-203` | A new revision is required; changing `0001` is prohibited. |
+| Alembic `0002_api_keys_expires_at` | Adds nullable `api_keys.expires_at` on top of `0001_baseline`; downgrade drops only that column. | `apps/api/alembic/versions/0002_api_keys_expires_at.py` | `0001` remains immutable. |
 | Frontend keys page | Lists keys, active/revoked counts, create/revoke form; no expiry input, display, filter, or badge. | `apps/web/app/o/[org]/p/[project]/keys/page.tsx:72-87`, `:145-151`, `:277-343`, `:373-419` | If backend exposes expiry, frontend types need to accept it even if UI creation stays unchanged. |
 | Frontend traces page | Server component; fetches traces once; has manual refresh link. | `apps/web/app/o/[org]/p/[project]/traces/page.tsx:26-43`, `:77-100` | No auto-refresh, no client component, no pause state, no visibility handling. |
 | Frontend types/API | `ApiKey` lacks `expires_at`; `createApiKey` payload lacks expiry; `getTraces` uses `cache: "no-store"` through `requestJson`. | `apps/web/lib/types.ts:91-104`, `apps/web/lib/api.ts:35-45`, `:73-89`, `:115-128` | API helper is already no-store; polling does not require changing fetch cache. |
-| Backend tests | API key rate-limit tests exist; no key expiry tests. | `apps/api/tests/test_phase9_auth_hardening.py:95-151`; grep found no API-key expiry test. | Expiry tests should live near auth/rate-limit tests or a new phase 7E test file. |
+| Backend tests | Key expiry tests exist. | `apps/api/tests/test_phase7e_api_key_expiry.py` | This documentation pass did not rerun them. |
 | Frontend tests | Security tests inspect static contracts; no polling tests or API-key expiry type checks. | `apps/web/tests/security.test.mjs:1-280`, `:526-540` | If frontend polling ships, add static or runtime tests for real polling behavior. |
 
 ## 3. Gaps reais da 7E
 
 | Gap | File | Evidence | Impact | Backend split | Frontend split | Expected test |
 |---|---|---|---|---|---|---|
-| `ApiKey.expires_at` column does not exist. | `apps/api/app/models.py` | `ApiKey` ends at `revoked_at`; no expiry field. | Cannot persist key expiration. | Yes | Type/display only after backend | Model/schema smoke and migration check. |
-| Alembic `0002_api_keys_expires_at` does not exist. | `apps/api/alembic/versions/` | Only `0001_baseline_schema.py` exists. | Production/empty DB cannot receive the column through managed migration. | Yes | No | SQLite and disposable Postgres upgrade/downgrade. |
-| API key creation does not accept expiry. | `apps/api/app/schemas.py`, `api_key_service.py` | `ApiKeyCreate` has no `expires_at`; service does not set it. | Users cannot create expiring keys through public API. | Yes | Possibly later | Create with future expiry returns it; past expiry rejected if exposed. |
-| API key listing/creation output does not expose expiry. | `schemas.py`, `api_key_service.py` | `ApiKeyOut` omits expiry; list/create builds output without it. | UI/API clients cannot see expiry metadata. | Yes | Yes, type-compatible | List/create response includes nullable `expires_at`. |
-| Auth does not reject expired keys. | `deps.py` | Auth checks revoked, scopes, rate limit, last-used; no expiry check. | Expired credentials would remain valid after adding column unless enforcement is added. | Yes | No | Expired key returns 401. |
-| Expired keys would currently update `last_used_at` and consume rate limit if expiry were checked too late. | `deps.py` | Rate limit is checked at lines 70-76 and `last_used_at` set at 78-80. | Incorrect audit/lifecycle semantics and unnecessary limiter noise. | Yes | No | Expired key does not update `last_used_at`; does not consume limiter if verifiable. |
-| Expired versus revoked precedence is undefined. | `deps.py`, `api_key_service.py` | Revoked keys are filtered out before hash verification. | Error details must avoid leaking key existence/lifecycle state. | Yes | No | Revoked+expired remains unauthorized without secret leak. |
+| `ApiKey.expires_at` column was absent. | `apps/api/app/models.py` | PR #6 added nullable `expires_at`. | Backend gap closed. | Done | Type/display follow-up only if needed | Covered by phase7E backend tests and migration review. |
+| Alembic `0002_api_keys_expires_at` was absent. | `apps/api/alembic/versions/` | PR #6 added `0002_api_keys_expires_at`. | Backend gap closed; production was not migrated by this docs pass. | Done | No | Future migrations still need their own smoke. |
+| API key creation did not accept expiry. | `apps/api/app/schemas.py`, `api_key_service.py` | PR #6 added nullable create/list response support and validation. | Backend gap closed. | Done | Possibly later for UI creation | Create with future expiry returns it; past/equal expiry rejected. |
+| Auth did not reject expired keys. | `deps.py` | PR #6 rejects expired keys before scope/rate limit/last-used. | Backend gap closed. | Done | No | Expired key returns generic 401. |
+| Expired versus revoked precedence needed leak-safe behavior. | `deps.py`, `api_key_service.py` | Revoked keys remain indistinguishable from invalid; expired keys also use generic 401. | Backend gap closed. | Done | No | Revoked/expired states avoid secret/lifecycle leakage. |
 | Frontend key types do not include expiry. | `apps/web/lib/types.ts` | `ApiKey` has `created_at` and `revoked_at` only. | If backend returns `expires_at`, TS code should tolerate/render it. | Optional in backend PR if web package is part of contract | Yes | Static type/source test or build. |
 | Keys UI has no expiry input/display. | `keys/page.tsx` | Create form has name/environment/scopes only; table has created/revoked status only. | Users cannot manage expiry from UI. | No, unless backend PR also updates minimal display | Follow-up | Display badge and create input tests if included. |
 | Traces page has no auto-refresh/polling. | `traces/page.tsx` | Manual refresh link only; no `useEffect`, `setInterval`, `router.refresh`, or `visibilitychange` in app code. | Live ingestion demos require manual refresh; polling risk remains unaddressed. | No | Yes | Polling ticks only when visible and enabled. |
@@ -140,10 +152,9 @@ Risk: leaves the named backend credential lifecycle gap open even though 7A has
 unblocked the migration path. Useful only if a demo explicitly needs live trace
 updates before security lifecycle work.
 
-Recommended decision: choose **Option A**. Implement 7E-backend first and keep
-frontend polling as a named follow-up unless the user explicitly prioritizes
-the live traces UX. This gives smaller blast radius, an isolated migration PR,
-clearer tests, and simpler rollback.
+Decision taken: **Option A**. 7E-backend shipped first through PR #6. Frontend
+polling remains a named follow-up unless the user explicitly prioritizes the
+live traces UX.
 
 ## 5. Backend 7E — ApiKey.expires_at spec
 
@@ -170,7 +181,7 @@ Timezone rule:
 
 ### Contratos
 
-Recommended contract:
+Implemented contract:
 
 - `POST /v1/projects/{project_id}/api-keys` accepts optional `expires_at`.
 - `expires_at: null` or omitted means no expiration.
@@ -181,12 +192,8 @@ Recommended contract:
 - Create response returns nullable `expires_at` plus the one-shot `key`.
 - Revoke endpoint behavior remains unchanged and idempotent.
 - Expired API key on ingestion returns 401.
-- Recommended `detail`: keep `unauthorized` for expired keys to avoid exposing
-  whether a key exists, was revoked, or expired. The historical plan mentioned
-  `api_key_expired`, but current auth surfaces mostly use generic
-  `unauthorized`/`forbidden` and the project already has error-sanitization
-  guardrails. If a product/debug need requires `api_key_expired`, that should
-  be an explicit user decision before implementation.
+- Expired-key auth keeps the response generic to avoid exposing whether a key
+  exists, was revoked, or expired.
 - No response, header, audit payload, log, or frontend query param may reveal
   the raw key secret.
 
@@ -229,20 +236,20 @@ Audit/logging:
 - If future abuse monitoring needs expired-key attempts, design it as a
   rate-limited security signal, not a default audit write per request.
 
-## 6. Migration 0002 plan
+## 6. Migration 0002 status
 
-Expected file:
+Implemented file:
 
 - `apps/api/alembic/versions/0002_api_keys_expires_at.py`
 
-Expected revision metadata:
+Implemented revision metadata:
 
 - `revision = "0002_api_keys_expires_at"`
 - `down_revision = "0001_baseline"`
 - `branch_labels = None`
 - `depends_on = None`
 
-Expected upgrade:
+Implemented upgrade:
 
 - Use `op.batch_alter_table("api_keys")` for SQLite-safe behavior.
 - Add `sa.Column("expires_at", sa.DateTime(timezone=True), nullable=True)`.
@@ -251,12 +258,12 @@ Expected upgrade:
 - Do not touch `revoked_at`, `last_used_at`, `rate_limit_per_minute`, scopes,
   prefixes, hashes, or projects.
 
-Expected downgrade:
+Implemented downgrade:
 
 - Use `op.batch_alter_table("api_keys")`.
 - Drop only `expires_at`.
 
-Required smoke:
+Required smoke for future migration work:
 
 - SQLite fresh DB: `alembic upgrade head`, `alembic current`, `alembic downgrade -1`,
   and upgrade again.
@@ -339,7 +346,9 @@ in the migration/auth PR.
 
 ## 9. Plano de implementação futura
 
-Recommended next implementation: **7E-backend first**.
+7E-backend is complete after PR #6. The checklist below is preserved as
+historical context for what was implemented and reviewed in that split; do not
+reuse it as the next prompt.
 
 1. Create a dedicated branch.
    - Files: none initially.
@@ -406,25 +415,24 @@ If frontend polling is approved after backend expiry:
 
 ## 10. Critérios de aceite
 
-Backend expiry:
+Backend expiry (done in PR #6):
 
-- `apps/api/alembic/versions/0002_api_keys_expires_at.py` exists and is
+- [x] `apps/api/alembic/versions/0002_api_keys_expires_at.py` exists and is
   reversible.
-- `api_keys.expires_at` is nullable.
-- Existing keys and newly created keys without expiry keep working.
-- Future-expiring keys work before expiry.
-- Expired keys are rejected on ingestion.
-- Expired keys do not update `last_used_at`.
-- Expired keys do not consume API key rate limit if this is verifiable through
+- [x] `api_keys.expires_at` is nullable.
+- [x] Existing keys and newly created keys without expiry keep working.
+- [x] Future-expiring keys work before expiry.
+- [x] Expired keys are rejected on ingestion.
+- [x] Expired keys do not update `last_used_at`.
+- [x] Expired keys do not consume API key rate limit if this is verifiable through
   existing limiter tests.
-- Past expiry on creation returns 422 if creation exposes `expires_at`.
-- List/create responses include `expires_at: null|string`.
-- Revoke remains unchanged.
-- Raw key secret is still shown only once and never appears in URLs, logs,
+- [x] Past expiry on creation returns 422 if creation exposes `expires_at`.
+- [x] List/create responses include `expires_at: null|string`.
+- [x] Revoke remains unchanged.
+- [x] Raw key secret is still shown only once and never appears in URLs, logs,
   audit payloads, or error messages.
-- SQLite migration smoke passes.
-- Disposable Postgres migration smoke passes.
-- Existing API key/auth/contract tests pass.
+- [ ] New production migration has not been run by this documentation pass.
+- [ ] This documentation pass did not rerun product tests or migration smokes.
 
 Frontend polling, if later included:
 
@@ -446,31 +454,31 @@ Recommended answers are included to unblock the next prompt.
 | Should `expires_at` be optional on create? | Yes. Omitted/null means no expiration and preserves compatibility. |
 | Should keys without expiration be allowed? | Yes for now; forcing expiry would be a policy/product change. |
 | Should past/equal expiry be rejected on create? | Yes, return 422. |
-| Should expired API keys return 401 or 403? | 401 with generic `unauthorized` is recommended to avoid lifecycle leakage. Use `api_key_expired` only if the user explicitly prioritizes debuggability over indistinguishability. |
+| Should expired API keys return 401 or 403? | Done: generic 401 to avoid lifecycle leakage. |
 | Should expired keys update `last_used_at`? | No. |
 | Should expired keys consume rate limit? | No. |
 | Should list/create expose `expires_at`? | Yes, nullable. |
 | Should the keys UI create expiry in the backend PR? | No, unless the user explicitly wants UI scope. The web types can be updated for compatibility; full UI creation can follow. |
-| Should frontend polling enter now? | No. Keep it as `7E-frontend` follow-up unless a live-demo need overrides. |
+| Should frontend polling enter now? | Still pending. Keep it as `7E-frontend` follow-up unless a live-demo need overrides. |
 | If polling enters later, what interval? | 30 seconds default; 15 seconds only for explicit demo/pending-workflow need. |
 
-Blocking decision before implementation:
-
-- Confirm whether expired ingestion should return generic `401 unauthorized` or
-  explicit `401 api_key_expired`.
+No blocking backend decision remains for 7E-backend. The remaining decision is
+whether live traces UX justifies implementing `7E-frontend` polling before 7F.
 
 ## 12. Próximo prompt recomendado
 
-Use this prompt next only after documental review approval:
+Use this prompt next only after documental review approval if product/demo/live
+UX is the priority:
 
 ```text
 Você está no projeto EvalOps em /home/rouggerxavier/dev/evalops.
 
-Tarefa: implementar somente 7E-backend — ApiKey.expires_at com migration 0002.
-NÃO implementar frontend polling neste prompt.
+Tarefa: implementar somente 7E-frontend — traces polling/auto-refresh.
+NÃO alterar backend.
 NÃO alterar SDK.
+NÃO criar migration.
 NÃO misturar Redis/cleanup 7F.
-NÃO refatorar 7B além do mínimo local necessário.
+NÃO refatorar 7B.
 NÃO rodar formatters globais.
 NÃO fazer git add, commit, push, merge, rebase ou amend.
 
@@ -478,42 +486,31 @@ Antes de alterar:
 1. Confirmar branch main, worktree limpo, HEAD sincronizado com origin/main.
 2. Ler AGENTS.md/CLAUDE.md/MEMORY.md se existirem.
 3. Ler docs/plans/evalops-phase7e-api-key-expiry-polling-spec.md.
-4. Ler docs/ops/database-migrations.md.
-5. Ler backend relacionado a ApiKey: models, schemas, api_key_service, deps, routes, 0001_baseline, testes de auth/API key.
+4. Ler docs/plans/evalops-phase7-next-steps.md.
+5. Ler apps/web/app/o/[org]/p/[project]/traces/page.tsx e helpers web
+   relacionados a traces.
 
 Escopo:
-- Criar apps/api/alembic/versions/0002_api_keys_expires_at.py com down_revision 0001_baseline.
-- Adicionar ApiKey.expires_at nullable DateTime(timezone=True).
-- ApiKeyCreate aceita expires_at opcional.
-- ApiKeyOut/ApiKeyCreateOut retornam expires_at nullable.
-- create_key persiste expires_at e rejeita expires_at no passado/agora com 422.
-- list_keys retorna expires_at.
-- get_project_from_api_key rejeita key expirada antes de scope/rate-limit/last_used_at.
-- Expired key deve retornar 401 genericamente como unauthorized, salvo decisão explícita diferente.
-- Expired key não deve atualizar last_used_at nem consumir rate limit.
-- Revoke continua igual.
-- Secret não pode vazar em URL, log, audit payload, header ou erro.
+- Adicionar pequeno componente client para auto-refresh usando router.refresh().
+- Preservar refresh manual.
+- Permitir pausar/desabilitar auto-refresh.
+- Pausar quando document.visibilityState não for visible.
+- Evitar polling em páginas com cursor por padrão.
+- Manter feedback compacto de estado/último refresh.
+- Não adicionar SWR/react-query só para este comportamento.
 
-Testes obrigatórios:
-- key sem expiração aceita ingest.
-- key com expiração futura aceita ingest.
-- key expirada rejeita ingest com 401.
-- key expirada não atualiza last_used_at.
-- key expirada não consome rate limit se verificável.
-- criação com expires_at passado/agora retorna 422.
-- list/create retornam expires_at.
-- regressão de create/revoke/audit API key.
-- SQLite migration upgrade/downgrade.
-- Postgres descartável migration upgrade/downgrade.
+Testes/validação:
+- source-level ou jsdom/fake timers cobrindo setInterval, router.refresh,
+  visibilitychange e cleanup.
+- frontend test/build/typecheck disponível no ambiente.
 
 Validações:
 - git diff --check.
-- testes backend focados em API key/auth/contratos.
-- SQLite Alembic smoke.
-- Postgres descartável Alembic smoke.
+- git diff --stat.
+- git status --short.
 
 Ao final, relatar arquivos alterados, comandos/resultados, riscos e não fazer commit.
 ```
 
-If the user chooses to include frontend polling anyway, split it into a second
-prompt named `7E-frontend traces polling` after backend expiry is merged.
+If the priority is operational production readiness instead, pick 7F Redis rate
+limit + cleanup jobs before this polling work.

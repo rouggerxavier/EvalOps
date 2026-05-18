@@ -1,4 +1,4 @@
-# Database migrations (Alembic) — Phase 7A
+# Database migrations (Alembic) — Phase 7
 
 This document is the operational reference for managing the EvalOps schema
 with Alembic. It covers SQLite (dev/test) and PostgreSQL (prod), including
@@ -9,6 +9,7 @@ Related code/files:
 - `apps/api/alembic.ini`
 - `apps/api/alembic/env.py`
 - `apps/api/alembic/versions/0001_baseline_schema.py`
+- `apps/api/alembic/versions/0002_api_keys_expires_at.py`
 - `apps/api/app/main.py` — lifespan picks Alembic vs `create_all`.
 - `apps/api/app/db.py` — single `DATABASE_URL` normaliser used by both
   the app and Alembic.
@@ -26,6 +27,7 @@ alembic upgrade head
 # 2. legacy DB created by the old create_all path
 #    (Phase 1-6 schema already present, no alembic_version row yet):
 alembic stamp 0001_baseline
+alembic upgrade head
 
 # 3. show current revision
 alembic current
@@ -46,6 +48,13 @@ The app respects an environment toggle:
 
 Both paths read the same database URL: `DATABASE_URL` (preferred) or
 `EVALOPS_DB_URL` (alias accepted by Alembic).
+
+Current merged revisions:
+
+| Revision | Purpose | Notes |
+|---|---|---|
+| `0001_baseline` | Phase 1-6 baseline schema | Baseline for empty SQLite/Postgres and legacy stamping. |
+| `0002_api_keys_expires_at` | Adds nullable `api_keys.expires_at` | Merged in PR #6. Do not edit after merge. |
 
 ---
 
@@ -139,6 +148,7 @@ table, index, unique constraint, FK, and all Phase 2-6 additions:
 `revoked_tokens`, `plans.monthly_span_limit`,
 `plans.monthly_token_limit`, `plans.monthly_judge_budget_usd`,
 `usage_counters.spans_ingested`, `usage_counters.tokens_ingested`).
+`0002_api_keys_expires_at.py` then adds nullable `api_keys.expires_at`.
 
 ### B) Legacy DB built by `create_all` (the production case today)
 
@@ -153,7 +163,9 @@ DATABASE_URL=<url> alembic stamp 0001_baseline
 ```
 
 This writes the `alembic_version` row without touching schema.
-Subsequent deploys can then `alembic upgrade head` normally.
+Subsequent deploys can then `alembic upgrade head` normally. After PR #6,
+`head` includes `0002_api_keys_expires_at`, so a legacy DB that is stamped at
+`0001_baseline` still needs a normal upgrade to receive `api_keys.expires_at`.
 
 Verify before stamping that the running schema matches the baseline:
 
@@ -191,18 +203,21 @@ keeps the suite fast.
 
 ## Authoring new migrations
 
+`0002_api_keys_expires_at` already exists and has been merged. The next schema
+change should use the next available ordered name, for example `0003_*`.
+
 ```bash
 cd apps/api
 
 # autogenerate against an up-to-date DB, then audit the diff:
 DATABASE_URL=sqlite:///./tmp_review.db alembic upgrade head
-alembic revision --autogenerate -m "add api_keys.expires_at"
+alembic revision --autogenerate -m "describe the schema change"
 
-# the file lands in apps/api/alembic/versions/<hash>_add_api_keys...
+# the file lands in apps/api/alembic/versions/<hash>_describe...
 # rename it to a stable, ordered name before committing, e.g.
-mv alembic/versions/<hash>_add_api_keys_expires_at.py \
-   alembic/versions/0002_api_keys_expires_at.py
-# and update `revision = "0002_api_keys_expires_at"` + `down_revision = "0001_baseline"`
+mv alembic/versions/<hash>_describe_the_schema_change.py \
+   alembic/versions/0003_describe_the_schema_change.py
+# and update `revision = "0003_describe_the_schema_change"` + `down_revision = "0002_api_keys_expires_at"`
 ```
 
 Rules:
@@ -234,8 +249,11 @@ This smoke used only a disposable local container and discardable local
 credentials (`evalops`/`evalops`); it did not use a production Postgres and did
 not test the legacy DB `alembic stamp 0001_baseline` path.
 
-Every future schema migration still needs its own PR and its own disposable
-Postgres smoke. The validated disposable target shape was:
+Phase 7E-backend added `0002_api_keys_expires_at` through PR #6. This
+documentation pass did not run migrations, did not migrate production, and did
+not test the legacy DB stamp path for `0002`. Every future schema migration
+still needs its own PR and its own disposable Postgres smoke. The validated
+disposable target shape from 7A was:
 
 ```bash
 docker run --name evalops-postgres-alembic-smoke \
@@ -266,6 +284,7 @@ To unwind Phase 7A:
    `create_all`.
 2. Optional: `DELETE FROM alembic_version` to wipe bookkeeping.
 
-The baseline migration is non-destructive (it only `CREATE TABLE`s),
-so no data is lost by toggling the flag off. Future revisions that
-mutate columns must include working `downgrade()` paths.
+The baseline migration is non-destructive (it only `CREATE TABLE`s), so no data
+is lost by toggling the flag off. Revisions after the baseline, including
+`0002_api_keys_expires_at`, mutate table shape and must keep working
+`downgrade()` paths.

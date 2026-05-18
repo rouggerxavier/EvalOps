@@ -2,14 +2,14 @@
 
 Date: 2026-05-17
 Base branch: `main`
-Base HEAD: `0812b76`
+Base HEAD: `b4ffed2`
 Original next-steps snapshot: `0ab562e`; latest documentation verification:
-`0812b76`.
+`b4ffed2`.
 Primary status source: `docs/audits/evalops-phase7-status-after-7bc.md`
 
-This is the operational roadmap from the current `main`, after 7B/7C and the
-Fix-7B work were merged. It supersedes the old linear plan where all of 7D-7F
-were treated as untouched.
+This is the operational roadmap from the current `main`, after 7B/7C, 7D, and
+the 7E-backend split were merged. It supersedes the old linear plan where all
+of 7D-7F were treated as untouched.
 
 ## Current Status Summary
 
@@ -18,8 +18,9 @@ were treated as untouched.
 | 7A Alembic/migrations | Postgres smoke approved on disposable DB | No longer blocking `0002+`; every new migration still needs its own PR and smoke. |
 | 7B service extraction/ownership | partial | Leave as follow-up unless touching phase 5 routers; remaining `_project_or_404` wrappers are real. |
 | 7C structured logging/request_id | done | Do not reimplement. Monitor in deploy/runtime validation. |
-| 7D SDK retry/dead-letter | partial | Implement only dead-letter/replay gap if still in Phase 7. |
-| 7E `ApiKey.expires_at`/polling | pending | Decide backend key expiry vs UX polling split. |
+| 7D SDK retry/dead-letter | done | PR #5 added dead-letter/replay after the earlier retry/drop work. Do not reimplement. |
+| 7E-backend `ApiKey.expires_at` | done | PR #6 merged backend expiry, migration `0002_api_keys_expires_at`, generic 401 enforcement, and tests. |
+| 7E-frontend polling | pending / follow-up | Implement only if live traces UX/demo value is the priority; keep polling bounded and pausable. |
 | 7F Redis/cleanup jobs | pending / post-MVP candidate | Implement when multi-worker or retention pressure exists. |
 
 ## Recommended Order
@@ -71,13 +72,14 @@ environment blocker is resolved. No production Postgres was used, and the
 legacy `stamp` path was not tested.
 
 Next: do not spend another pass on 7A unless a new migration is created. Choose
-7D dead-letter/replay if SDK telemetry durability is the priority, or decide
-and split 7E if credential expiry is the priority.
+between 7E-frontend polling for live UX/demo value and 7F Redis/cleanup for
+multi-worker or operational readiness.
 
-### 2. Finish Updated 7D Only If SDK Durability Is In Scope
+### 2. 7D Is Complete Unless A New SDK Reliability Gap Is Found
 
-Objective: add the missing dead-letter/replay layer without rewriting the retry
-work from `40cf27a`.
+Objective: keep the 7D status accurate after PR #5. The earlier retry/drop work
+from `40cf27a` and the later dead-letter/replay implementation in `4ab910b`
+cover the named 7D objective.
 
 Likely files:
 
@@ -86,68 +88,50 @@ Likely files:
 - `packages/sdk-python/tests/test_sdk.py`
 - `packages/sdk-python/README.md` if a public replay API is added
 
-Risks:
+Next step: do not schedule more 7D work as part of Phase 7 unless a fresh SDK
+review finds a concrete regression or missing contract.
 
-- Regressing bounded `flush()`/`shutdown()`.
-- Persisting sensitive payloads locally without a clear location/retention
-  contract.
-- Duplicating retry logic that already works.
+### 3. 7E Split Status After PR #6
 
-Tests:
+Objective: record that backend credential expiry shipped separately, while
+frontend polling remains a named follow-up.
 
-- Retry-exhausted transient failure writes dead-letter.
-- Replay reads dead-letter and re-submits.
-- Existing retry/drop tests still pass.
-- Decision on permanent 4xx dead-letter behavior is explicit and covered.
+Delivered backend evidence:
 
-Acceptance:
+- PR #6 merged at `b4ffed2ded2cd01c78cdbd23ab710ea149aa8f7d`.
+- `apps/api/alembic/versions/0002_api_keys_expires_at.py`.
+- `ApiKey.expires_at` in model/schema/list/create responses.
+- Expired API keys are rejected in `get_project_from_api_key` before scope,
+  rate-limit, and `last_used_at` update.
+- Expired keys return a generic 401.
+- `apps/api/tests/test_phase7e_api_key_expiry.py`.
 
-- Existing SDK API remains compatible.
-- Dead-letter directory can be overridden with `EVALOPS_DEAD_LETTER_DIR`.
-- Replay API is exported only if documented.
-
-Code review before commit: yes.
-
-Suggested model/effort: GPT-5.4/GPT-5.5 medium.
-
-### 3. Decide And Split 7E
-
-Objective: avoid coupling credential lifecycle and frontend polling in one PR.
-
-Recommended split:
-
-- 7E-backend: `ApiKey.expires_at` model/schema/API/auth enforcement.
-- 7E-frontend: traces polling/auto-refresh, likely post-MVP.
-
-Likely backend files:
-
-- `apps/api/app/models.py`
-- `apps/api/app/schemas.py`
-- `apps/api/app/domain/services/api_key_service.py`
-- `apps/api/app/deps.py`
-- `apps/api/alembic/versions/0002_api_keys_expires_at.py`
-
-Likely frontend files:
+Frontend polling remains pending:
 
 - `apps/web/app/o/[org]/p/[project]/traces/page.tsx`
 - possible small client component under the traces route
 
 Risks:
 
-- Adding schema without a dedicated migration PR and smoke.
-- Polling causing avoidable load or rate-limit noise.
+- Polling causing avoidable API traffic.
+- Refreshing cursor-paged views in a way that confuses operators.
+- Replacing the predictable manual refresh with a silent background behavior.
 
-Tests:
+Tests for future polling:
 
-- Expired API key rejected.
-- Future/no-expiry API key accepted.
-- Past expiry rejected on creation/update if exposed.
-- Frontend polling refreshes only when visible and can be paused, if kept.
+- Polling refreshes only when visible and enabled.
+- Manual refresh remains available.
+- Cursor-paged views are skipped or intentionally handled.
 
 Acceptance:
 
-- Backend expiry can ship without polling.
-- Polling is either implemented with guardrails or moved to follow-up.
+- Backend expiry stays done without requiring frontend polling.
+- Polling is either implemented with guardrails or explicitly moved to
+  follow-up/release notes.
+
+Code review before commit: yes.
+
+Suggested model/effort: GPT-5.3-Codex/GPT-5.4 medium.
 
 Code review before commit: yes.
 
@@ -224,9 +208,10 @@ Blocking:
 
 - [x] Postgres Alembic smoke is verified on disposable DB.
 - [x] Structured request logging/request ID is implemented by `9e9a517`.
-- [ ] 7D is either completed with dead-letter/replay or formally narrowed to
-      the retry/drop work in `40cf27a`.
-- [ ] 7E and 7F are explicitly completed or moved to follow-up with rationale.
+- [x] 7D SDK retry/dead-letter/replay is merged through PR #5.
+- [x] 7E-backend `ApiKey.expires_at` is merged through PR #6.
+- [ ] 7E-frontend polling is implemented or moved to follow-up with rationale.
+- [ ] 7F is implemented or moved to follow-up with rationale.
 
 Non-blocking but tracked:
 
@@ -248,15 +233,15 @@ Recommended verification commands per area:
 Use one of these prompts next, depending on priority:
 
 ```text
-Você está no EvalOps em main. Próximo passo recomendado: implementar apenas a
-lacuna 7D dead-letter/replay do SDK, preservando o retry/drop já entregue em
-40cf27a. Confirme branch/HEAD/status, não reescreva retry, adicione testes
-focados e não faça commit/push.
+Você está no EvalOps em main. Próximo passo se foco é produto/demo/UX:
+implementar somente 7E-frontend polling/auto-refresh em traces. Preserve o
+manual refresh, pause quando a aba estiver oculta, evite cursor pages por
+padrão, não altere backend/SDK/migrations e não faça commit/push.
 ```
 
 ```text
-Você está no EvalOps em main. Alternativa se credential expiry for prioridade:
-decida e divida 7E em backend ApiKey.expires_at e frontend polling. A 7A
-Postgres smoke já está validada, mas qualquer migration 0002+ precisa de PR
-próprio e smoke próprio. Confirme branch/HEAD/status e não faça commit/push.
+Você está no EvalOps em main. Próximo passo se foco é produção/multi-worker:
+implementar somente 7F Redis rate limit + cleanup jobs. Preserve o backend
+in-memory como default dev/test, defina política de falha Redis, adicione
+cleanup idempotente/dry-run e não faça commit/push.
 ```
