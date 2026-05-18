@@ -2,20 +2,19 @@
 
 Date: 2026-05-18
 Base branch: `main`
-Base HEAD: `9650b11` (`docs(evalops): refresh phase 7 status after frontend polling`)
-`origin/main`: `9650b11` (in sync)
+Base HEAD: `63da5af` (`Merge pull request #8 from rouggerxavier/phase-7f-a-rate-limit-abstraction`)
+`origin/main`: `63da5af` (in sync)
 Status source: `docs/audits/evalops-phase7-status-after-7bc.md`,
 `docs/plans/evalops-phase7-next-steps.md`,
 `docs/plans/evalops-remediation-roadmap.md`,
 `docs/plans/baseline.md`,
 `docs/ops/database-migrations.md`.
 
-Author note: this is a **spec/architecture document only**. No backend,
-frontend, SDK, schema, migration, infra, or test code was changed to produce
-it. The agent-framework-router was not available in this environment (see
-report); analysis was produced with the active model as the equivalent
-fallback. Implementation is deferred to a later prompt, after documentary
-code review of this spec.
+Author note: this document was refreshed after PR #8 merged 7F-A. This refresh
+is documentation/status only. No backend, frontend, SDK, schema, migration,
+infra, product test, or formatter change was made in this pass. The
+agent-framework-router was available and routed the work as documentation/status
+reconciliation with documentary review before commit.
 
 `AGENTS.md`, `CLAUDE.md`, and a repo-local `MEMORY.md` were not present in this
 checkout.
@@ -34,7 +33,13 @@ Phase 7 is integrated into `main` except for the operational tail:
 - 7D SDK retry/dead-letter/replay — done (through PR #5).
 - 7E-backend `ApiKey.expires_at` — done (PR #6, migration `0002`).
 - 7E-frontend traces polling — done (PR #7, merge `f44ed19`).
-- **7F Redis/distributed rate limit + cleanup jobs — pending.**
+- 7F-A rate limiter abstraction — done (PR #8, merge `63da5af`).
+- 7F-B Redis backend — pending.
+- 7F-C cleanup jobs — pending.
+- 7F-D final ops docs — pending/follow-up.
+
+7F as a whole is **not complete** until Redis/distributed limiting, cleanup
+services, and final ops docs are implemented or explicitly deferred.
 
 ### Why 7F is the standard next candidate after 7E
 
@@ -89,15 +94,15 @@ deletion or external-dependency code exists.
 
 ## 2. Current state found
 
-Evidence is `path:line` from the inspected checkout at HEAD `9650b11`.
+Evidence is `path:line` from the inspected checkout at HEAD `63da5af`.
 
 | Component | Current state | Evidence | Observation |
 |---|---|---|---|
-| API-key rate limit | In-memory sliding window, single process | `apps/api/app/domain/services/rate_limit_service.py:38` `check_api_key_rate_limit`; `_api_key_hits: dict[str, deque[float]]` at `:28`; `threading.Lock` at `:30` | Keyed by `ApiKey.id` (not raw key — already safe). Window 60s, ceiling = `per_minute` or `DEFAULT_API_KEY_PER_MINUTE=60`. |
+| API-key rate limit | In-memory sliding window behind 7F-A backend abstraction, single process | `apps/api/app/domain/services/rate_limit_service.py:39` `RateLimiterBackend`; `:57` `InMemoryRateLimiter`; `:102` module `_backend`; `:114` `check_api_key_rate_limit` | Keyed by `ApiKey.id` through `api_key_rate_limit_key()` (not raw key — already safe). Window 60s, ceiling = `per_minute` or `DEFAULT_API_KEY_PER_MINUTE=60`. |
 | Rate-limit enforcement point | `deps.get_project_from_api_key` | `apps/api/app/deps.py:82` calls `check_api_key_rate_limit(selected.id, selected.rate_limit_per_minute)`; 429 + `Retry-After` at `:83-88` | This is the only call site for API-key limiting. Contract = HTTP 429 + `Retry-After` header + `detail="too_many_requests"`. |
-| Login brute-force limit | In-memory window, single process | `rate_limit_service.py:60` `check_login_rate_limit`, `:74` `record_login_failure`, `:81` `reset_login_failures`; consumed in `apps/api/app/api/routes_auth.py:212`,`222`,`226` | Keyed by `email|ip`, window 300s, ceiling 5 *failures*; success clears bucket. 429 + `Retry-After` + `detail="too_many_attempts"`. |
+| Login brute-force limit | In-memory window behind the same 7F-A backend abstraction, single process | `rate_limit_service.py:128` `check_login_rate_limit`, `:134` `record_login_failure`, `:139` `reset_login_failures`; consumed in `apps/api/app/api/routes_auth.py` | Keyed by normalized `email|ip`, window 300s, ceiling 5 *failures*; success clears bucket. 429 + `Retry-After` + `detail="too_many_attempts"`. |
 | `ApiKey.rate_limit_per_minute` | Persisted column, default 60 | `apps/api/app/models.py:69`; surfaced in `apps/api/app/schemas.py:65`; defaulted by `api_key_service.py:55` | Per-key ceiling already in schema. No change needed. |
-| Rate-limit storage | Per-process heap, lost on restart | `rate_limit_service.py:1-16` docstring: "**not** safe across multiple workers/processes … Migration to Redis is scheduled for Phase 7." | The module itself names 7F as the migration owner. |
+| Rate-limit storage | Per-process heap, lost on restart; abstraction now exists | `rate_limit_service.py:1-17` docstring says 7F-A preserves single-process behavior and leaves Redis/distributed storage for 7F-B | 7F-A reduced implementation risk but did **not** solve multi-worker consistency. |
 | Redis client / config | **None in code** | No `redis` import anywhere under `apps/api`; `apps/api/app/config.py` has no Redis getter; no `REDIS_URL` read in code | Redis is referenced only by dev compose env (next row). |
 | Redis in dev compose | Service present, env wired, **unused by app** | `docker-compose.yml`: `redis: image: redis:7-alpine`, `api.environment.REDIS_URL: redis://redis:6379/0`, `api.depends_on: [postgres, redis]` | Dev compose advertises Redis but the app never reads it. Divergence between infra intent and code. |
 | Redis in prod compose | **Absent** | `docker-compose.prod.yml` has no `redis` service; api runs `uvicorn … --workers 1` | Prod is single-worker today; no Redis service to point at. Multi-worker is not yet a live configuration. |
@@ -110,7 +115,7 @@ Evidence is `path:line` from the inspected checkout at HEAD `9650b11`.
 | Expiry fields | Both target tables already have them | `RevokedToken.expires_at` `models.py:448`; `ExportJob.expires_at` `models.py:360` | **No migration required for 7F.** |
 | Startup / lifespan | No background work | `apps/api/app/main.py:45-53` lifespan: `configure_logging()` then alembic-or-`create_all`; no scheduler, no `asyncio.create_task`, no `BackgroundTasks` | There is no existing in-app scheduler to extend; introducing one is a deliberate decision, not an incremental change. |
 | Migrations | `0001_baseline`, `0002_api_keys_expires_at` | `docs/ops/database-migrations.md:52-58`; `revoked_tokens`/`export_jobs` are in the baseline 26-table set (`:182-188`) | `head` = `0002`. 7F adds no revision. |
-| Tests | Rate limit + revoked + export covered behaviorally | `apps/api/tests/test_phase9_auth_hardening.py` (`reset_all` autouse `:20-22`; 429 cap `:95`; independent buckets `:132`; default-when-null `:112`; login 5-fail `:157`; logout persists/idempotent `:218`,`:231`; legacy no-jti `:252`); `apps/api/tests/test_phase10_audit_privacy_exports.py` (download `:293`, expired 410 `:313`, absolute path `:329`, no path leak `:347`) | `reset_all()` is the seam the abstraction must keep working. `conftest.py:76` autouse fixture rebinds a NullPool engine per test. No Redis/cleanup tests exist yet. |
+| Tests | Rate-limit abstraction covered; revoked/export behavior covered elsewhere | `apps/api/tests/test_phase7f_rate_limit_service.py` covers `InMemoryRateLimiter`, `RateLimitResult`, `reset_all`, non-secret API-key identifier, and facade delegation; `apps/api/tests/test_phase9_auth_hardening.py` keeps auth rate-limit behavior; `apps/api/tests/test_phase10_audit_privacy_exports.py` covers export expiry behavior | 7F-A tests exist. No Redis backend tests and no cleanup tests exist yet. |
 
 ---
 
@@ -120,12 +125,12 @@ Evidence is `path:line` from the inspected checkout at HEAD `9650b11`.
 |---|---|---|---|---|---|---|
 | G7F-1 | Rate limit is in-memory per process | `rate_limit_service.py:28-30` | With >1 worker each process has its own counters → effective limit = N×configured. Counters also reset on restart. | Yes (core) | — | Distributed backend enforces a single shared ceiling across simulated workers. |
 | G7F-2 | Multi-worker can bypass the cap | `docker-compose.prod.yml` api `--workers 1` today; any scale-out breaks the limit silently | Abuse mitigation (G-01) and brute-force protection (G-13) silently weaken when prod scales. | Yes | — | With shared backend, two limiter instances sharing one store still 429 at the global cap. |
-| G7F-3 | No Redis client/config in code | no `redis` import; `config.py` has no Redis getter | Cannot enable distributed limiting; dev compose `REDIS_URL` is dead config. | Yes | — | Config factory selects backend from env; absent Redis → memory. |
-| G7F-4 | Fallback behavior undocumented/uncoded | `rate_limit_service.py` docstring states the limitation but no fallback selection exists | Operators have no defined behavior when Redis is unset (dev/test) or down (prod). | Yes (decision + abstraction) | — | Backend=`auto` with no `REDIS_URL` → memory; behavior identical to today. |
+| G7F-3 | No Redis client/config in code | no `redis` import; `config.py` has no Redis getter | Cannot enable distributed limiting; dev compose `REDIS_URL` is dead config. | Yes, 7F-B | — | Config factory selects backend from env; absent Redis → memory. |
+| G7F-4 | Redis outage policy still undecided/unimplemented | 7F-A kept only `InMemoryRateLimiter`; no Redis path exists yet | Operators still need an explicit behavior when Redis is down before 7F-B changes request paths. | Yes, decision blocks 7F-B | — | Outage tests prove chosen policy. |
 | G7F-5 | No cleanup for expired `RevokedToken` | `models.py:448` field exists; no deleter anywhere | `revoked_tokens` grows unbounded; every authenticated request does `db.get(RevokedToken, jti)` (`deps.py:36`) — index keeps it O(1), but the table never shrinks. | Yes | — | Cleanup deletes rows with `expires_at < now`; keeps unexpired rows. |
 | G7F-6 | No cleanup for expired `ExportJob` / files | `export_service.py:105` sets `expires_at`; no deleter; no file unlink | Disk fills with `<job.id>.jsonl`; `export_jobs` rows accumulate. | Yes | — | Cleanup removes/marks expired jobs and unlinks the file only when safe. |
 | G7F-7 | No operational mechanism to run cleanup | `main.py` lifespan has no scheduler; no CLI/management command | Even if functions exist, there is no documented way to invoke them. | Yes (service + invocation surface + docs) | Scheduler/cron automation = deploy follow-up | Cleanup invokable headless (function/CLI) with a dry-run summary. |
-| G7F-8 | No Redis/fallback/cleanup tests | `apps/api/tests` has none | Regression risk on a security-adjacent path. | Yes | — | Section 11 matrix. |
+| G7F-8 | No Redis/cleanup tests | `apps/api/tests/test_phase7f_rate_limit_service.py` covers 7F-A abstraction only | 7F-B and 7F-C still need targeted regression coverage. | Yes, 7F-B/7F-C | — | Section 11 matrix. |
 | G7F-9 | Dev compose advertises Redis, prod does not provision it | `docker-compose.yml` vs `docker-compose.prod.yml` | Inconsistent infra story; "enable Redis in prod" is currently impossible without a compose change. | Partial: spec documents the gap; prod compose Redis service = deploy follow-up (no infra change this round) | Compose/deploy change deferred | N/A (doc + deploy decision). |
 
 Semantic note for G7F-1/-2: the current API-key limiter is a **sliding
@@ -139,12 +144,12 @@ pending decision #3.
 
 ## 4. Recommended scope decision
 
-### Option A — minimal, safe 7F (recommended)
+### Option A — minimal, safe 7F (recommended; now partially delivered)
 
-- Introduce a rate-limiter abstraction (interface + in-memory impl) that
-  preserves the exact current contract and the `reset_all()` test seam.
+- 7F-A has introduced a rate-limiter abstraction (interface + in-memory impl)
+  that preserves the exact current contract and the `reset_all()` test seam.
 - Add an **optional** Redis backend, selected only when `REDIS_URL` (or an
-  explicit backend env) is configured.
+  explicit backend env) is configured. This remains 7F-B.
 - Keep in-memory as the dev/test default; identical observable behavior when
   Redis is absent.
 - Add idempotent, dry-run-capable cleanup services for `RevokedToken` and
@@ -170,8 +175,9 @@ pending decision #3.
 
 Rationale:
 
-- **Smallest blast radius.** No migration, no prod infra change, no in-process
-  scheduler, no contract change. Each piece is independently revertible.
+- **Smallest blast radius.** 7F-A proved the split without migration, prod
+  infra change, in-process scheduler, or contract change. 7F-B/7F-C should
+  keep that discipline; each piece remains independently revertible.
 - **Dev/test parity.** In-memory remains the default; the existing
   `test_phase9` suite (including `reset_all`) keeps passing unchanged.
 - **Security-adjacent path stays observable-equivalent.** The 429 +
@@ -422,12 +428,14 @@ infra change.
 
 ## 9. Proposed architecture
 
-- `rate_limit_service.py` (extended in place):
+- `rate_limit_service.py` (already extended in place by 7F-A):
   - `RateLimiterBackend` interface (protocol).
+  - `RateLimitResult` value object.
   - `InMemoryRateLimiter` — today's `deque`/`Lock` logic, behind the interface.
+  - existing free functions kept as the stable facade (delegating).
+- 7F-B extension in the same module:
   - `RedisRateLimiter` — fixed-window `INCR`/`EXPIRE`.
   - backend factory resolving from config once.
-  - existing free functions kept as the stable facade (delegating).
 - New config getters in `apps/api/app/config.py` (`redis_url()`,
   `rate_limit_backend()`, `redis_timeout_ms()`), same lazy `os.environ`
   pattern as `max_body_bytes()`.
@@ -451,27 +459,37 @@ Proposed new files:
 |---|---|---|---|
 | `apps/api/app/maintenance/__init__.py` | package marker | — | none |
 | `apps/api/app/maintenance/cleanup.py` | cleanup services + CLI entrypoint | operator (CLI), tests, optionally external cron | data deletion → must be idempotent + dry-run + path-safe |
-| (extended) `apps/api/app/domain/services/rate_limit_service.py` | backend abstraction + Redis impl | `deps.py`, `routes_auth.py`, tests | security-adjacent path; outage policy must be correct |
+| (already extended) `apps/api/app/domain/services/rate_limit_service.py` | 7F-A backend abstraction + future Redis impl | `deps.py`, `routes_auth.py`, tests | security-adjacent path; outage policy must be correct before 7F-B |
 | (extended) `apps/api/app/config.py` | Redis/backend env getters | rate-limit factory | misconfig → wrong backend; covered by `auto` default |
 
 ---
 
 ## 10. Future implementation plan (subphases)
 
-### 7F-A — Rate-limit abstraction + fallback
+### 7F-A — Rate-limit abstraction + in-memory backend
 
-- Introduce `RateLimiterBackend` + `InMemoryRateLimiter`; move current logic
-  behind it; keep free-function facade and `reset_all()`.
-- No Redis yet; `backend=memory|auto(without REDIS_URL)`.
-- Likely files: `rate_limit_service.py`, `config.py`,
-  `tests/test_phase7f_rate_limit.py` (new).
-- Acceptance: entire existing suite green unchanged; new tests prove the
-  facade still satisfies `test_phase9` behaviors via the abstraction.
-- Risk: low (pure refactor behind a stable facade). Revert = drop the file
-  changes.
+Status: **done / integrated** in PR #8 (`63da5af`), implementation commit
+`abb331b refactor(evalops): abstract api rate limiter`.
+
+- Introduced `RateLimiterBackend`, `RateLimitResult`, and
+  `InMemoryRateLimiter`.
+- Kept the free-function facade:
+  `check_api_key_rate_limit`, `check_login_rate_limit`,
+  `record_login_failure`, `reset_login_failures`, `reset_all`.
+- Preserved current in-memory sliding window/deque/`Lock` behavior.
+- Kept raw API keys out of limiter keys through `api_key_rate_limit_key()`.
+- Added `apps/api/tests/test_phase7f_rate_limit_service.py`.
+- Did not add Redis, a Redis dependency, cleanup jobs, migrations, frontend,
+  or SDK changes.
 
 ### 7F-B — Optional Redis backend
 
+- **Next recommended implementation step.**
+- Decide Redis outage policy before coding this subphase. Initial
+  recommendation: API-key limiter fail-open with warning/safe log to preserve
+  ingest availability; login limiter falls back to in-memory to retain some
+  brute-force protection. Product/ops may choose another policy, but it must
+  be explicit before 7F-B.
 - Add Redis client dep + `RedisRateLimiter` (fixed window); config factory;
   outage policy (per decision #2).
 - Likely files: `rate_limit_service.py`, `config.py`, `pyproject.toml`
@@ -498,7 +516,7 @@ Proposed new files:
 - Acceptance: docs reviewed; matches shipped behavior.
 - Risk: none (docs only).
 
-Recommended order: 7F-A → 7F-B → 7F-C → 7F-D.
+Recommended order from current `main`: 7F-B → 7F-C → 7F-D.
 
 ---
 
@@ -506,7 +524,8 @@ Recommended order: 7F-A → 7F-B → 7F-C → 7F-D.
 
 ### Rate limit
 
-- Memory backend keeps current behavior (existing `test_phase9` green).
+- Memory backend keeps current behavior (`test_phase7f_rate_limit_service.py`
+  and existing `test_phase9` coverage).
 - Redis backend: `INCR` increments; key `EXPIRE`s; count resets next window.
 - Per-key enforcement; independent buckets across keys.
 - Shared-store / two-instance test → global cap holds (multi-worker proof).
@@ -547,9 +566,9 @@ Recommended order: 7F-A → 7F-B → 7F-C → 7F-D.
 7F is complete only when:
 
 - Redis/fallback/outage policy is explicitly decided and documented.
-- Distributed rate limiting (abstraction + optional Redis backend) is
-  implemented per approved scope, with the 429/`Retry-After`/`detail`
-  contract preserved.
+- Distributed rate limiting (7F-A abstraction already done + 7F-B optional
+  Redis backend) is implemented per approved scope, with the
+  429/`Retry-After`/`detail` contract preserved.
 - Cleanup functions for `RevokedToken` and `ExportJob` (+ safe file unlink)
   are implemented, idempotent, dry-run-capable, and tested per approved scope.
 - dev/test still works with no Redis (existing suite green unchanged).
@@ -574,43 +593,40 @@ Recommended order: 7F-A → 7F-B → 7F-C → 7F-D.
 | 5 | Expired `ExportJob`: hard-delete, mark, or both? | **Hard-delete row + unlink file** (download already 410s expired jobs; creation audit is independent and untouched). Choose "mark" only if a retention/audit requirement on the job row itself is stated. |
 | 6 | May `RevokedToken` cleanup hard-delete expired rows with no extra retention? | **Yes.** After `expires_at` the underlying JWT is already expired and independently rejected; the denylist row is redundant. |
 | 7 | Must dev/test keep working without Redis? | **Yes.** In-memory default; no real Redis in the suite. |
-| 8 | One PR or split 7F-A/B/C(/D)? | **Split**, in order A → B → C → D. A is a safe refactor; B is security-adjacent; C deletes data; D is docs. Smaller reviews, granular revert. |
+| 8 | One PR or split 7F-A/B/C(/D)? | **Split confirmed.** 7F-A is merged; continue with B → C → D. B is security-adjacent; C deletes data; D is docs. Smaller reviews, granular revert. |
 
 ---
 
 ## 14. Recommended next prompt
 
 This spec has two decisions that are genuinely blocking, but **only for the
-subphases that encode them**:
+remaining subphases that encode them**:
 
 - **Decision #2 (Redis outage policy)** blocks **7F-B (Redis backend)** because
   it changes security/availability behavior on request paths.
 - **Decision #5 (ExportJob disposition)** blocks **7F-C (cleanup)** because it
   changes data retention and deletion behavior.
 
-Decisions #1 and #4 affect deploy/ops scope but do not block 7F-A. Recommended
-path:
+Decisions #1 and #4 affect deploy/ops scope but do not block the already-merged
+7F-A. Recommended path:
 
-1. Start **7F-A immediately** (abstraction + in-memory backend only). No Redis,
-   no cleanup, behavior preserved.
-2. Before starting **7F-B**, user confirms decision #2 (and ideally #1/#3/#8).
-3. Before starting **7F-C**, user confirms decision #5 (and ideally #4/#6).
-4. Then run the implementation prompt for **7F-A only**:
+1. Before starting **7F-B**, user confirms decision #2 (and ideally #1/#3/#8).
+2. Before starting **7F-C**, user confirms decision #5 (and ideally #4/#6).
+3. Then run the implementation prompt for **7F-B only**:
 
 > Você está no EvalOps em `main`, após review documental de
-> `docs/plans/evalops-phase7f-redis-cleanup-spec.md`. Implemente **somente
-> 7F-A**: extrair uma abstração de rate limiter
-> (`RateLimiterBackend` + `InMemoryRateLimiter`) dentro do módulo existente
-> `apps/api/app/domain/services/rate_limit_service.py`, preservando o facade
-> de funções públicas (`check_api_key_rate_limit`, `check_login_rate_limit`,
+> `docs/plans/evalops-phase7f-redis-cleanup-spec.md`, e após a política de
+> outage Redis ser decidida. Implemente **somente 7F-B**: backend Redis
+> opcional para o rate limiter existente, preservando o facade público
+> (`check_api_key_rate_limit`, `check_login_rate_limit`,
 > `record_login_failure`, `reset_login_failures`, `reset_all`) e o contrato
-> 429/`Retry-After`/`detail`. Sem Redis ainda. Sem migration. Não tocar
-> frontend/SDK. Adicionar `apps/api/tests/test_phase7f_rate_limit.py`. Rodar
-> `pytest apps/api/tests -q` e a regressão `-k "rate_limit or auth or
-> phase9 or phase7e"`. Entregar pronto para code review.
+> 429/`Retry-After`/`detail`. Não implementar cleanup jobs. Sem migration. Não
+> tocar frontend/SDK. Testes devem provar limite compartilhado, política de
+> outage escolhida, ausência de raw API key/email em chaves Redis e default
+> in-memory quando Redis não estiver configurado. Entregar pronto para code
+> review.
 
-3. After 7F-A merges: 7F-B (optional Redis backend, encodes decisions
-   #1/#2/#3), then 7F-C (cleanup, encodes #4/#5/#6), then 7F-D (ops docs).
+4. After 7F-B merges: 7F-C (cleanup, encodes #4/#5/#6), then 7F-D (ops docs).
 
-If the user declines to decide #2/#5 now, still proceed with **7F-A only**,
-but do **not** start 7F-B or 7F-C until the relevant decision is made.
+If the user declines to decide #2/#5 now, do **not** start 7F-B or 7F-C until
+the relevant decision is made.

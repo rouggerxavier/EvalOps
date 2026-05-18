@@ -6,7 +6,8 @@ Status: Fases 0–6 concluídas. Fase 7 foi majoritariamente integrada em `main`
 7A está concluída com Postgres smoke em DB descartável; 7B está parcial;
 7C está concluída em `9e9a517`; 7D está concluída após retry/drop e
 dead-letter/replay; 7E-backend está concluída pelo PR #6; 7E-frontend polling
-está concluída pelo PR #7; 7F continua pendente/follow-up operacional. Ver
+está concluída pelo PR #7; 7F-A está concluída pelo PR #8; 7F-B Redis backend,
+7F-C cleanup jobs e 7F-D docs/ops seguem pendentes/follow-up operacional. Ver
 `docs/audits/evalops-phase7-status-after-7bc.md` e
 `docs/plans/evalops-phase7-next-steps.md`.
 Branch alvo: `main`.
@@ -28,7 +29,10 @@ Branch alvo: `main`.
 | 7D — SDK retry + dead-letter | ✅ Concluída | Retry/drop reliability e dead-letter/replay foram entregues até PR #5; não reimplementar sem novo achado. |
 | 7E-backend — ApiKey.expires_at | ✅ Concluída | PR #6 (`b4ffed2`) adicionou `ApiKey.expires_at`, migration `0002_api_keys_expires_at`, schemas/service wiring, enforcement de expirada com 401 genérico e testes phase7E. |
 | 7E-frontend — traces polling | ✅ Concluída | PR #7 (`f44ed19`) com `1b21b2b` adicionou `TracesAutoRefresh`, `router.refresh()` real, `setInterval` com cleanup, pause por `document.hidden`/`visibilitychange`, guard de cursor e validação em `apps/web/tests/security.test.mjs`. |
-| 7F — Redis rate limit + cleanup jobs | ⏭️ Pendente / follow-up | Rate limit segue in-memory; Redis existe no compose dev, mas não é usado pelo serviço; cleanup de `RevokedToken`/`ExportJob` expirados não existe. |
+| 7F-A — Rate limiter abstraction | ✅ Concluída | PR #8 (`63da5af`) com `abb331b` adicionou `RateLimiterBackend`, `RateLimitResult`, `InMemoryRateLimiter`, preservou o facade público e o comportamento in-memory, e adicionou `test_phase7f_rate_limit_service.py`. |
+| 7F-B — Redis backend | ⏭️ Pendente / follow-up | Redis real ainda não existe no código; dev compose tem `REDIS_URL`, mas o app não usa Redis. Decidir outage policy antes de implementar. |
+| 7F-C — Cleanup jobs | ⏭️ Pendente / follow-up | Cleanup de `RevokedToken`/`ExportJob` expirados ainda não existe. Decidir disposição de `ExportJob` antes de implementar. |
+| 7F-D — Ops docs | ⏭️ Pendente / follow-up | Docs finais de Redis/cleanup devem seguir após 7F-B/7F-C ou defer formal. |
 
 ---
 
@@ -443,16 +447,18 @@ Regras obrigatórias para todas as fases de implementação:
 
 ### Fase 7 — Arquitetura e manutenção
 
-> **Aviso pós-merge 7E-backend + 7E-frontend (2026-05-18)**: esta seção é **histórica/legada** e
+> **Aviso pós-merge 7F-A (2026-05-18)**: esta seção é **histórica/legada** e
 > não deve ser usada como prompt operacional. O estado atual está em
 > `docs/audits/evalops-phase7-status-after-7bc.md`; a próxima ordem operacional
 > está em `docs/plans/evalops-phase7-next-steps.md`.
 >
-> Estado reconciliado em `main` (`f44ed19`): 7A está concluída com Postgres
+> Estado reconciliado em `main` (`63da5af`): 7A está concluída com Postgres
 > smoke em DB descartável; 7B está **parcial** com services e `ownership.py`
 > presentes, mas wrappers restantes; 7C está concluída em `9e9a517`; 7D está
 > concluída após retry/drop e dead-letter/replay; 7E-backend está concluída pelo
-> PR #6; 7E-frontend polling está concluída pelo PR #7; 7F segue pendente/follow-up.
+> PR #6; 7E-frontend polling está concluída pelo PR #7; 7F-A está concluída
+> pelo PR #8; 7F-B Redis backend, 7F-C cleanup jobs e 7F-D docs/ops seguem
+> pendentes/follow-up.
 
 - **Objetivo**: refatorar agora que regras estão corretas. Adicionar observabilidade e Alembic.
 - **Gaps cobertos**: G-19, G-22, G-26, G-27, G-29, G-30 + extração de services + dedup de `_project_or_404`.

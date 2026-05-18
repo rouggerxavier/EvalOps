@@ -2,12 +2,13 @@
 
 Date: 2026-05-18
 Base branch: `main`
-Base HEAD: `f44ed19`
+Base HEAD: `63da5af`
 Original next-steps snapshot: `0ab562e`; previous documentation baseline: `b4ffed2`.
 Primary status source: `docs/audits/evalops-phase7-status-after-7bc.md`
 
-This roadmap reflects current `main` after PR #7 merged `7E-frontend` polling.
-The old prompt that asked to implement frontend polling is now historical.
+This roadmap reflects current `main` after PR #8 merged `7F-A` rate limiter
+abstraction. The old prompt that asked to implement frontend polling, and the
+later prompt that asked to implement 7F-A, are now historical.
 
 ## Current Status Summary
 
@@ -19,9 +20,12 @@ The old prompt that asked to implement frontend polling is now historical.
 | 7D SDK retry/dead-letter | done | Do not reimplement without a new concrete finding. |
 | 7E-backend `ApiKey.expires_at` | done | Keep as shipped in PR #6 (`b4ffed2`) with migration `0002`. |
 | 7E-frontend polling | done | Keep current bounded `router.refresh()` behavior; refine only via explicit follow-up if UX evidence appears. |
-| 7F Redis/cleanup jobs | pending / operational follow-up | Preferred next candidate for multi-worker/readiness. Start from a spec first. |
+| 7F-A rate limiter abstraction | done | Keep as shipped in PR #8 (`63da5af`); do not redo the abstraction. |
+| 7F-B Redis backend | pending | Preferred next candidate for multi-worker/readiness. Decide Redis outage policy first. |
+| 7F-C cleanup jobs | pending | Do after 7F-B or when cleanup becomes priority; decide `ExportJob` disposition first. |
+| 7F-D ops docs | pending / follow-up | Update final ops docs after 7F-B/7F-C behavior exists. |
 
-## Evidence For 7E Completion
+## Evidence For 7E And 7F-A Completion
 
 Backend split (already done):
 
@@ -39,6 +43,28 @@ Frontend split (now done):
   - `apps/web/app/o/[org]/p/[project]/traces/traces-auto-refresh.tsx`
   - `apps/web/tests/security.test.mjs`
 - Review/validation evidence carried in docs/history: `npm run test`, `npm run build`, and `npx tsc --noEmit` passed in the implementation review; final review had no P0/P1/P2; local artifact `apps/web/next-env.d.ts` was restored and stayed out of the merge commit.
+
+7F-A rate limiter abstraction (now done):
+
+- PR #8 merge: `63da5af Merge pull request #8 from rouggerxavier/phase-7f-a-rate-limit-abstraction`.
+- Commit: `abb331b refactor(evalops): abstract api rate limiter`.
+- Files touched by implementation:
+  - `apps/api/app/domain/services/rate_limit_service.py`
+  - `apps/api/tests/test_phase7f_rate_limit_service.py`
+- Shipped surface:
+  - `RateLimiterBackend`
+  - `RateLimitResult`
+  - `InMemoryRateLimiter`
+  - public facade preserved: `check_api_key_rate_limit`,
+    `check_login_rate_limit`, `record_login_failure`,
+    `reset_login_failures`, `reset_all`
+- Preserved behavior:
+  - in-memory sliding window/deque/`Lock`;
+  - API-key limiter keyed by safe `ApiKey.id`-derived key, not raw API key;
+  - no Redis client/dependency;
+  - no cleanup jobs;
+  - no migration;
+  - no frontend/SDK changes.
 
 ## UX/Polling Review (UI UX Pro Max)
 
@@ -58,26 +84,35 @@ Findings:
 
 ## Recommended Order
 
-### 1. 7F Redis/cleanup spec first (default next step)
+### 1. 7F-B Redis backend (default next step)
 
-Objective: define operational behavior before implementation.
+Objective: make the 7F-A abstraction useful for multi-worker/readiness by
+adding an optional Redis backend.
 
-Spec should decide:
+Before coding 7F-B, decide:
 
-- Redis failure policy (`fail-closed`, `fail-open`, or explicit fallback policy).
-- Cleanup retention policy for `RevokedToken` and `ExportJob` (+ file deletion grace window).
-- Safety controls: idempotence, dry-run, observability, and rollback.
+- Redis outage policy (`fail-closed`, `fail-open`, or explicit fallback
+  policy). Initial recommendation: fail-open with warning/safe log for API-key
+  ingest availability; login limiter falls back to in-memory to retain some
+  brute-force protection.
+- Whether Redis is optional-with-warning or mandatory in production.
+- Fixed window vs stricter sliding window/token bucket. Current spec
+  recommends fixed window for 7F-B unless abuse data requires stricter
+  behavior.
 
-Do not implement 7F directly before this spec is reviewed.
+Do not redo 7F-A. Do not claim multi-worker rate limiting is solved until 7F-B
+is implemented and validated.
 
-### 2. Release notes / closure docs for 7E
+### 2. 7F-C cleanup jobs
 
-Objective: close the 7E narrative cleanly after backend+frontend splits landed.
+Objective: clean expired `RevokedToken` rows and expired `ExportJob` rows/files.
 
-Deliverables:
+Before coding 7F-C, decide:
 
-- Short release note entry for PR #6 + PR #7 outcomes.
-- Confirm 7E is complete in roadmap/baseline/audit docs.
+- Expired `ExportJob` disposition: hard-delete, mark, or both.
+- Cleanup invocation surface: CLI/external cron vs in-app scheduler. Current
+  spec recommends service functions + CLI entrypoint driven by external cron.
+- Dry-run/idempotence/path-safety/audit expectations.
 
 ### 3. 7B follow-up only when opportunistic
 
@@ -93,7 +128,10 @@ Blocking for full Phase 7 close:
 - [x] 7D: SDK retry/dead-letter/replay implemented.
 - [x] 7E-backend: `ApiKey.expires_at` merged (PR #6).
 - [x] 7E-frontend: traces auto-refresh polling merged (PR #7).
-- [ ] 7F: Redis/distributed rate limit + cleanup strategy implemented or formally deferred with trigger conditions.
+- [x] 7F-A: rate limiter abstraction merged (PR #8).
+- [ ] 7F-B: Redis/distributed backend implemented or formally deferred with trigger conditions.
+- [ ] 7F-C: cleanup jobs implemented or formally deferred with trigger conditions.
+- [ ] 7F-D: final ops docs updated after 7F-B/7F-C.
 
 Verification commands/checks:
 
@@ -104,17 +142,23 @@ Verification commands/checks:
 ## Next Prompt
 
 ```text
-Você está no EvalOps em main. Próximo passo padrão: planejar somente 7F (spec),
-sem implementar código ainda.
+Você está no EvalOps em main. Próximo passo padrão: 7F-B Redis backend, sem
+reabrir 7F-A.
 
-Objetivo do spec:
-- definir Redis/distributed rate limit para multi-worker;
-- definir cleanup de RevokedToken/ExportJob expirados (e arquivos de export) com
-a política de retenção;
-- definir política de falha Redis, idempotência, dry-run, métricas e rollback.
+Antes de implementar, decidir explicitamente a política de outage Redis.
+Recomendação inicial: API-key limiter fail-open com warning/log seguro para
+preservar disponibilidade de ingest; login limiter fallback in-memory durante
+outage para manter proteção parcial contra brute force.
+
+Objetivo:
+- adicionar backend Redis opcional ao rate limiter já abstraído em 7F-A;
+- preservar facade pública e contrato 429/Retry-After/detail;
+- provar limite compartilhado, política de outage e higiene de chaves Redis;
+- manter default in-memory quando Redis não estiver configurado.
 
 Restrições:
-- não alterar backend/frontend/SDK/migrations nesta rodada;
+- não implementar cleanup jobs nesta rodada;
+- não alterar frontend/SDK/migrations;
 - não fazer commit/push;
-- preparar saída para code review documental.
+- preparar saída para code review antes de commit.
 ```

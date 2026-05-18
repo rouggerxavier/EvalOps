@@ -13,6 +13,71 @@ do roadmap (`docs/plans/evalops-remediation-roadmap.md`).
 
 ---
 
+## Snapshot documental pós-7F-A (2026-05-18)
+
+Esta rodada foi somente documental. Não foram executados testes de produto,
+builds frontend, formatters globais, migrations, commit ou push.
+
+Estado verificado:
+
+- Branch: `main`.
+- HEAD: `63da5af`.
+- `origin/main`: `63da5af`.
+- Worktree inicial: limpa (`git status --short` sem saída).
+- Checkout local sincronizado com `origin/main`.
+- Merge relevante: PR #8 em `63da5af`, com commit
+  `abb331b refactor(evalops): abstract api rate limiter`.
+- Merge relevante anterior de frontend: PR #7 em `f44ed19`, com commit
+  `1b21b2b feat(web): add traces auto refresh`.
+- Merge relevante anterior de backend: PR #6 em
+  `b4ffed2ded2cd01c78cdbd23ab710ea149aa8f7d`.
+
+Documentação atualizada:
+
+- `docs/plans/evalops-phase7f-redis-cleanup-spec.md` — spec/status pós-7F-A,
+  com 7F-B/7F-C/7F-D ainda pendentes.
+- `docs/plans/evalops-phase7-next-steps.md` — próxima ordem operacional agora
+  começa por 7F-B Redis backend.
+- `docs/audits/evalops-phase7-status-after-7bc.md` — status consolidado após
+  merge da 7F-A.
+- `docs/plans/evalops-remediation-roadmap.md` — resumo da Fase 7 alinhado.
+- `docs/plans/baseline.md` — este snapshot documental.
+
+Resumo de status documentado:
+
+| Subfase | Status atualizado | Evidência curta |
+|---|---|---|
+| 7A Alembic/migrations | feito | Postgres smoke aprovado em DB descartável; novas migrations continuam exigindo smoke próprio. |
+| 7B service extraction/ownership | parcial/follow-up | Services e `ownership.py` existem; wrappers em `routes_phase5.py` seguem como dívida oportunística. |
+| 7C structured logging/request_id | feito | `9e9a517`, middleware/contexto e teste phase13. |
+| 7D SDK retry/dead-letter | feito | Retry/drop + dead-letter/replay integrados até PR #5. |
+| 7E-backend `ApiKey.expires_at` | feito | PR #6, migration `0002_api_keys_expires_at`, enforcement e teste phase7E. |
+| 7E-frontend polling | feito | PR #7 (`f44ed19`) com `1b21b2b`; `TracesAutoRefresh`, `router.refresh`, `setInterval` com cleanup, pause em hidden/visibilitychange, guard de cursor e teste web. |
+| 7F-A rate limiter abstraction | feito | PR #8 (`63da5af`) com `abb331b`; `RateLimiterBackend`, `RateLimitResult`, `InMemoryRateLimiter`, facade pública preservada, comportamento in-memory preservado e teste `test_phase7f_rate_limit_service.py`. |
+| 7F-B Redis backend | pendente | Redis real, dependência/configuração Redis, multi-worker rate limit e política de outage ainda não implementados. Decidir outage policy antes de codar. |
+| 7F-C cleanup jobs | pendente | Cleanup de `RevokedToken`/`ExportJob` expirados ainda não existe. Decidir disposição de `ExportJob` antes de codar. |
+| 7F-D ops docs | pendente/follow-up | Finalizar docs operacionais depois de 7F-B/7F-C ou defer formal. |
+
+Observações de escopo:
+
+- 7F-A não implementou Redis real.
+- 7F-A não resolveu rate limit multi-worker.
+- 7F-A não implementou outage policy Redis.
+- 7F-A não criou cleanup jobs.
+- 7F-A não criou migration.
+- 7F-A não alterou frontend nem SDK.
+- `docs/ops/database-migrations.md` não foi alterado neste snapshot porque a
+  7F-A não criou migration.
+
+Validação desta rodada documental:
+
+- `git diff --check`
+- `git diff --stat`
+- `git diff --name-only`
+- `git status --short`
+
+---
+
 ## Snapshot documental pós-7E-frontend (2026-05-18)
 
 Esta rodada foi somente documental. Não foram executados testes de produto,
