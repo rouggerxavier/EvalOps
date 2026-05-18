@@ -31,6 +31,7 @@ def list_keys(db: Session, project: Project) -> list[dict]:
             rate_limit_per_minute=row.rate_limit_per_minute,
             created_at=row.created_at,
             revoked_at=row.revoked_at,
+            expires_at=row.expires_at,
         ).model_dump()
         for row in rows
     ]
@@ -52,6 +53,7 @@ def create_key(
         environment=payload.environment,
         scopes=",".join(payload.scopes),
         rate_limit_per_minute=60,
+        expires_at=payload.expires_at,
     )
     db.add(row)
     record_audit(
@@ -77,6 +79,7 @@ def create_key(
         rate_limit_per_minute=row.rate_limit_per_minute,
         created_at=row.created_at,
         revoked_at=row.revoked_at,
+        expires_at=row.expires_at,
         key=raw_key,
     )
 

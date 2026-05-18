@@ -1,6 +1,6 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class OrganizationCreate(BaseModel):
@@ -39,6 +39,19 @@ class ApiKeyCreate(BaseModel):
     name: str = Field(min_length=2, max_length=255)
     environment: str = Field(pattern=r"^(dev|staging|prod)$")
     scopes: list[str] = Field(default_factory=lambda: ["ingest", "read"])
+    expires_at: datetime | None = None
+
+    @field_validator("expires_at")
+    @classmethod
+    def validate_expires_at(cls, value: datetime | None) -> datetime | None:
+        if value is None:
+            return value
+        now = datetime.now(timezone.utc)
+        if value.tzinfo is None or value.utcoffset() is None:
+            now = now.replace(tzinfo=None)
+        if value <= now:
+            raise ValueError("expires_at_must_be_future")
+        return value
 
 
 class ApiKeyOut(BaseModel):
@@ -52,6 +65,7 @@ class ApiKeyOut(BaseModel):
     rate_limit_per_minute: int
     created_at: datetime
     revoked_at: datetime | None = None
+    expires_at: datetime | None = None
 
 
 class ApiKeyCreateOut(ApiKeyOut):

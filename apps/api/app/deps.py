@@ -10,6 +10,14 @@ from app.request_id import set_request_org, set_request_user
 from app.security import decode_access_token, verify_api_key
 
 
+def _is_expired(expires_at: datetime | None, now: datetime) -> bool:
+    if expires_at is None:
+        return False
+    if expires_at.tzinfo is None or expires_at.utcoffset() is None:
+        now = now.replace(tzinfo=None)
+    return expires_at <= now
+
+
 def get_current_user(
     request: Request,
     authorization: str | None = Header(default=None),
@@ -63,6 +71,10 @@ def get_project_from_api_key(
             break
     if selected is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="unauthorized")
+
+    if _is_expired(selected.expires_at, datetime.now(timezone.utc)):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="unauthorized")
+
     scopes = {s for s in selected.scopes.split(",") if s}
     if "ingest" not in scopes:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="forbidden")
