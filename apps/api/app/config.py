@@ -46,3 +46,17 @@ def exports_dir() -> Path:
         p = Path(__file__).parent.parent / "storage" / "exports"
     p.mkdir(parents=True, exist_ok=True)
     return p
+
+
+def redis_url() -> str | None:
+    raw = os.environ.get("REDIS_URL", "").strip()
+    return raw or None
+
+
+def rate_limit_backend() -> str:
+    raw = os.environ.get("EVALOPS_RATE_LIMIT_BACKEND", "auto").strip().lower()
+    return raw if raw in ("memory", "redis", "auto") else "auto"
+
+
+def redis_timeout_ms() -> int:
+    return _positive_int("EVALOPS_REDIS_TIMEOUT_MS", 200)
