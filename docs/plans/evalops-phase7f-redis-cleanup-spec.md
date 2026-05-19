@@ -1,20 +1,21 @@
 # EvalOps Phase 7F — Redis Rate Limit / Cleanup Jobs Spec
 
-Date: 2026-05-18
+Date: 2026-05-18; refreshed after 7F-D docs on 2026-05-19
 Base branch: `main`
-Base HEAD: `63da5af` (`Merge pull request #8 from rouggerxavier/phase-7f-a-rate-limit-abstraction`)
-`origin/main`: `63da5af` (in sync)
+Base HEAD when authored: `63da5af` (`Merge pull request #8 from rouggerxavier/phase-7f-a-rate-limit-abstraction`)
+Current post-7F-D HEAD: `61592ff` (`Merge pull request #10 from rouggerxavier/phase-7f-c-cleanup-jobs`)
+`origin/main`: `61592ff` (in sync during 7F-D doc refresh)
 Status source: `docs/audits/evalops-phase7-status-after-7bc.md`,
 `docs/plans/evalops-phase7-next-steps.md`,
 `docs/plans/evalops-remediation-roadmap.md`,
 `docs/plans/baseline.md`,
 `docs/ops/database-migrations.md`.
 
-Author note: this document was refreshed after PR #8 merged 7F-A. This refresh
-is documentation/status only. No backend, frontend, SDK, schema, migration,
-infra, product test, or formatter change was made in this pass. The
-agent-framework-router was available and routed the work as documentation/status
-reconciliation with documentary review before commit.
+Author note: this document was originally refreshed after PR #8 merged 7F-A,
+then refreshed again after PR #9 (7F-B), PR #10 (7F-C), and the 7F-D ops docs
+pass. The 2026-05-19 refresh is documentation/status only. No backend,
+frontend, SDK, schema, migration, infra, product test, or formatter change was
+made in the docs pass.
 
 `AGENTS.md`, `CLAUDE.md`, and a repo-local `MEMORY.md` were not present in this
 checkout.
@@ -34,12 +35,12 @@ Phase 7 is integrated into `main` except for the operational tail:
 - 7E-backend `ApiKey.expires_at` — done (PR #6, migration `0002`).
 - 7E-frontend traces polling — done (PR #7, merge `f44ed19`).
 - 7F-A rate limiter abstraction — done (PR #8, merge `63da5af`).
-- 7F-B Redis backend — pending.
-- 7F-C cleanup jobs — pending.
-- 7F-D final ops docs — pending/follow-up.
+- 7F-B Redis backend — done (PR #9, `ba0978e`, implementation `1af8017`).
+- 7F-C cleanup jobs — done (PR #10, `61592ff`, implementation `b3a3242`).
+- 7F-D final ops docs — done (`docs/ops/rate-limit-and-cleanup.md`).
 
-7F as a whole is **not complete** until Redis/distributed limiting, cleanup
-services, and final ops docs are implemented or explicitly deferred.
+7F is complete in code/docs scope. Production still needs operator-specific
+Redis configuration and external cleanup scheduling where applicable.
 
 ### Why 7F is the standard next candidate after 7E
 
@@ -371,19 +372,19 @@ For each cleanup function:
 
 ## 7. Configuration and deploy
 
-Proposed env (documentation; implemented in the implementation phase):
+Implemented env:
 
 | Env | Default | Effect |
 |---|---|---|
 | `REDIS_URL` | unset | Redis DSN. Already in dev compose; absent in prod compose today. |
 | `EVALOPS_RATE_LIMIT_BACKEND` | `auto` | `memory` \| `redis` \| `auto`. |
-| `EVALOPS_REDIS_TIMEOUT_MS` | ~100–250 | Short Redis op timeout (request-path safety). |
+| `EVALOPS_REDIS_TIMEOUT_MS` | `200` | Short Redis op timeout (request-path safety). |
 
 Behavior by environment:
 
 - **dev/test:** no `REDIS_URL` → `memory`. Existing suite unaffected.
-- **dev compose:** `REDIS_URL` already set; with `backend=auto` the app would
-  use the existing `redis:7-alpine` service once code reads it.
+- **dev compose:** `REDIS_URL` already set; with `backend=auto` the app uses
+  the existing `redis:7-alpine` service.
 - **prod:** `docker-compose.prod.yml` has **no** redis service and runs
   `--workers 1`. To actually run distributed limiting in prod, a Redis service
   + `REDIS_URL` must be added to the prod deploy — recorded as **deploy
@@ -393,16 +394,15 @@ Validate Redis locally (documentation, not run now):
 
 - `docker compose up redis` then `redis-cli -u redis://localhost:6379/0 ping`.
 
-Run cleanup (documentation, not run now):
+Run cleanup:
 
-- Manual: `python -m app.maintenance.cleanup --dry-run` then without
-  `--dry-run`.
+- Manual: `python -m app.maintenance.cleanup` (dry-run default) then
+  `python -m app.maintenance.cleanup --apply` after reviewing the dry-run.
 - Recommended automation: external cron / platform scheduler invoking the CLI
-  (deploy follow-up).
+  (documented in `docs/ops/rate-limit-and-cleanup.md`).
 
-No deploy implementation is performed in 7F spec or its first implementation
-slice beyond the optional Redis client wiring; prod-compose Redis is a separate
-infra change.
+No deploy implementation was performed by 7F-D docs. Prod-compose Redis and
+real cron/platform installation remain operator/deploy tasks.
 
 ---
 
@@ -436,12 +436,11 @@ infra change.
 - 7F-B extension in the same module:
   - `RedisRateLimiter` — fixed-window `INCR`/`EXPIRE`.
   - backend factory resolving from config once.
-- New config getters in `apps/api/app/config.py` (`redis_url()`,
+- Config getters in `apps/api/app/config.py` (`redis_url()`,
   `rate_limit_backend()`, `redis_timeout_ms()`), same lazy `os.environ`
   pattern as `max_body_bytes()`.
-- New `apps/api/app/maintenance/cleanup.py` (or
-  `apps/api/app/domain/services/cleanup_service.py`):
-  - `cleanup_revoked_tokens(...)`, `cleanup_export_jobs(...)`,
+- New `apps/api/app/maintenance/cleanup.py`:
+  - `cleanup_expired_revoked_tokens(...)`, `cleanup_expired_export_jobs(...)`,
     `CleanupSummary`.
   - thin `__main__` / `python -m` entrypoint.
 - Integration touch points:
@@ -484,43 +483,42 @@ Status: **done / integrated** in PR #8 (`63da5af`), implementation commit
 
 ### 7F-B — Optional Redis backend
 
-- **Next recommended implementation step.**
-- Decide Redis outage policy before coding this subphase. Initial
-  recommendation: API-key limiter fail-open with warning/safe log to preserve
-  ingest availability; login limiter falls back to in-memory to retain some
-  brute-force protection. Product/ops may choose another policy, but it must
-  be explicit before 7F-B.
-- Add Redis client dep + `RedisRateLimiter` (fixed window); config factory;
-  outage policy (per decision #2).
-- Likely files: `rate_limit_service.py`, `config.py`, `pyproject.toml`
-  (add `redis` dependency), new tests with fake/stub Redis.
-- Acceptance: shared-store test proves multi-worker cap; outage test proves
-  chosen policy; no raw key/email in Redis keys; memory default unchanged.
-- Risk: medium (security-adjacent). Revert = `backend=memory` + drop impl.
+Status: **done / integrated** in PR #9 (`ba0978e`), implementation commit
+`1af8017 feat(evalops): add redis rate limit backend`.
+
+- Added Redis client dependency, `RedisRateLimiter`, config factory and env
+  getters.
+- Encoded the selected outage policy: API-key limiter fail-open with safe
+  warning; login limiter fallback to in-memory.
+- Added focused fake-Redis tests in `apps/api/tests/test_phase7f_redis_rate_limit.py`.
+- Did not add cleanup jobs, migrations, frontend, SDK, or prod Redis deploy
+  changes.
 
 ### 7F-C — Cleanup services
 
-- `cleanup_revoked_tokens`, `cleanup_export_jobs`, `CleanupSummary`, dry-run,
-  path-safe unlink, CLI entrypoint.
-- Likely files: `apps/api/app/maintenance/cleanup.py` (new),
-  `tests/test_phase7f_cleanup.py` (new).
-- Acceptance: Section 11 cleanup matrix green; dry-run mutates nothing;
-  idempotent; path-traversal/symlink refused.
-- Risk: medium (deletes data/files). Revert = remove module; no schema impact.
+Status: **done / integrated** in PR #10 (`61592ff`), implementation commit
+`b3a3242 feat(evalops): add cleanup maintenance jobs`.
+
+- Added `cleanup_expired_revoked_tokens`, `cleanup_expired_export_jobs`,
+  `CleanupSummary`, dry-run default, path-safe unlink, and CLI entrypoint.
+- Added focused tests in `apps/api/tests/test_phase7f_cleanup_jobs.py`.
+- Did not add scheduler, migrations, frontend, SDK, Redis/rate-limit changes,
+  deploy cron, or 7F-D docs in the implementation PR.
 
 ### 7F-D — Ops docs
 
-- Update `docs/ops/` with: Redis env vars, local Redis validation, manual/cron
-  cleanup, outage policy, risks. Possibly a new
-  `docs/ops/rate-limit-and-cleanup.md`.
-- Acceptance: docs reviewed; matches shipped behavior.
-- Risk: none (docs only).
+Status: **done** in `docs/ops/rate-limit-and-cleanup.md`.
 
-Recommended order from current `main`: 7F-B → 7F-C → 7F-D.
+- Documents Redis env vars, local Redis validation, outage policy, manual
+  cleanup, cron/platform scheduling, rollback and residual risks.
+- Docs only; does not provision Redis or install production cron.
+
+Recommended current next step: operator/deploy validation in the target
+environment, plus 7B opportunistic cleanup only when related files are touched.
 
 ---
 
-## 11. Mandatory future tests
+## 11. Validation evidence and future tests
 
 ### Rate limit
 
@@ -559,11 +557,20 @@ Recommended order from current `main`: 7F-B → 7F-C → 7F-D.
   Redis smoke is ever run, use a disposable container (mirroring the 7A
   disposable-Postgres discipline in `docs/ops/database-migrations.md`).
 
+Post-7F-C validation evidence:
+
+- `tests/test_phase7f_cleanup_jobs.py`: 18 passed.
+- Selected backend regression (`test_phase9`, `test_phase10`, `test_phase12`,
+  `test_phase7f_redis_rate_limit`): 88 passed.
+- Full API suite: 258 passed.
+- PR #10 GitHub checks passed: `build-web`, `test-api`, SDK 3.9/3.10/3.11/3.12,
+  Vercel, and Vercel Preview Comments.
+
 ---
 
 ## 12. 7F acceptance criteria
 
-7F is complete only when:
+7F code/docs scope is complete because:
 
 - Redis/fallback/outage policy is explicitly decided and documented.
 - Distributed rate limiting (7F-A abstraction already done + 7F-B optional
@@ -582,51 +589,28 @@ Recommended order from current `main`: 7F-B → 7F-C → 7F-D.
 
 ---
 
-## 13. Pending decisions for the user
+## 13. Decisions recorded
 
 | # | Question | Recommendation |
 |---|---|---|
-| 1 | Redis mandatory in production, or optional-with-warning? | **Optional-with-startup-warning** for Option A (degrade to single-worker rather than fail boot). Mark "Redis required + provisioned in prod compose" as a tracked **deploy follow-up**. |
-| 2 | On Redis outage: fail-open or fail-closed? | **Split:** API-key limiter **fail-open** (logged) — abuse mitigation, auth still enforced; login limiter **fall back to in-memory** — preserve brute-force protection. Acceptable alternative: uniform fail-open if a single policy is required. |
-| 3 | Fixed window, sliding window, or token bucket? | **Fixed window** (`INCR`+`EXPIRE`) for equivalence-of-intent and atomic simplicity; accept the documented ~2× boundary burst. Revisit to sliding window only if abuse data demands it. |
-| 4 | Cleanup via manual/CLI/external cron, or in-app background? | **Service functions + CLI entrypoint**, driven by external cron/platform scheduler. **No infinite in-app scheduler** in this phase. |
-| 5 | Expired `ExportJob`: hard-delete, mark, or both? | **Hard-delete row + unlink file** (download already 410s expired jobs; creation audit is independent and untouched). Choose "mark" only if a retention/audit requirement on the job row itself is stated. |
-| 6 | May `RevokedToken` cleanup hard-delete expired rows with no extra retention? | **Yes.** After `expires_at` the underlying JWT is already expired and independently rejected; the denylist row is redundant. |
-| 7 | Must dev/test keep working without Redis? | **Yes.** In-memory default; no real Redis in the suite. |
-| 8 | One PR or split 7F-A/B/C(/D)? | **Split confirmed.** 7F-A is merged; continue with B → C → D. B is security-adjacent; C deletes data; D is docs. Smaller reviews, granular revert. |
+| 1 | Redis mandatory in production, or optional-with-warning? | **Optional-with-warning/default memory** implemented. Redis is configured where needed; prod provisioning remains deploy work. |
+| 2 | On Redis outage: fail-open or fail-closed? | **Split implemented:** API-key limiter fail-open; login limiter fallback in-memory. |
+| 3 | Fixed window, sliding window, or token bucket? | **Fixed window** implemented for Redis. |
+| 4 | Cleanup via manual/CLI/external cron, or in-app background? | **Service functions + CLI entrypoint**, driven by external cron/platform scheduler. No in-app scheduler. |
+| 5 | Expired `ExportJob`: hard-delete, mark, or both? | **Hard-delete row + unlink safe file** implemented; unsafe path preserves row. |
+| 6 | May `RevokedToken` cleanup hard-delete expired rows with no extra retention? | **Yes**, implemented. |
+| 7 | Must dev/test keep working without Redis? | **Yes**, implemented; tests use fake Redis, not a real server. |
+| 8 | One PR or split 7F-A/B/C(/D)? | **Split completed:** PR #8, PR #9, PR #10, then docs 7F-D. |
 
 ---
 
 ## 14. Recommended next prompt
 
-This spec has two decisions that are genuinely blocking, but **only for the
-remaining subphases that encode them**:
+7F-B and 7F-C are implemented; use this prompt for deploy validation:
 
-- **Decision #2 (Redis outage policy)** blocks **7F-B (Redis backend)** because
-  it changes security/availability behavior on request paths.
-- **Decision #5 (ExportJob disposition)** blocks **7F-C (cleanup)** because it
-  changes data retention and deletion behavior.
-
-Decisions #1 and #4 affect deploy/ops scope but do not block the already-merged
-7F-A. Recommended path:
-
-1. Before starting **7F-B**, user confirms decision #2 (and ideally #1/#3/#8).
-2. Before starting **7F-C**, user confirms decision #5 (and ideally #4/#6).
-3. Then run the implementation prompt for **7F-B only**:
-
-> Você está no EvalOps em `main`, após review documental de
-> `docs/plans/evalops-phase7f-redis-cleanup-spec.md`, e após a política de
-> outage Redis ser decidida. Implemente **somente 7F-B**: backend Redis
-> opcional para o rate limiter existente, preservando o facade público
-> (`check_api_key_rate_limit`, `check_login_rate_limit`,
-> `record_login_failure`, `reset_login_failures`, `reset_all`) e o contrato
-> 429/`Retry-After`/`detail`. Não implementar cleanup jobs. Sem migration. Não
-> tocar frontend/SDK. Testes devem provar limite compartilhado, política de
-> outage escolhida, ausência de raw API key/email em chaves Redis e default
-> in-memory quando Redis não estiver configurado. Entregar pronto para code
-> review.
-
-4. After 7F-B merges: 7F-C (cleanup, encodes #4/#5/#6), then 7F-D (ops docs).
-
-If the user declines to decide #2/#5 now, do **not** start 7F-B or 7F-C until
-the relevant decision is made.
+> Você está no EvalOps em `main`, após 7F-D docs. Valide operação/deploy sem
+> mudar produto: configurar Redis no ambiente alvo se houver multi-worker,
+> executar `python -m app.maintenance.cleanup` em dry-run, instalar scheduler
+> externo para `python -m app.maintenance.cleanup --apply`, e registrar logs da
+> primeira execução. Não criar scheduler dentro da API, não alterar
+> schema/migrations, e não rodar cleanup `--apply` sem revisar dry-run.

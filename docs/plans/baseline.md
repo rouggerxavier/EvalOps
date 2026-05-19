@@ -13,6 +13,72 @@ do roadmap (`docs/plans/evalops-remediation-roadmap.md`).
 
 ---
 
+## Snapshot documental pós-7F-D (2026-05-19)
+
+Esta rodada reconciliou `main` após o merge do PR #10 e adicionou a
+documentação operacional 7F-D. Não houve mudança de backend, frontend, SDK,
+schema, migrations, lockfiles ou deploy real neste snapshot documental.
+
+Estado verificado:
+
+- Branch: `main`.
+- HEAD: `61592ff`.
+- `origin/main`: `61592ff`.
+- Worktree inicial: limpa (`git status --short` sem saída).
+- Merge relevante: PR #10 em `61592ff`, com commit
+  `b3a3242 feat(evalops): add cleanup maintenance jobs`.
+- Merge relevante anterior: PR #9 em `ba0978e`, com commit
+  `1af8017 feat(evalops): add redis rate limit backend`.
+- Merge relevante anterior: PR #8 em `63da5af`, com commit
+  `abb331b refactor(evalops): abstract api rate limiter`.
+
+Documentação atualizada:
+
+- `docs/ops/rate-limit-and-cleanup.md` — guia 7F-D de Redis, cleanup,
+  invocação manual, cron/plataforma, validação e rollback.
+- `docs/audits/evalops-phase7-status-after-7bc.md` — status consolidado após
+  7F-B/7F-C/7F-D.
+- `docs/plans/evalops-phase7-next-steps.md` — próximos passos agora focados em
+  operação/deploy e dívida 7B oportunística.
+- `docs/plans/evalops-phase7f-redis-cleanup-spec.md` — spec histórica marcada
+  com decisões implementadas e validações realizadas.
+- `docs/plans/evalops-remediation-roadmap.md` — resumo da Fase 7 alinhado.
+- `docs/plans/baseline.md` — este snapshot documental.
+
+Resumo de status documentado:
+
+| Subfase | Status atualizado | Evidência curta |
+|---|---|---|
+| 7A Alembic/migrations | feito | Postgres smoke aprovado em DB descartável; novas migrations continuam exigindo smoke próprio. |
+| 7B service extraction/ownership | parcial/follow-up | Services e `ownership.py` existem; wrappers em `routes_phase5.py` seguem como dívida oportunística. |
+| 7C structured logging/request_id | feito | `9e9a517`, middleware/contexto e teste phase13. |
+| 7D SDK retry/dead-letter | feito | Retry/drop + dead-letter/replay integrados até PR #5. |
+| 7E-backend `ApiKey.expires_at` | feito | PR #6, migration `0002_api_keys_expires_at`, enforcement e teste phase7E. |
+| 7E-frontend polling | feito | PR #7 (`f44ed19`) com `TracesAutoRefresh` e `router.refresh()` real. |
+| 7F-A rate limiter abstraction | feito | PR #8 (`63da5af`) com `RateLimiterBackend`, `RateLimitResult`, `InMemoryRateLimiter` e facade preservada. |
+| 7F-B Redis backend | feito | PR #9 (`ba0978e`) com `RedisRateLimiter`, envs Redis, fallback/outage policy e testes sem Redis real. |
+| 7F-C cleanup jobs | feito | PR #10 (`61592ff`) com `app.maintenance.cleanup`, dry-run default, `--apply`, path safety e testes. |
+| 7F-D ops docs | feito | `docs/ops/rate-limit-and-cleanup.md` documenta operação Redis, cleanup manual, scheduler externo, validação, rollback e riscos. |
+
+Validação relevante carregada da implementação/review:
+
+- PR #10 checks GitHub: `build-web`, `test-api`, SDK 3.9/3.10/3.11/3.12,
+  Vercel e Vercel Preview Comments passaram.
+- Review local 7F-C: `tests/test_phase7f_cleanup_jobs.py` — 18 passed.
+- Regressão local selecionada 7F-C — 88 passed.
+- Suite API local — 258 passed.
+- `git diff --check` passou.
+
+Riscos remanescentes:
+
+- Produção real ainda precisa configurar Redis quando houver multi-worker.
+- Cleanup real ainda precisa ser instalado via cron/plataforma externa.
+- `python -m app.maintenance.cleanup --apply` deve ser precedido por dry-run no
+  ambiente alvo.
+- 7B segue dívida oportunística separada da entrega 7F.
+
+---
+
 ## Snapshot documental pós-7F-A (2026-05-18)
 
 Esta rodada foi somente documental. Não foram executados testes de produto,
@@ -899,8 +965,8 @@ Resumo único da fila já documentada acima:
 |---|---|---|---|
 | 1 | Alembic + migração `deleted_at` | Fase 4 | Fase 7 |
 | 2 | Alembic + migração `audit_logs.organization_id` | Fase 2 | Fase 7 |
-| 3 | Rate limit em Redis (multi-worker) | Fase 2 | Fase 7 |
-| 4 | Cleanup de `RevokedToken` expirados | Fase 2 | Fase 7 |
+| 3 | Rate limit em Redis (multi-worker) | Fase 2 | Fase 7F-B (PR #9) |
+| 4 | Cleanup de `RevokedToken` expirados | Fase 2 | Fase 7F-C (PR #10) |
 | 5 | Trust de `X-Forwarded-For` configurável | Fase 2 | Fase 7 |
 | 6 | Postgres em produção | — | Fase 6 (G-25) |
 | 7 | Worker assíncrono / LLM real em experiments | Fase 3 | Fase 7 |
@@ -1374,7 +1440,8 @@ cd apps/web && npx tsc --noEmit
   síncrono; sem fila para retry.
 - **Stripe / billing real**: plan limits mudados via SQL/admin; sem upgrade
   flow.
-- **Redis para rate limit / locks distribuídos**: continua na Fase 7.
+- **Redis para rate limit / locks distribuídos**: histórico deste snapshot;
+  rate limit Redis opcional foi entregue depois em 7F-B.
 - **OpenTelemetry**: nada foi instrumentado — Fase 7.
 - **Refatoração arquitetural**: services existentes foram estendidos, não
   reescritos. Routes continuam finas.
@@ -1412,9 +1479,11 @@ cd apps/web && npx tsc --noEmit
 todas as fases anteriores (1-5) verde com 80 testes; nenhum contrato público
 quebrou (extensão estruturada de `quota_exceeded` documentada).
 
-**Bloqueios para deploy continuam**: Alembic (Fase 7), Redis (Fase 7),
+**Bloqueios para deploy daquele snapshot**: Alembic (Fase 7), Redis (Fase 7),
 OpenTelemetry (Fase 7), `npm audit` (pré-existente), validação Docker real
-(esta fase). Ver tabela em "Consolidação pós-Fase 4" + adições desta fase.
+(esta fase). Estado atual: Alembic e Redis backend opcional já foram entregues
+em subfases posteriores; produção ainda precisa configurar Redis/deploy quando
+necessário.
 
 ---
 
