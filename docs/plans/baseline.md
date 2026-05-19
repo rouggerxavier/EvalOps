@@ -35,7 +35,7 @@ Estado verificado:
 Documentação atualizada:
 
 - `docs/ops/rate-limit-and-cleanup.md` — guia 7F-D de Redis, cleanup,
-  invocação manual, cron/plataforma, validação e rollback.
+  contrato CLI, invocação manual, cron/plataforma, validação e rollback.
 - `docs/audits/evalops-phase7-status-after-7bc.md` — status consolidado após
   7F-B/7F-C/7F-D.
 - `docs/plans/evalops-phase7-next-steps.md` — próximos passos agora focados em
@@ -57,8 +57,8 @@ Resumo de status documentado:
 | 7E-frontend polling | feito | PR #7 (`f44ed19`) com `TracesAutoRefresh` e `router.refresh()` real. |
 | 7F-A rate limiter abstraction | feito | PR #8 (`63da5af`) com `RateLimiterBackend`, `RateLimitResult`, `InMemoryRateLimiter` e facade preservada. |
 | 7F-B Redis backend | feito | PR #9 (`ba0978e`) com `RedisRateLimiter`, envs Redis, fallback/outage policy e testes sem Redis real. |
-| 7F-C cleanup jobs | feito | PR #10 (`61592ff`) com `app.maintenance.cleanup`, dry-run default, `--apply`, path safety e testes. |
-| 7F-D ops docs | feito | `docs/ops/rate-limit-and-cleanup.md` documenta operação Redis, cleanup manual, scheduler externo, validação, rollback e riscos. |
+| 7F-C cleanup jobs | feito | PR #10 (`61592ff`) com cleanup core, dry-run default, `--apply`, path safety e testes. |
+| 7F-D ops maintenance | feito | `app.maintenance.cleanup` agora tem `--target`, `--limit`, `--json`, resumo estável, exit codes e testes de CLI; `docs/ops/rate-limit-and-cleanup.md` documenta operação e scheduler externo. |
 
 Validação relevante carregada da implementação/review:
 
@@ -73,7 +73,7 @@ Riscos remanescentes:
 
 - Produção real ainda precisa configurar Redis quando houver multi-worker.
 - Cleanup real ainda precisa ser instalado via cron/plataforma externa.
-- `python -m app.maintenance.cleanup --apply` deve ser precedido por dry-run no
+- `python -m app.maintenance.cleanup --apply --json` deve ser precedido por dry-run no
   ambiente alvo.
 - 7B segue dívida oportunística separada da entrega 7F.
 

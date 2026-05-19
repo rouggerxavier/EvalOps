@@ -1,18 +1,20 @@
-# EvalOps Phase 7 status after 7F-D docs
+# EvalOps Phase 7 status after 7F-D ops maintenance
 
 Date: 2026-05-19
-Branch inspected: `main`
-HEAD inspected: `61592ff`
+Branch inspected: `phase-7f-d-ops-maintenance`
+Base HEAD inspected: `5e785f0`
 Original status-pass snapshot: `f13f24c`; previous documentation baseline:
 `b4ffed2`.
-Scope: documentation reconciliation after PR #9, PR #10, and 7F-D ops docs. No
-backend, frontend, SDK, schema, migration, infra, or lockfile changes were made
-as part of this documentation pass.
+Scope: status reconciliation after PR #9, PR #10, 7F-D ops docs, and 7F-D
+cleanup CLI operationalization. No frontend, SDK, schema, migration, infra, or
+lockfile changes were made.
 
 Sources used:
 
 - `git log --oneline --decorate -12` on `main`.
 - Current code under `apps/api`, `apps/web`, `packages/sdk-python`, and docs.
+- Current 7F-D CLI changes in `apps/api/app/maintenance/cleanup.py` and
+  `apps/api/tests/test_phase7f_cleanup_cli.py`.
 - PR #6 merge commit `b4ffed2ded2cd01c78cdbd23ab710ea149aa8f7d`.
 - PR #7 merge commit `f44ed19` and implementation commit `1b21b2b`.
 - PR #8 merge commit `63da5af` and implementation commit `abb331b`.
@@ -44,8 +46,8 @@ checkout.
 | 7E-frontend traces polling | done | PR #7 merge `f44ed19`; commit `1b21b2b feat(web): add traces auto refresh`; files `traces/page.tsx`, `traces-auto-refresh.tsx`, `apps/web/tests/security.test.mjs`; source evidence for `router.refresh`, `setInterval`, `visibilitychange`, `document.hidden`, manual refresh label, cursor guard. | Residual operational risk: polling load scales per visible tab; interval may need tuning. Not realtime/WebSocket. | Keep implementation; only refine via separate follow-up if needed. |
 | 7F-A rate limiter abstraction | done | PR #8 (`63da5af`) with `abb331b`; `RateLimiterBackend`, `RateLimitResult`, `InMemoryRateLimiter`, preserved facade in `rate_limit_service.py`, and `apps/api/tests/test_phase7f_rate_limit_service.py`. | No remaining 7F-A blocker. | Keep as done; do not redo the abstraction. |
 | 7F-B Redis backend | done | PR #9 (`ba0978e`) with `1af8017`; optional `RedisRateLimiter`, `redis_url()`, `rate_limit_backend()`, `redis_timeout_ms()`, `redis>=5,<6`, and `apps/api/tests/test_phase7f_redis_rate_limit.py`. | Production Redis provisioning is an operator/deploy step; code defaults to memory when Redis is absent. | Configure Redis only for environments that need multi-worker shared buckets. |
-| 7F-C cleanup jobs | done | PR #10 (`61592ff`) with `b3a3242`; `app.maintenance.cleanup`, dry-run default CLI, safe export-file unlink, and `apps/api/tests/test_phase7f_cleanup_jobs.py`. | Actual cleanup execution is manual or external scheduler; no in-app scheduler was added. | Use 7F-D docs for invocation and scheduling. |
-| 7F-D ops docs | done | `docs/ops/rate-limit-and-cleanup.md` documents Redis envs, outage policy, cleanup dry-run/apply, external cron/platform scheduling, validation, rollback and residual risks. | Docs do not provision Redis, deploy cron, or run production cleanup. | Use during operator/deploy rollout. |
+| 7F-C cleanup jobs | done | PR #10 (`61592ff`) with `b3a3242`; cleanup services, dry-run default, safe export-file unlink, and `apps/api/tests/test_phase7f_cleanup_jobs.py`. | Actual cleanup execution is manual or external scheduler; no in-app scheduler was added. | Keep core cleanup behavior; do not add an in-app scheduler. |
+| 7F-D ops maintenance | implemented | `app.maintenance.cleanup` now has stable target selection, limit, JSON output, human summary, exit codes, and `apps/api/tests/test_phase7f_cleanup_cli.py`. | Docs still do not provision Redis, deploy cron, or run production cleanup. | Use during operator/deploy rollout. |
 
 ---
 
@@ -106,7 +108,8 @@ Rationale:
 
 - 7E functional split is complete.
 - 7F-A, 7F-B, and 7F-C are complete in code scope.
-- 7F-D is complete in docs scope; production rollout remains an operator task.
+- 7F-D is implemented as an operational CLI contract; production rollout
+  remains an operator task.
 - 7B remains technical debt, but it is separate from the 7F operational tail.
 
 ---
@@ -124,7 +127,7 @@ Blocking for full Phase 7 close:
 - [x] 7F-A rate limiter abstraction implemented.
 - [x] 7F-B Redis backend implemented.
 - [x] 7F-C cleanup jobs implemented.
-- [x] 7F-D final ops docs updated after 7F-B/7F-C.
+- [x] 7F-D cleanup CLI operationalization implemented and documented.
 
 Verification commands/checks for future implementation PRs:
 
@@ -134,6 +137,7 @@ Verification commands/checks for future implementation PRs:
 - 7E frontend evidence: `rg -n "TracesAutoRefresh|router.refresh|visibilitychange|document.hidden" apps/web`.
 - 7F-B: `cd apps/api && .venv/bin/python -m pytest tests/test_phase7f_redis_rate_limit.py -q --tb=short -p no:warnings`.
 - 7F-C: `cd apps/api && .venv/bin/python -m pytest tests/test_phase7f_cleanup_jobs.py -q --tb=short -p no:warnings`.
+- 7F-D: `cd apps/api && .venv/bin/python -m pytest tests/test_phase7f_cleanup_cli.py -q --tb=short -p no:warnings`.
 
 ---
 
@@ -145,8 +149,8 @@ Prompt para operação/deploy: validar 7F em ambiente alvo sem mudar produto.
 Objetivo:
 - configurar REDIS_URL e EVALOPS_RATE_LIMIT_BACKEND somente no ambiente que
   precisa de buckets compartilhados entre workers;
-- rodar cleanup em dry-run com `python -m app.maintenance.cleanup`;
-- instalar cron/plataforma externa para chamar `python -m app.maintenance.cleanup --apply`;
+- rodar cleanup em dry-run com `python -m app.maintenance.cleanup --json`;
+- instalar cron/plataforma externa para chamar `python -m app.maintenance.cleanup --apply --json`;
 - registrar logs/resultado da primeira execução.
 
 Restrições:

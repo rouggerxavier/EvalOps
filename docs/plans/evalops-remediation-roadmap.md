@@ -8,7 +8,8 @@ Status: Fases 0–6 concluídas. Fase 7 foi majoritariamente integrada em `main`
 dead-letter/replay; 7E-backend está concluída pelo PR #6; 7E-frontend polling
 está concluída pelo PR #7; 7F-A está concluída pelo PR #8; 7F-B Redis backend
 está concluída pelo PR #9; 7F-C cleanup jobs está concluída pelo PR #10; 7F-D
-ops docs está concluída com `docs/ops/rate-limit-and-cleanup.md`. Ver
+ops maintenance está concluída com CLI operacional e
+`docs/ops/rate-limit-and-cleanup.md`. Ver
 `docs/audits/evalops-phase7-status-after-7bc.md` e
 `docs/plans/evalops-phase7-next-steps.md`.
 Branch alvo: `main`.
@@ -32,8 +33,8 @@ Branch alvo: `main`.
 | 7E-frontend — traces polling | ✅ Concluída | PR #7 (`f44ed19`) com `1b21b2b` adicionou `TracesAutoRefresh`, `router.refresh()` real, `setInterval` com cleanup, pause por `document.hidden`/`visibilitychange`, guard de cursor e validação em `apps/web/tests/security.test.mjs`. |
 | 7F-A — Rate limiter abstraction | ✅ Concluída | PR #8 (`63da5af`) com `abb331b` adicionou `RateLimiterBackend`, `RateLimitResult`, `InMemoryRateLimiter`, preservou o facade público e o comportamento in-memory, e adicionou `test_phase7f_rate_limit_service.py`. |
 | 7F-B — Redis backend | ✅ Concluída | PR #9 (`ba0978e`) com `1af8017` adicionou `RedisRateLimiter`, config Redis, dependência `redis`, outage policy e testes sem Redis real. |
-| 7F-C — Cleanup jobs | ✅ Concluída | PR #10 (`61592ff`) com `b3a3242` adicionou `app.maintenance.cleanup`, CLI dry-run por padrão, unlink seguro de exports e testes 7F-C. |
-| 7F-D — Ops docs | ✅ Concluída | `docs/ops/rate-limit-and-cleanup.md` documenta envs Redis, política de outage, cleanup manual, cron/plataforma externa, validação, rollback e riscos remanescentes. |
+| 7F-C — Cleanup jobs | ✅ Concluída | PR #10 (`61592ff`) com `b3a3242` adicionou cleanup core, dry-run por padrão, unlink seguro de exports e testes 7F-C. |
+| 7F-D — Ops maintenance | ✅ Concluída | `app.maintenance.cleanup` tem `--target`, `--limit`, `--json`, resumo estável, exit codes e testes CLI; `docs/ops/rate-limit-and-cleanup.md` documenta operação e scheduler externo. |
 
 ---
 

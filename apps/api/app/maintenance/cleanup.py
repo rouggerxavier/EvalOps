@@ -33,7 +33,9 @@ and is always skipped.
 from __future__ import annotations
 
 import argparse
+import json
 import logging
+import sys
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -44,6 +46,11 @@ from app.config import exports_dir
 from app.models import ExportJob, RevokedToken
 
 logger = logging.getLogger("evalops.maintenance")
+
+TARGET_ALL = "all"
+TARGET_REVOKED_TOKENS = "revoked-tokens"
+TARGET_EXPORTS = "exports"
+TARGET_CHOICES = (TARGET_ALL, TARGET_REVOKED_TOKENS, TARGET_EXPORTS)
 
 
 def _now(now: datetime | None) -> datetime:
@@ -274,31 +281,163 @@ def run_all(
     *,
     now: datetime | None = None,
     dry_run: bool = True,
+    limit: int | None = None,
 ) -> list[CleanupSummary]:
     moment = _now(now)
     return [
-        cleanup_expired_revoked_tokens(session, now=moment, dry_run=dry_run),
-        cleanup_expired_export_jobs(session, now=moment, dry_run=dry_run),
+        cleanup_expired_revoked_tokens(
+            session,
+            now=moment,
+            dry_run=dry_run,
+            limit=limit,
+        ),
+        cleanup_expired_export_jobs(
+            session,
+            now=moment,
+            dry_run=dry_run,
+            limit=limit,
+        ),
     ]
+
+
+def run_target(
+    session: Session,
+    *,
+    target: str = TARGET_ALL,
+    now: datetime | None = None,
+    dry_run: bool = True,
+    limit: int | None = None,
+) -> list[CleanupSummary]:
+    moment = _now(now)
+    if target == TARGET_ALL:
+        return run_all(session, now=moment, dry_run=dry_run, limit=limit)
+    if target == TARGET_REVOKED_TOKENS:
+        return [
+            cleanup_expired_revoked_tokens(
+                session,
+                now=moment,
+                dry_run=dry_run,
+                limit=limit,
+            )
+        ]
+    if target == TARGET_EXPORTS:
+        return [
+            cleanup_expired_export_jobs(
+                session,
+                now=moment,
+                dry_run=dry_run,
+                limit=limit,
+            )
+        ]
+    raise ValueError(f"unknown cleanup target: {target}")
+
+
+def _totals(summaries: list[CleanupSummary]) -> dict[str, int]:
+    return {
+        "scanned": sum(s.scanned for s in summaries),
+        "deleted_rows": sum(s.deleted_rows for s in summaries),
+        "deleted_files": sum(s.deleted_files for s in summaries),
+        "missing_files": sum(s.missing_files for s in summaries),
+        "skipped_unsafe": sum(s.skipped_unsafe for s in summaries),
+        "errors": sum(s.errors for s in summaries),
+    }
+
+
+def _result_payload(
+    *,
+    target: str,
+    dry_run: bool,
+    limit: int | None,
+    summaries: list[CleanupSummary],
+    ok: bool = True,
+    error: str | None = None,
+) -> dict:
+    payload = {
+        "ok": ok,
+        "target": target,
+        "dry_run": dry_run,
+        "limit": limit,
+        "summaries": [s.as_dict() for s in summaries],
+        "totals": _totals(summaries),
+    }
+    if error is not None:
+        payload["error"] = error
+    return payload
+
+
+def _print_json(payload: dict, *, stream) -> None:
+    print(json.dumps(payload, sort_keys=True, separators=(",", ":")), file=stream)
+
+
+def _print_summary(payload: dict, *, stream) -> None:
+    mode = "dry-run" if payload["dry_run"] else "apply"
+    limit = "none" if payload["limit"] is None else str(payload["limit"])
+    print(
+        f"status={'ok' if payload['ok'] else 'error'} "
+        f"mode={mode} target={payload['target']} limit={limit}",
+        file=stream,
+    )
+    for summary in payload["summaries"]:
+        print(
+            "target={target} scanned={scanned} deleted_rows={deleted_rows} "
+            "deleted_files={deleted_files} missing_files={missing_files} "
+            "skipped_unsafe={skipped_unsafe} errors={errors}".format(**summary),
+            file=stream,
+        )
+    totals = payload["totals"]
+    print(
+        "total scanned={scanned} deleted_rows={deleted_rows} "
+        "deleted_files={deleted_files} missing_files={missing_files} "
+        "skipped_unsafe={skipped_unsafe} errors={errors}".format(**totals),
+        file=stream,
+    )
+    if payload.get("error"):
+        print("error=cleanup_failed", file=stream)
 
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="python -m app.maintenance.cleanup",
-        description="Delete expired RevokedToken / ExportJob rows (7F-C).",
+        description="Delete expired RevokedToken / ExportJob rows (7F-D ops).",
     )
     # Dry-run is the default; deletion requires an explicit --apply so an
     # accidental invocation can never destroy data.
-    parser.add_argument(
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument(
         "--apply",
         action="store_true",
         help="Actually delete (default: dry-run, mutate nothing).",
+    )
+    mode.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Run without mutating rows or files (default).",
+    )
+    parser.add_argument(
+        "--target",
+        choices=TARGET_CHOICES,
+        default=TARGET_ALL,
+        help="Cleanup target to run (default: all).",
+    )
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="Maximum rows to scan per selected target.",
+    )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Emit one stable JSON object for scheduler/log parsing.",
     )
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
-    args = _build_parser().parse_args(argv)
+    parser = _build_parser()
+    args = parser.parse_args(argv)
+    if args.limit is not None and args.limit < 1:
+        parser.error("--limit must be a positive integer")
     dry_run = not args.apply
 
     # Local import: the CLI needs a real session, but importing the engine
@@ -306,12 +445,46 @@ def main(argv: list[str] | None = None) -> int:
     # tests with their own session) to DB configuration.
     from app.db import SessionLocal
 
-    with SessionLocal() as session:
-        summaries = run_all(session, dry_run=dry_run)
+    try:
+        with SessionLocal() as session:
+            summaries = run_target(
+                session,
+                target=args.target,
+                dry_run=dry_run,
+                limit=args.limit,
+            )
+    except Exception:
+        logger.error(
+            "maintenance.cleanup.failed",
+            extra={"event": "maintenance.cleanup.failed", "target": args.target},
+        )
+        payload = _result_payload(
+            target=args.target,
+            dry_run=dry_run,
+            limit=args.limit,
+            summaries=[],
+            ok=False,
+            error="cleanup_failed",
+        )
+        if args.json:
+            _print_json(payload, stream=sys.stderr)
+        else:
+            _print_summary(payload, stream=sys.stderr)
+        return 1
 
-    for s in summaries:
-        print(s.as_dict())
-    return 0
+    errors = _totals(summaries)["errors"]
+    payload = _result_payload(
+        target=args.target,
+        dry_run=dry_run,
+        limit=args.limit,
+        summaries=summaries,
+        ok=errors == 0,
+    )
+    if args.json:
+        _print_json(payload, stream=sys.stdout)
+    else:
+        _print_summary(payload, stream=sys.stdout)
+    return 1 if errors else 0
 
 
 if __name__ == "__main__":  # pragma: no cover - thin shell

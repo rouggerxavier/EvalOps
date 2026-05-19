@@ -1,14 +1,15 @@
 # EvalOps Phase 7 next steps
 
-Date: 2026-05-18
+Date: 2026-05-19
 Base branch: `main`
-Base HEAD: `61592ff`
+Base HEAD: `5e785f0`
 Original next-steps snapshot: `0ab562e`; previous documentation baseline: `b4ffed2`.
 Primary status source: `docs/audits/evalops-phase7-status-after-7bc.md`
 
-This roadmap reflects current `main` after PR #10 merged `7F-C` cleanup jobs
-and 7F-D documented the shipped Redis/cleanup operations. The old prompts for
-frontend polling, 7F-A, 7F-B, 7F-C, and 7F-D are historical.
+This roadmap reflects current `main` after PR #10 merged `7F-C` cleanup jobs,
+the 7F-D docs commit (`5e785f0`), and the follow-up 7F-D operationalization of
+the cleanup CLI contract. The old prompts for frontend polling, 7F-A, 7F-B,
+7F-C, and docs-only 7F-D are historical.
 
 ## Current Status Summary
 
@@ -23,7 +24,7 @@ frontend polling, 7F-A, 7F-B, 7F-C, and 7F-D are historical.
 | 7F-A rate limiter abstraction | done | Keep as shipped in PR #8 (`63da5af`); do not redo the abstraction. |
 | 7F-B Redis backend | done | Keep optional Redis behavior from PR #9 (`ba0978e`); enable in deploy only where shared buckets are needed. |
 | 7F-C cleanup jobs | done | Keep dry-run-default cleanup service from PR #10 (`61592ff`); schedule externally, not in app lifespan. |
-| 7F-D ops docs | done | Use `docs/ops/rate-limit-and-cleanup.md` for Redis envs, outage policy, cleanup invocation, external cron/platform scheduling, validation and rollback. |
+| 7F-D ops maintenance | implemented | Use the stable `python -m app.maintenance.cleanup` CLI contract for targets, limits, JSON output, exit codes, validation and external scheduler integration. |
 
 ## Evidence For 7E And 7F Completion
 
@@ -99,6 +100,21 @@ Frontend split (now done):
     not stored `file_path`, and refuse traversal/symlink targets;
   - missing files are idempotent; unsafe paths preserve rows.
 
+7F-D cleanup CLI operationalization (implemented):
+
+- Files touched by implementation:
+  - `apps/api/app/maintenance/cleanup.py`
+  - `apps/api/tests/test_phase7f_cleanup_cli.py`
+  - `docs/ops/rate-limit-and-cleanup.md`
+- Shipped behavior:
+  - dry-run remains the default and `--apply` remains required for mutation;
+  - `--target all|revoked-tokens|exports` selects the cleanup target;
+  - `--limit N` bounds rows scanned per selected target;
+  - `--json` emits one stable machine-readable object;
+  - human output is a stable count summary;
+  - exit code `0` means success with no cleanup errors, non-zero means invalid
+    invocation or real cleanup failure.
+
 ## UX/Polling Review (UI UX Pro Max)
 
 Scope reviewed: traces page polling UX only (`page.tsx`, `traces-auto-refresh.tsx`, source-level tests).
@@ -126,8 +142,9 @@ changing product code.
   multi-worker/shared rate-limit buckets are needed.
 - Keep `EVALOPS_RATE_LIMIT_BACKEND=memory` or unset Redis for local/single-worker
   environments where the current fallback is acceptable.
-- Run cleanup dry-run first: `python -m app.maintenance.cleanup`.
-- Schedule real cleanup externally: `python -m app.maintenance.cleanup --apply`.
+- Run cleanup dry-run first: `python -m app.maintenance.cleanup --json`.
+- Schedule real cleanup externally:
+  `python -m app.maintenance.cleanup --apply --json`.
 - Do not add an in-app infinite scheduler.
 
 ### 2. 7B follow-up only when opportunistic
@@ -155,7 +172,7 @@ Blocking for full Phase 7 close:
 - [x] 7F-A: rate limiter abstraction merged (PR #8).
 - [x] 7F-B: Redis/distributed backend implemented (PR #9).
 - [x] 7F-C: cleanup jobs implemented (PR #10).
-- [x] 7F-D: final ops docs updated after 7F-B/7F-C.
+- [x] 7F-D: cleanup CLI operationalization implemented and docs updated.
 
 Verification commands/checks:
 
@@ -164,6 +181,7 @@ Verification commands/checks:
 - `rg -n "_project_or_404" apps/api/app`
 - 7F-B targeted: `cd apps/api && .venv/bin/python -m pytest tests/test_phase7f_redis_rate_limit.py -q --tb=short -p no:warnings`
 - 7F-C targeted: `cd apps/api && .venv/bin/python -m pytest tests/test_phase7f_cleanup_jobs.py -q --tb=short -p no:warnings`
+- 7F-D targeted: `cd apps/api && .venv/bin/python -m pytest tests/test_phase7f_cleanup_cli.py -q --tb=short -p no:warnings`
 
 ## Next Prompt
 
@@ -174,8 +192,8 @@ validar operação/deploy sem mudar produto.
 Objetivo:
 - configurar Redis no ambiente alvo somente se multi-worker exigir buckets
   compartilhados;
-- rodar `python -m app.maintenance.cleanup` em dry-run;
-- instalar scheduler externo para `python -m app.maintenance.cleanup --apply`;
+- rodar `python -m app.maintenance.cleanup --json` em dry-run;
+- instalar scheduler externo para `python -m app.maintenance.cleanup --apply --json`;
 - registrar logs/resultados da primeira execução.
 
 Restrições:
