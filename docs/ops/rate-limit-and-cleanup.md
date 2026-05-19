@@ -1,15 +1,16 @@
 # Rate limit and cleanup operations — Phase 7F
 
 Date: 2026-05-19
-Scope: 7F-D operational documentation for behavior shipped in 7F-B and 7F-C.
+Scope: 7F-D operational documentation and CLI contract for behavior shipped in
+7F-B and 7F-C.
 
 This document explains how to operate:
 
 - the optional Redis-backed rate limiter from 7F-B;
 - the expired `RevokedToken` / `ExportJob` cleanup CLI from 7F-C.
 
-It does not add runtime code, schema changes, migrations, frontend behavior,
-SDK behavior, or an in-app scheduler.
+It does not add schema changes, migrations, frontend behavior, SDK behavior,
+or an in-app scheduler.
 
 ---
 
@@ -51,17 +52,26 @@ Redis keys:
 - Login buckets use `sha256(email|ip)`, not raw email.
 - Fixed-window keys self-expire; no cleanup job is needed for rate-limit keys.
 
-### 7F-C cleanup CLI
+### 7F-C cleanup core and 7F-D CLI
 
 Implementation:
 
 - `apps/api/app/maintenance/cleanup.py`
 - `apps/api/tests/test_phase7f_cleanup_jobs.py`
+- `apps/api/tests/test_phase7f_cleanup_cli.py`
 
 Default behavior:
 
 - `python -m app.maintenance.cleanup` is dry-run.
 - `python -m app.maintenance.cleanup --apply` is required to mutate rows/files.
+- `--target all` runs both cleanup targets (default).
+- `--target revoked-tokens` runs only expired `RevokedToken` cleanup.
+- `--target exports` runs only expired `ExportJob` cleanup.
+- `--limit N` bounds the rows scanned per selected target in one invocation.
+- `--json` emits one stable JSON object for scheduler/log parsing.
+- Human-readable output is a stable summary with counts.
+- Exit code `0` means the invocation completed with no cleanup errors.
+- A non-zero exit code means an invalid invocation or real cleanup failure.
 - No scheduler is started by the API process.
 - `ExportJob.file_path` is not trusted for deletion; cleanup reconstructs
   `exports_dir() / f"{job.id}.jsonl"`.
@@ -78,6 +88,7 @@ From `apps/api`:
 ```bash
 .venv/bin/python -m pytest tests/test_phase7f_redis_rate_limit.py -q --tb=short -p no:warnings
 .venv/bin/python -m pytest tests/test_phase7f_cleanup_jobs.py -q --tb=short -p no:warnings
+.venv/bin/python -m pytest tests/test_phase7f_cleanup_cli.py -q --tb=short -p no:warnings
 ```
 
 Cleanup dry-run:
@@ -85,6 +96,13 @@ Cleanup dry-run:
 ```bash
 cd apps/api
 .venv/bin/python -m app.maintenance.cleanup
+```
+
+Cleanup dry-run for one target with JSON output:
+
+```bash
+cd apps/api
+.venv/bin/python -m app.maintenance.cleanup --target exports --limit 500 --json
 ```
 
 Cleanup apply:
@@ -148,7 +166,7 @@ The cleanup command must run with the same environment as the API, especially:
 Run daily at 03:15:
 
 ```cron
-15 3 * * * cd /srv/evalops/apps/api && /srv/evalops/apps/api/.venv/bin/python -m app.maintenance.cleanup --apply >> /var/log/evalops-cleanup.log 2>&1
+15 3 * * * cd /srv/evalops/apps/api && /srv/evalops/apps/api/.venv/bin/python -m app.maintenance.cleanup --apply --json >> /var/log/evalops-cleanup.log 2>&1
 ```
 
 ### Docker Compose one-shot example
@@ -158,14 +176,14 @@ installed the same way as the app service:
 
 ```bash
 docker compose -f docker-compose.prod.yml run --rm api \
-  sh -c "pip install --no-cache-dir -e '.' && python -m app.maintenance.cleanup"
+  sh -c "pip install --no-cache-dir -e '.' && python -m app.maintenance.cleanup --json"
 ```
 
 After reviewing dry-run:
 
 ```bash
 docker compose -f docker-compose.prod.yml run --rm api \
-  sh -c "pip install --no-cache-dir -e '.' && python -m app.maintenance.cleanup --apply"
+  sh -c "pip install --no-cache-dir -e '.' && python -m app.maintenance.cleanup --apply --json"
 ```
 
 For a real deploy, prefer a dedicated scheduled job using the same image/env as
@@ -190,7 +208,7 @@ echo "$EVALOPS_EXPORTS_DIR"
 3. Run dry-run:
 
 ```bash
-python -m app.maintenance.cleanup
+python -m app.maintenance.cleanup --target all --json
 ```
 
 4. Review counts:
@@ -207,7 +225,7 @@ python -m app.maintenance.cleanup
 6. Run apply:
 
 ```bash
-python -m app.maintenance.cleanup --apply
+python -m app.maintenance.cleanup --apply --target all --json
 ```
 
 7. Record the output in the deployment log.

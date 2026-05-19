@@ -1,10 +1,10 @@
 # EvalOps Phase 7F — Redis Rate Limit / Cleanup Jobs Spec
 
-Date: 2026-05-18; refreshed after 7F-D docs on 2026-05-19
+Date: 2026-05-18; refreshed after 7F-D ops maintenance on 2026-05-19
 Base branch: `main`
 Base HEAD when authored: `63da5af` (`Merge pull request #8 from rouggerxavier/phase-7f-a-rate-limit-abstraction`)
-Current post-7F-D HEAD: `61592ff` (`Merge pull request #10 from rouggerxavier/phase-7f-c-cleanup-jobs`)
-`origin/main`: `61592ff` (in sync during 7F-D doc refresh)
+Current post-7F-D docs HEAD: `5e785f0` (`docs(evalops): add 7f ops guidance`)
+`origin/main`: `5e785f0` (in sync before 7F-D ops implementation)
 Status source: `docs/audits/evalops-phase7-status-after-7bc.md`,
 `docs/plans/evalops-phase7-next-steps.md`,
 `docs/plans/evalops-remediation-roadmap.md`,
@@ -12,10 +12,9 @@ Status source: `docs/audits/evalops-phase7-status-after-7bc.md`,
 `docs/ops/database-migrations.md`.
 
 Author note: this document was originally refreshed after PR #8 merged 7F-A,
-then refreshed again after PR #9 (7F-B), PR #10 (7F-C), and the 7F-D ops docs
-pass. The 2026-05-19 refresh is documentation/status only. No backend,
-frontend, SDK, schema, migration, infra, product test, or formatter change was
-made in the docs pass.
+then refreshed again after PR #9 (7F-B), PR #10 (7F-C), the 7F-D ops docs
+pass, and the follow-up 7F-D cleanup CLI operationalization. No frontend, SDK,
+schema, migration, infra, product test, or formatter change was made.
 
 `AGENTS.md`, `CLAUDE.md`, and a repo-local `MEMORY.md` were not present in this
 checkout.
@@ -37,7 +36,8 @@ Phase 7 is integrated into `main` except for the operational tail:
 - 7F-A rate limiter abstraction — done (PR #8, merge `63da5af`).
 - 7F-B Redis backend — done (PR #9, `ba0978e`, implementation `1af8017`).
 - 7F-C cleanup jobs — done (PR #10, `61592ff`, implementation `b3a3242`).
-- 7F-D final ops docs — done (`docs/ops/rate-limit-and-cleanup.md`).
+- 7F-D ops maintenance — done (`app.maintenance.cleanup` CLI contract +
+  `docs/ops/rate-limit-and-cleanup.md`).
 
 7F is complete in code/docs scope. Production still needs operator-specific
 Redis configuration and external cleanup scheduling where applicable.
@@ -397,12 +397,13 @@ Validate Redis locally (documentation, not run now):
 Run cleanup:
 
 - Manual: `python -m app.maintenance.cleanup` (dry-run default) then
-  `python -m app.maintenance.cleanup --apply` after reviewing the dry-run.
+  `python -m app.maintenance.cleanup --apply --json` after reviewing the
+  dry-run.
 - Recommended automation: external cron / platform scheduler invoking the CLI
   (documented in `docs/ops/rate-limit-and-cleanup.md`).
 
-No deploy implementation was performed by 7F-D docs. Prod-compose Redis and
-real cron/platform installation remain operator/deploy tasks.
+No deploy implementation was performed by 7F-D. Prod-compose Redis and real
+cron/platform installation remain operator/deploy tasks.
 
 ---
 
@@ -505,13 +506,21 @@ Status: **done / integrated** in PR #10 (`61592ff`), implementation commit
 - Did not add scheduler, migrations, frontend, SDK, Redis/rate-limit changes,
   deploy cron, or 7F-D docs in the implementation PR.
 
-### 7F-D — Ops docs
+### 7F-D — Ops maintenance
 
-Status: **done** in `docs/ops/rate-limit-and-cleanup.md`.
+Status: **done** in `app.maintenance.cleanup` and
+`docs/ops/rate-limit-and-cleanup.md`.
 
+- Keeps dry-run as the default and `--apply` as the explicit mutation gate.
+- Adds stable target selection: `--target all|revoked-tokens|exports`.
+- Adds `--limit N` to bound rows scanned per selected target.
+- Adds `--json` for scheduler/log parsing and stable human summary output.
+- Defines exit-code behavior: `0` on success, non-zero for invalid invocation
+  or real cleanup failure.
+- Adds focused CLI tests in `apps/api/tests/test_phase7f_cleanup_cli.py`.
 - Documents Redis env vars, local Redis validation, outage policy, manual
   cleanup, cron/platform scheduling, rollback and residual risks.
-- Docs only; does not provision Redis or install production cron.
+- Does not provision Redis or install production cron.
 
 Recommended current next step: operator/deploy validation in the target
 environment, plus 7B opportunistic cleanup only when related files are touched.
@@ -560,6 +569,8 @@ environment, plus 7B opportunistic cleanup only when related files are touched.
 Post-7F-C validation evidence:
 
 - `tests/test_phase7f_cleanup_jobs.py`: 18 passed.
+- Post-7F-D CLI validation: `tests/test_phase7f_cleanup_cli.py` plus cleanup
+  core tests passed together (`26 passed`).
 - Selected backend regression (`test_phase9`, `test_phase10`, `test_phase12`,
   `test_phase7f_redis_rate_limit`): 88 passed.
 - Full API suite: 258 passed.
@@ -606,11 +617,11 @@ Post-7F-C validation evidence:
 
 ## 14. Recommended next prompt
 
-7F-B and 7F-C are implemented; use this prompt for deploy validation:
+7F-B, 7F-C, and 7F-D are implemented; use this prompt for deploy validation:
 
-> Você está no EvalOps em `main`, após 7F-D docs. Valide operação/deploy sem
+> Você está no EvalOps em `main`, após 7F-D ops maintenance. Valide operação/deploy sem
 > mudar produto: configurar Redis no ambiente alvo se houver multi-worker,
-> executar `python -m app.maintenance.cleanup` em dry-run, instalar scheduler
-> externo para `python -m app.maintenance.cleanup --apply`, e registrar logs da
+> executar `python -m app.maintenance.cleanup --json` em dry-run, instalar scheduler
+> externo para `python -m app.maintenance.cleanup --apply --json`, e registrar logs da
 > primeira execução. Não criar scheduler dentro da API, não alterar
 > schema/migrations, e não rodar cleanup `--apply` sem revisar dry-run.
