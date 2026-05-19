@@ -1,10 +1,10 @@
 # EvalOps Phase 7F — Redis Rate Limit / Cleanup Jobs Spec
 
-Date: 2026-05-18; refreshed after 7F-D ops maintenance on 2026-05-19
+Date: 2026-05-18; refreshed after 7F-D ops maintenance and Oracle VM rollout on 2026-05-19
 Base branch: `main`
 Base HEAD when authored: `63da5af` (`Merge pull request #8 from rouggerxavier/phase-7f-a-rate-limit-abstraction`)
-Current post-7F-D docs HEAD: `5e785f0` (`docs(evalops): add 7f ops guidance`)
-`origin/main`: `5e785f0` (in sync before 7F-D ops implementation)
+Current post-rollout HEAD: `935c3dc` (`Merge pull request #11 from rouggerxavier/phase-7f-d-ops-maintenance`)
+`origin/main`: `935c3dc` after PR #11 and the Oracle VM rollout documentation pass
 Status source: `docs/audits/evalops-phase7-status-after-7bc.md`,
 `docs/plans/evalops-phase7-next-steps.md`,
 `docs/plans/evalops-remediation-roadmap.md`,
@@ -25,7 +25,8 @@ checkout.
 
 ### Current Phase 7 state
 
-Phase 7 is integrated into `main` except for the operational tail:
+Phase 7 is integrated into `main`; the basic 7F operational rollout was applied
+on the Oracle VM:
 
 - 7A Alembic/migrations — done; disposable Postgres smoke approved.
 - 7B service extraction/ownership — partial; opportunistic follow-up only.
@@ -37,10 +38,12 @@ Phase 7 is integrated into `main` except for the operational tail:
 - 7F-B Redis backend — done (PR #9, `ba0978e`, implementation `1af8017`).
 - 7F-C cleanup jobs — done (PR #10, `61592ff`, implementation `b3a3242`).
 - 7F-D ops maintenance — done (`app.maintenance.cleanup` CLI contract +
-  `docs/ops/rate-limit-and-cleanup.md`).
+  `docs/ops/rate-limit-and-cleanup.md`; PR #11 merge `935c3dc`).
 
-7F is complete in code/docs scope. Production still needs operator-specific
-Redis configuration and external cleanup scheduling where applicable.
+7F is complete in code/docs scope and has a basic Oracle VM rollout record in
+`docs/audits/evalops-oracle-vm-rollout-2026-05-19.md`. That VM still uses the
+manual Docker API container and SQLite; Docker Compose/Postgres are not the
+active EvalOps runtime there.
 
 ### Why 7F is the standard next candidate after 7E
 
@@ -520,10 +523,13 @@ Status: **done** in `app.maintenance.cleanup` and
 - Adds focused CLI tests in `apps/api/tests/test_phase7f_cleanup_cli.py`.
 - Documents Redis env vars, local Redis validation, outage policy, manual
   cleanup, cron/platform scheduling, rollback and residual risks.
-- Does not provision Redis or install production cron.
+- Basic Oracle VM rollout applied Redis container provisioning, API container
+  recreation with Redis env, cleanup script installation, and external cron
+  setup for that VM.
 
-Recommended current next step: operator/deploy validation in the target
-environment, plus 7B opportunistic cleanup only when related files are touched.
+Recommended current next step: monitor `/var/log/evalops-cleanup.log`, confirm
+`evalops-api`/`evalops-redis` stay up, confirm `RedisRateLimiter`, and keep 7B
+as opportunistic cleanup only when related files are touched.
 
 ---
 
@@ -617,11 +623,12 @@ Post-7F-C validation evidence:
 
 ## 14. Recommended next prompt
 
-7F-B, 7F-C, and 7F-D are implemented; use this prompt for deploy validation:
+7F-B, 7F-C, and 7F-D are implemented; use this prompt for operational
+monitoring after the Oracle VM rollout:
 
-> Você está no EvalOps em `main`, após 7F-D ops maintenance. Valide operação/deploy sem
-> mudar produto: configurar Redis no ambiente alvo se houver multi-worker,
-> executar `python -m app.maintenance.cleanup --json` em dry-run, instalar scheduler
-> externo para `python -m app.maintenance.cleanup --apply --json`, e registrar logs da
-> primeira execução. Não criar scheduler dentro da API, não alterar
-> schema/migrations, e não rodar cleanup `--apply` sem revisar dry-run.
+> Você está no EvalOps em `main`, após o rollout básico da 7F na Oracle VM.
+> Monitore operação sem mudar produto: checar `/var/log/evalops-cleanup.log`
+> depois da primeira execução agendada, confirmar `evalops-api` e
+> `evalops-redis` Up, confirmar backend `RedisRateLimiter`, e planejar backup
+> do SQLite se houver dados reais. Não migrar a VM para Docker Compose/Postgres
+> sem decisão separada e não tocar DocOps.

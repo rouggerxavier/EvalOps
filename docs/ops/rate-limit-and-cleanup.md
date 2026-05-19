@@ -12,6 +12,9 @@ This document explains how to operate:
 It does not add schema changes, migrations, frontend behavior, SDK behavior,
 or an in-app scheduler.
 
+Real Oracle VM rollout evidence is recorded in
+`docs/audits/evalops-oracle-vm-rollout-2026-05-19.md`.
+
 ---
 
 ## 1. Shipped behavior
@@ -188,6 +191,34 @@ docker compose -f docker-compose.prod.yml run --rm api \
 
 For a real deploy, prefer a dedicated scheduled job using the same image/env as
 the API rather than a long-running API background task.
+
+### Oracle VM rollout applied
+
+The 2026-05-19 Oracle VM rollout used the existing manual Docker deployment,
+not Docker Compose. The active EvalOps API container is `evalops-api`, based on
+`python:3.12-slim`, with `/home/ubuntu/EvalOps/apps/api` mounted at
+`/workspace` and host port `8001` mapped to container port `8000`.
+
+Redis runs as `evalops-redis` on Docker network `evalops-runtime` with image
+`redis:7-alpine`. It has no host port published; the API reaches it through
+`REDIS_URL=redis://evalops-redis:6379/0` and
+`EVALOPS_RATE_LIMIT_BACKEND=auto`.
+
+Cleanup runs through `/home/ubuntu/run-evalops-cleanup.sh`, which executes:
+
+```bash
+docker exec -w /workspace evalops-api python -m app.maintenance.cleanup --target all --limit 1000 --apply --json
+```
+
+The expected operational cron split after the rollout adjustment is:
+
+```cron
+0 3 * * *  # DocOps backup
+15 3 * * * # EvalOps cleanup
+```
+
+DocOps runs on the same VM and must not be touched by EvalOps maintenance. Keep
+the EvalOps cleanup at 03:15 unless the DocOps backup window changes.
 
 ---
 

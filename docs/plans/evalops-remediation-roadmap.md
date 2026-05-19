@@ -2,14 +2,16 @@
 
 Data: 2026-05-13
 Fonte: `docs/audits/evalops-important-rules-audit.md`
-Status: Fases 0–6 concluídas. Fase 7 foi majoritariamente integrada em `main`:
+Status: Fases 0–6 concluídas. Fase 7 está integrada em `main` com rollout
+operacional básico da 7F aplicado na Oracle VM:
 7A está concluída com Postgres smoke em DB descartável; 7B está parcial;
 7C está concluída em `9e9a517`; 7D está concluída após retry/drop e
 dead-letter/replay; 7E-backend está concluída pelo PR #6; 7E-frontend polling
 está concluída pelo PR #7; 7F-A está concluída pelo PR #8; 7F-B Redis backend
 está concluída pelo PR #9; 7F-C cleanup jobs está concluída pelo PR #10; 7F-D
-ops maintenance está concluída com CLI operacional e
-`docs/ops/rate-limit-and-cleanup.md`. Ver
+ops maintenance está concluída com CLI operacional,
+`docs/ops/rate-limit-and-cleanup.md`, e registro de rollout em
+`docs/audits/evalops-oracle-vm-rollout-2026-05-19.md`. Ver
 `docs/audits/evalops-phase7-status-after-7bc.md` e
 `docs/plans/evalops-phase7-next-steps.md`.
 Branch alvo: `main`.
@@ -34,7 +36,7 @@ Branch alvo: `main`.
 | 7F-A — Rate limiter abstraction | ✅ Concluída | PR #8 (`63da5af`) com `abb331b` adicionou `RateLimiterBackend`, `RateLimitResult`, `InMemoryRateLimiter`, preservou o facade público e o comportamento in-memory, e adicionou `test_phase7f_rate_limit_service.py`. |
 | 7F-B — Redis backend | ✅ Concluída | PR #9 (`ba0978e`) com `1af8017` adicionou `RedisRateLimiter`, config Redis, dependência `redis`, outage policy e testes sem Redis real. |
 | 7F-C — Cleanup jobs | ✅ Concluída | PR #10 (`61592ff`) com `b3a3242` adicionou cleanup core, dry-run por padrão, unlink seguro de exports e testes 7F-C. |
-| 7F-D — Ops maintenance | ✅ Concluída | `app.maintenance.cleanup` tem `--target`, `--limit`, `--json`, resumo estável, exit codes e testes CLI; `docs/ops/rate-limit-and-cleanup.md` documenta operação e scheduler externo. |
+| 7F-D — Ops maintenance | ✅ Concluída | `app.maintenance.cleanup` tem `--target`, `--limit`, `--json`, resumo estável, exit codes e testes CLI; Oracle VM validada com Redis real, cleanup cron externo e DocOps preservado. |
 
 ---
 
@@ -454,13 +456,13 @@ Regras obrigatórias para todas as fases de implementação:
 > `docs/audits/evalops-phase7-status-after-7bc.md`; a próxima ordem operacional
 > está em `docs/plans/evalops-phase7-next-steps.md`.
 >
-> Estado reconciliado em `main` (`63da5af`): 7A está concluída com Postgres
+> Estado reconciliado em `main` (`935c3dc`): 7A está concluída com Postgres
 > smoke em DB descartável; 7B está **parcial** com services e `ownership.py`
-> presentes, mas wrappers restantes; 7C está concluída em `9e9a517`; 7D está
-> concluída após retry/drop e dead-letter/replay; 7E-backend está concluída pelo
-> PR #6; 7E-frontend polling está concluída pelo PR #7; 7F-A está concluída
-> pelo PR #8; 7F-B Redis backend, 7F-C cleanup jobs e 7F-D docs/ops seguem
-> pendentes/follow-up.
+> presentes, mas aceito como follow-up oportunístico; 7C está concluída em
+> `9e9a517`; 7D está concluída após retry/drop e dead-letter/replay;
+> 7E-backend está concluída pelo PR #6; 7E-frontend polling está concluída pelo
+> PR #7; 7F-A, 7F-B, 7F-C e 7F-D estão concluídas, com rollout básico da 7F
+> aplicado na Oracle VM.
 
 - **Objetivo**: refatorar agora que regras estão corretas. Adicionar observabilidade e Alembic.
 - **Gaps cobertos**: G-19, G-22, G-26, G-27, G-29, G-30 + extração de services + dedup de `_project_or_404`.

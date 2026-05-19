@@ -13,6 +13,55 @@ do roadmap (`docs/plans/evalops-remediation-roadmap.md`).
 
 ---
 
+## Snapshot operacional pós-rollout Oracle VM 7F (2026-05-19)
+
+Esta rodada documentou o rollout operacional básico da Fase 7F na Oracle VM.
+Não houve mudança de código, backend, frontend, SDK, schema, migrations,
+lockfiles, Docker local ou arquivos da VM nesta documentação.
+
+Estado verificado:
+
+- Branch local: `main`.
+- HEAD local/origin: `935c3dc`.
+- Worktree inicial: limpa (`git status --short` sem saída).
+- Merge relevante: PR #11 em `935c3dc`, com commit
+  `2980396 feat(evalops): operationalize cleanup maintenance CLI`.
+
+Documentação atualizada:
+
+- `docs/audits/evalops-oracle-vm-rollout-2026-05-19.md` — registro do rollout
+  real na Oracle VM.
+- `docs/ops/rate-limit-and-cleanup.md` — seção curta do rollout real e link
+  para o audit doc.
+- `docs/plans/evalops-phase7-next-steps.md` — status passa de validação deploy
+  para monitoramento operacional.
+- `docs/audits/evalops-phase7-status-after-7bc.md` — nota curta pós-rollout.
+- `docs/plans/evalops-phase7f-redis-cleanup-spec.md` — spec histórica alinhada
+  ao rollout aplicado.
+- `docs/plans/evalops-remediation-roadmap.md` — resumo da Fase 7 alinhado.
+- `docs/plans/baseline.md` — este snapshot documental.
+
+Resumo de status documentado:
+
+| Item | Estado registrado |
+|---|---|
+| Redis real na Oracle VM | Ativo como `evalops-redis` na network `evalops-runtime`, sem porta host publicada. |
+| API rate limit | `evalops-api` reportou backend `RedisRateLimiter`. |
+| Cleanup CLI | Dry-run/apply retornaram `ok: true`; rollout observado tinha `scanned: 0`. |
+| Scheduler | Script `/home/ubuntu/run-evalops-cleanup.sh` e cron externo instalados; estado esperado 03:15. |
+| DocOps | Preservado; backup existente permanece em 03:00. |
+| Runtime VM | Manual Docker com SQLite; Docker Compose não foi usado. |
+| 7B | Parcial/follow-up oportunístico, aceito como não bloqueante para a 7F. |
+
+Riscos remanescentes:
+
+- Monitorar `/var/log/evalops-cleanup.log` após a primeira execução agendada.
+- Formalizar o deploy manual Docker somente se a operação exigir.
+- Planejar backups do SQLite antes de depender de dados reais no VM runtime.
+- Ubuntu 20.04 EOL/ESM é risco de infraestrutura, fora do escopo EvalOps.
+
+---
+
 ## Snapshot documental pós-7F-D (2026-05-19)
 
 Esta rodada reconciliou `main` após o merge do PR #10 e adicionou a

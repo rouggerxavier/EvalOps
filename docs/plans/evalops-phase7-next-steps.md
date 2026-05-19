@@ -2,14 +2,14 @@
 
 Date: 2026-05-19
 Base branch: `main`
-Base HEAD: `5e785f0`
+Base HEAD: `935c3dc`
 Original next-steps snapshot: `0ab562e`; previous documentation baseline: `b4ffed2`.
 Primary status source: `docs/audits/evalops-phase7-status-after-7bc.md`
 
-This roadmap reflects current `main` after PR #10 merged `7F-C` cleanup jobs,
-the 7F-D docs commit (`5e785f0`), and the follow-up 7F-D operationalization of
-the cleanup CLI contract. The old prompts for frontend polling, 7F-A, 7F-B,
-7F-C, and docs-only 7F-D are historical.
+This roadmap reflects current `main` after PR #11 merged the 7F-D cleanup CLI
+operationalization and after the basic Oracle VM rollout was applied on
+2026-05-19. The old prompts for frontend polling, 7F-A, 7F-B, 7F-C,
+docs-only 7F-D, and initial deploy validation are historical.
 
 ## Current Status Summary
 
@@ -24,7 +24,7 @@ the cleanup CLI contract. The old prompts for frontend polling, 7F-A, 7F-B,
 | 7F-A rate limiter abstraction | done | Keep as shipped in PR #8 (`63da5af`); do not redo the abstraction. |
 | 7F-B Redis backend | done | Keep optional Redis behavior from PR #9 (`ba0978e`); enable in deploy only where shared buckets are needed. |
 | 7F-C cleanup jobs | done | Keep dry-run-default cleanup service from PR #10 (`61592ff`); schedule externally, not in app lifespan. |
-| 7F-D ops maintenance | implemented | Use the stable `python -m app.maintenance.cleanup` CLI contract for targets, limits, JSON output, exit codes, validation and external scheduler integration. |
+| 7F-D ops maintenance / Oracle VM rollout | done | Monitor the installed cleanup cron/log and Redis-backed API runtime; formalize deploy only if needed. |
 
 ## Evidence For 7E And 7F Completion
 
@@ -102,6 +102,8 @@ Frontend split (now done):
 
 7F-D cleanup CLI operationalization (implemented):
 
+- PR #11 merge: `935c3dc Merge pull request #11 from rouggerxavier/phase-7f-d-ops-maintenance`.
+- Commit: `2980396 feat(evalops): operationalize cleanup maintenance CLI`.
 - Files touched by implementation:
   - `apps/api/app/maintenance/cleanup.py`
   - `apps/api/tests/test_phase7f_cleanup_cli.py`
@@ -114,6 +116,20 @@ Frontend split (now done):
   - human output is a stable count summary;
   - exit code `0` means success with no cleanup errors, non-zero means invalid
     invocation or real cleanup failure.
+
+Oracle VM basic rollout (applied):
+
+- Rollout record: `docs/audits/evalops-oracle-vm-rollout-2026-05-19.md`.
+- VM repo reached clean `main...origin/main` at `935c3dc`.
+- EvalOps remains a manual Docker deployment using SQLite on the VM.
+- Redis runs as `evalops-redis` on Docker network `evalops-runtime`, with no
+  host port published.
+- `evalops-api` reported `RedisRateLimiter`.
+- Cleanup dry-run/apply returned `ok: true` with zero scanned rows in the
+  observed rollout.
+- Cleanup script and cron were installed; expected cron is 03:15 to avoid the
+  existing DocOps backup at 03:00.
+- DocOps was observed on the same VM and was not changed.
 
 ## UX/Polling Review (UI UX Pro Max)
 
@@ -133,19 +149,17 @@ Findings:
 
 ## Recommended Order
 
-### 1. Deploy/operator validation for 7F
+### 1. Operational monitoring after Oracle VM rollout
 
-Objective: make the shipped 7F behavior real in the target environment without
-changing product code.
+Objective: confirm the applied VM rollout remains healthy without changing
+product code.
 
-- Configure `REDIS_URL` and `EVALOPS_RATE_LIMIT_BACKEND=redis` only where
-  multi-worker/shared rate-limit buckets are needed.
-- Keep `EVALOPS_RATE_LIMIT_BACKEND=memory` or unset Redis for local/single-worker
-  environments where the current fallback is acceptable.
-- Run cleanup dry-run first: `python -m app.maintenance.cleanup --json`.
-- Schedule real cleanup externally:
-  `python -m app.maintenance.cleanup --apply --json`.
-- Do not add an in-app infinite scheduler.
+- Check `/var/log/evalops-cleanup.log` after the first 03:15 scheduled run.
+- Confirm `evalops-api` and `evalops-redis` remain `Up`.
+- Confirm the active rate-limit backend still reports `RedisRateLimiter`.
+- Confirm `/docs` still returns `HTTP 200 OK` through the VM port mapping.
+- Optionally remove the old `evalops-api-prev-*` rollback container after a
+  stable observation period, if it still exists.
 
 ### 2. 7B follow-up only when opportunistic
 
@@ -154,17 +168,18 @@ when touching related code for real changes.
 
 ### 3. Explicitly deferred follow-ups
 
-- Real production Redis provisioning is not done by this docs pass.
-- Real cron/platform scheduler installation is not done by this docs pass.
-- Production cleanup with `--apply` must be preceded by dry-run review in the
-  target environment.
+- Formalize the current manual Docker VM deployment in a production deploy
+  definition only if operations need it.
+- Add EvalOps SQLite backups before relying on the VM for real persisted data.
+- Keep Docker Compose out of the VM runtime unless a separate deploy change
+  intentionally moves the service away from the current manual container model.
 
 ## Global Phase 7 Close Checklist
 
 Blocking for full Phase 7 close:
 
 - [x] 7A: Alembic path validated with disposable Postgres smoke.
-- [ ] 7B: ownership/service follow-up resolved or explicitly accepted as debt.
+- [x] 7B: ownership/service follow-up remains partial and is explicitly accepted as opportunistic debt.
 - [x] 7C: structured request logging/request ID implemented.
 - [x] 7D: SDK retry/dead-letter/replay implemented.
 - [x] 7E-backend: `ApiKey.expires_at` merged (PR #6).
@@ -172,7 +187,7 @@ Blocking for full Phase 7 close:
 - [x] 7F-A: rate limiter abstraction merged (PR #8).
 - [x] 7F-B: Redis/distributed backend implemented (PR #9).
 - [x] 7F-C: cleanup jobs implemented (PR #10).
-- [x] 7F-D: cleanup CLI operationalization implemented and docs updated.
+- [x] 7F-D: cleanup CLI operationalization implemented, docs updated, and basic Oracle VM rollout applied.
 
 Verification commands/checks:
 
@@ -186,18 +201,19 @@ Verification commands/checks:
 ## Next Prompt
 
 ```text
-Você está no EvalOps em main após 7F-A/7F-B/7F-C/7F-D. Próximo passo padrão:
-validar operação/deploy sem mudar produto.
+Você está no EvalOps em main após o rollout básico da Fase 7F na Oracle VM.
+Próximo passo padrão: monitorar operação sem mudar produto.
 
 Objetivo:
-- configurar Redis no ambiente alvo somente se multi-worker exigir buckets
-  compartilhados;
-- rodar `python -m app.maintenance.cleanup --json` em dry-run;
-- instalar scheduler externo para `python -m app.maintenance.cleanup --apply --json`;
-- registrar logs/resultados da primeira execução.
+- checar `/var/log/evalops-cleanup.log` depois da primeira execução agendada;
+- confirmar `evalops-api` e `evalops-redis` Up;
+- confirmar backend `RedisRateLimiter`;
+- avaliar remoção do container antigo de rollback após estabilidade;
+- planejar backup do SQLite se houver dados reais.
 
 Restrições:
 - não adicionar scheduler dentro da API;
 - não alterar schema/migrations;
-- não rodar cleanup `--apply` antes de revisar dry-run.
+- não migrar a VM para Docker Compose/Postgres sem decisão separada;
+- não tocar DocOps.
 ```

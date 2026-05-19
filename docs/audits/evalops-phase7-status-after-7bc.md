@@ -3,6 +3,9 @@
 Date: 2026-05-19
 Branch inspected: `phase-7f-d-ops-maintenance`
 Base HEAD inspected: `5e785f0`
+Post-rollout update: `main` / `origin/main` reached `935c3dc` after PR #11 and
+the basic Oracle VM rollout. See
+`docs/audits/evalops-oracle-vm-rollout-2026-05-19.md`.
 Original status-pass snapshot: `f13f24c`; previous documentation baseline:
 `b4ffed2`.
 Scope: status reconciliation after PR #9, PR #10, 7F-D ops docs, and 7F-D
@@ -48,6 +51,23 @@ checkout.
 | 7F-B Redis backend | done | PR #9 (`ba0978e`) with `1af8017`; optional `RedisRateLimiter`, `redis_url()`, `rate_limit_backend()`, `redis_timeout_ms()`, `redis>=5,<6`, and `apps/api/tests/test_phase7f_redis_rate_limit.py`. | Production Redis provisioning is an operator/deploy step; code defaults to memory when Redis is absent. | Configure Redis only for environments that need multi-worker shared buckets. |
 | 7F-C cleanup jobs | done | PR #10 (`61592ff`) with `b3a3242`; cleanup services, dry-run default, safe export-file unlink, and `apps/api/tests/test_phase7f_cleanup_jobs.py`. | Actual cleanup execution is manual or external scheduler; no in-app scheduler was added. | Keep core cleanup behavior; do not add an in-app scheduler. |
 | 7F-D ops maintenance | implemented | `app.maintenance.cleanup` now has stable target selection, limit, JSON output, human summary, exit codes, and `apps/api/tests/test_phase7f_cleanup_cli.py`. | Docs still do not provision Redis, deploy cron, or run production cleanup. | Use during operator/deploy rollout. |
+
+Post-rollout status on 2026-05-19:
+
+- 7F-B, 7F-C, and 7F-D are complete in code/docs scope.
+- Oracle VM was validated on `main` / `origin/main` at `935c3dc`.
+- Real Redis is active as `evalops-redis` on the EvalOps Docker network with no
+  host port published.
+- `evalops-api` reported `RedisRateLimiter`.
+- Cleanup dry-run/apply returned `ok: true` with zero scanned rows in the
+  observed rollout.
+- Cleanup script and external cron are installed; expected EvalOps schedule is
+  03:15 to avoid the existing DocOps backup at 03:00.
+- DocOps was preserved and not modified.
+- EvalOps VM runtime remains manual Docker with SQLite, not Docker Compose and
+  not Postgres.
+- 7B remains partial/opportunistic follow-up debt, accepted as non-blocking for
+  Phase 7F rollout.
 
 ---
 
@@ -98,18 +118,18 @@ Recommended follow-up (optional, non-blocking):
 
 ## 4. Updated Next Order
 
-1. Production/operator rollout after 7F-D: configure Redis only where shared
-   buckets are needed and install an external cleanup scheduler.
-2. Runtime validation in the target deploy: Redis connectivity, cleanup dry-run,
-   scheduler logs and first apply output.
+1. Operational monitoring after the Oracle VM rollout: cleanup log, container
+   health, and active `RedisRateLimiter` backend.
+2. Optional deploy formalization only if operations need to move away from the
+   current manual Docker VM runtime.
 3. 7B opportunistic cleanup when phase 5 routers are touched for real work.
 
 Rationale:
 
 - 7E functional split is complete.
 - 7F-A, 7F-B, and 7F-C are complete in code scope.
-- 7F-D is implemented as an operational CLI contract; production rollout
-  remains an operator task.
+- 7F-D is implemented as an operational CLI contract, and the basic Oracle VM
+  rollout is applied and validated.
 - 7B remains technical debt, but it is separate from the 7F operational tail.
 
 ---
@@ -119,7 +139,7 @@ Rationale:
 Blocking for full Phase 7 close:
 
 - [x] 7A migration path validated (including disposable Postgres smoke).
-- [ ] 7B follow-up completed or explicitly accepted as debt.
+- [x] 7B follow-up remains partial and is explicitly accepted as opportunistic debt.
 - [x] 7C structured logging/request_id implemented.
 - [x] 7D SDK retry/dead-letter/replay implemented.
 - [x] 7E-backend `ApiKey.expires_at` implemented.
@@ -127,7 +147,7 @@ Blocking for full Phase 7 close:
 - [x] 7F-A rate limiter abstraction implemented.
 - [x] 7F-B Redis backend implemented.
 - [x] 7F-C cleanup jobs implemented.
-- [x] 7F-D cleanup CLI operationalization implemented and documented.
+- [x] 7F-D cleanup CLI operationalization implemented, documented, and basically rolled out on the Oracle VM.
 
 Verification commands/checks for future implementation PRs:
 
