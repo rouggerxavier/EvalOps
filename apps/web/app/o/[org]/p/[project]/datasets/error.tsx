@@ -14,6 +14,7 @@ export default function Error({ error, reset }: Props) {
     <div className="evo-page">
       <div className="evo-page-header">
         <div>
+          <p className="evo-page-header__eyebrow">Dados · Datasets</p>
           <h1 className="evo-page-header__title">Datasets</h1>
           <p className="evo-page-header__subtitle">Nao foi possivel carregar esta tela.</p>
         </div>

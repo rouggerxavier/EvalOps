@@ -21,6 +21,7 @@ export default function Loading() {
     <div className="evo-page">
       <div className="evo-page-header">
         <div>
+          <p className="evo-page-header__eyebrow">Acesso · Chaves API</p>
           <h1 className="evo-page-header__title">Chaves API</h1>
           <p className="evo-page-header__subtitle">Carregando credenciais...</p>
         </div>

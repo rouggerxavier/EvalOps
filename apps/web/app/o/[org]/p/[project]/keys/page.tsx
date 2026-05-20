@@ -127,6 +127,7 @@ export default async function KeysPage({ params, searchParams }: Props) {
       <div className="evo-page">
         <div className="evo-page-header">
           <div>
+            <p className="evo-page-header__eyebrow">Acesso · Chaves API</p>
             <h1 className="evo-page-header__title">Chaves API</h1>
             <p className="evo-page-header__subtitle">Gerencie credenciais para SDKs e integracoes.</p>
           </div>
@@ -157,6 +158,7 @@ export default async function KeysPage({ params, searchParams }: Props) {
     <div className="evo-page">
       <div className="evo-page-header">
         <div>
+          <p className="evo-page-header__eyebrow">Acesso · Chaves API</p>
           <h1 className="evo-page-header__title">Chaves API</h1>
           <p className="evo-page-header__subtitle">
             Credenciais para conectar SDKs e integracoes com seguranca.
@@ -172,6 +174,31 @@ export default async function KeysPage({ params, searchParams }: Props) {
             Nova key
           </Link>
         </div>
+      </div>
+
+      <div
+        role="note"
+        style={{
+          display: "flex",
+          gap: 10,
+          alignItems: "flex-start",
+          padding: "10px 14px",
+          marginBottom: 12,
+          background: "var(--bg-2)",
+          border: "1px solid var(--border-subtle)",
+          borderRadius: 8,
+          fontSize: 12,
+          color: "var(--text-muted)",
+          lineHeight: 1.5,
+        }}
+      >
+        <ShieldCheck size={14} style={{ color: "var(--accent)", flexShrink: 0, marginTop: 1 }} />
+        <span>
+          <strong style={{ color: "var(--text)" }}>Política de chaves:</strong>{" "}
+          rotacione a cada 90 dias, use o escopo mínimo necessário e revogue
+          imediatamente em caso de vazamento. Nunca comite segredos em
+          repositórios, logs ou tickets.
+        </span>
       </div>
 
       {qp.error && <div style={alertStyle("err")}>{qp.error}</div>}

@@ -162,6 +162,7 @@ export default async function PromptsPage({ params, searchParams }: Props) {
       {/* Header */}
       <div className="evo-page-header">
         <div>
+          <p className="evo-page-header__eyebrow">Operação · Prompts</p>
           <h1 className="evo-page-header__title">Prompts</h1>
           <p className="evo-page-header__subtitle">
             Templates versionados. Cada versão é referenciada por traces e experimentos.

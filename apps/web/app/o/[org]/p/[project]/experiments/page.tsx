@@ -211,6 +211,7 @@ export default async function ExperimentosPage({ params, searchParams }: Props) 
       {/* Header */}
       <div className="evo-page-header">
         <div>
+          <p className="evo-page-header__eyebrow">Operação · Experimentos</p>
           <h1 className="evo-page-header__title">Experimentos</h1>
           <p className="evo-page-header__subtitle">
             Comparações controladas de modelos, prompts e parâmetros sobre datasets com critérios de aprovação por rubrica.
