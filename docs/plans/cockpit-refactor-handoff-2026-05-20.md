@@ -112,6 +112,33 @@ não comitar segredos. ShieldCheck cobalto, fundo `--bg-2`, sem alarm.
 
 ---
 
+## P7.1 — Files Changed (commit `998ea37`)
+
+P7.1 — `998ea37` feat(web): P7.1 prompts module parity with ZIP design
+- `apps/web/app/o/[org]/p/[project]/prompts/page.tsx` — Summary row
+  (3 cards: total prompts, total versões, última atividade — apenas
+  dados do payload) + card "Endpoints ativos" read-only listando
+  rotas reais (GET/POST `/projects/{id}/prompts`, GET/POST
+  `/prompts/{id}/versions`). Sem placeholder banner do ZIP, sem
+  PreviewActionModal, sem dado inventado.
+- `apps/web/app/globals.css` — Primitivas P7 escopadas em `.evo-shell`:
+  `.evo-summary-row`, `.evo-summary-card`, `.evo-summary-card__label`,
+  `.evo-summary-card__value`, `.evo-summary-card__hint`,
+  `.evo-endpoint-list`, `.evo-endpoint-row`, `.evo-endpoint-row__method`
+  (variantes get/post/patch/delete por cor), `.evo-endpoint-row__path`,
+  `.evo-endpoint-row__note`. Reutilizáveis pelos demais 8 módulos.
+- `apps/web/tests/prompts-p7.test.mjs` (novo) — 9 testes.
+
+Validation:
+- `npm test`: 111/111 pass (102 anteriores + 9 P7.1).
+- `tsc --noEmit`: limpo.
+- Curl `/prompts`: 307 redirect (auth), HMR sem erros novos.
+
+Preservado deliberadamente: server contract, formulários, DiffView,
+versions list, eyebrow P5, flash inline.
+
+---
+
 ## P6 — Files Changed (commit `d602230`)
 
 P6 — `d602230` feat(web): wire P6 cockpit shortcuts and event-driven toasts

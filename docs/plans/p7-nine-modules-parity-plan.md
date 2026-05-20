@@ -51,10 +51,23 @@ do commit e seção "P7.x — Files Changed".
 
 Status legend: ⬜ pendente · 🟨 em andamento · ✅ landed
 
-### P7.1 — Prompts ⬜
+### P7.1 — Prompts ✅ `998ea37`
 
-- Arquivos: `apps/web/app/o/[org]/p/[project]/prompts/page.tsx`,
-  possíveis splits em `apps/web/components/`.
+- Arquivos alterados:
+  - `apps/web/app/o/[org]/p/[project]/prompts/page.tsx` — summary
+    row real (totalPrompts, totalVersions, latestActivity) + card
+    "Endpoints ativos" read-only.
+  - `apps/web/app/globals.css` — primitivas P7 (`.evo-summary-row`,
+    `.evo-summary-card*`, `.evo-endpoint-list`, `.evo-endpoint-row*`)
+    escopadas em `.evo-shell`, reutilizáveis pelos demais módulos.
+  - `apps/web/tests/prompts-p7.test.mjs` (novo) — 9 testes.
+- Validation: `npm test` 111/111 pass · `tsc --noEmit` limpo · HMR
+  sem erros novos (warning autoprefixer pré-existente).
+- Conteúdo preservado: AuthRequiredPanel, getPrompts +
+  getPromptVersions, createPrompt(+Version)Action, DiffView (ambos
+  branches), versions history, flash, eyebrow + subtitle P5.
+
+- Arquivos originais (referência):
 - Referência: `evalops-preview/preview/screens/modules.jsx` (caso
   `moduleId === "prompts"`) + tabela `.t` + `endpoint-list` +
   `summary-card`.
