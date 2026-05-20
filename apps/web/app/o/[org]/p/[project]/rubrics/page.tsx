@@ -178,6 +178,7 @@ export default async function RubricsPage({ params, searchParams }: Props) {
       {/* Page Header */}
       <div className="evo-page-header">
         <div style={{ flex: 1, minWidth: 0 }}>
+          <p className="evo-page-header__eyebrow">Recursos · Rubricas</p>
           <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>
             {selected && (
               <Link

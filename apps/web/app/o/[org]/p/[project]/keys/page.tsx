@@ -127,6 +127,7 @@ export default async function KeysPage({ params, searchParams }: Props) {
       <div className="evo-page">
         <div className="evo-page-header">
           <div>
+            <p className="evo-page-header__eyebrow">Operação · Chaves API</p>
             <h1 className="evo-page-header__title">Chaves API</h1>
             <p className="evo-page-header__subtitle">Gerencie credenciais para SDKs e integracoes.</p>
           </div>
@@ -157,6 +158,7 @@ export default async function KeysPage({ params, searchParams }: Props) {
     <div className="evo-page">
       <div className="evo-page-header">
         <div>
+          <p className="evo-page-header__eyebrow">Operação · Chaves API</p>
           <h1 className="evo-page-header__title">Chaves API</h1>
           <p className="evo-page-header__subtitle">
             Credenciais para conectar SDKs e integracoes com seguranca.
@@ -423,5 +425,4 @@ export default async function KeysPage({ params, searchParams }: Props) {
     </div>
   );
 }
-
 

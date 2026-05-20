@@ -130,6 +130,7 @@ export default async function DatasetsPage({ params, searchParams }: Props) {
       <div className="evo-page">
         <div className="evo-page-header">
           <div>
+            <p className="evo-page-header__eyebrow">Recursos · Datasets</p>
             <h1 className="evo-page-header__title">Datasets</h1>
             <p className="evo-page-header__subtitle">
               Conjuntos para avaliacoes, regressao e fine-tuning.
@@ -175,6 +176,7 @@ export default async function DatasetsPage({ params, searchParams }: Props) {
     <div className="evo-page">
       <div className="evo-page-header">
         <div>
+          <p className="evo-page-header__eyebrow">Recursos · Datasets</p>
           <h1 className="evo-page-header__title">Datasets</h1>
           <p className="evo-page-header__subtitle">
             Curadoria de conjuntos para avaliacoes, regressoes e fine-tuning.
@@ -533,4 +535,3 @@ export default async function DatasetsPage({ params, searchParams }: Props) {
     </div>
   );
 }
-

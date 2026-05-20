@@ -161,6 +161,7 @@ export default async function ExportsPage({ params, searchParams }: Props) {
       <div className="evo-page">
         <div className="evo-page-header">
           <div>
+            <p className="evo-page-header__eyebrow">Operação · Exports</p>
             <h1 className="evo-page-header__title">Exports</h1>
             <p className="evo-page-header__subtitle">Jobs de exportacao para JSONL e auditoria.</p>
           </div>
@@ -223,6 +224,7 @@ export default async function ExportsPage({ params, searchParams }: Props) {
     <div className="evo-page">
       <div className="evo-page-header">
         <div>
+          <p className="evo-page-header__eyebrow">Operação · Exports</p>
           <h1 className="evo-page-header__title">Exports</h1>
           <p className="evo-page-header__subtitle">
             Exports para JSONL, auditoria e analise offline com dados reais de traces.
