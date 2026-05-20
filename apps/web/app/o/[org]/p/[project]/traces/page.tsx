@@ -5,6 +5,14 @@ import { AuthRequiredPanel } from "@/components/AuthRequiredPanel";
 import { TracesFilterBar } from "@/components/TracesFilterBar";
 import { getTraces, hasAuthToken, resolveProject } from "@/lib/api";
 import { formatCost, formatDateTime, formatLatency } from "@/lib/format";
+import {
+  formatTraceScore,
+  getTraceCauseLabel,
+  getTraceModelLabel,
+  getTraceQualityScore,
+  isTraceRagCandidate,
+  percentile,
+} from "@/lib/trace-display";
 import { TracesAutoRefresh } from "./traces-auto-refresh";
 
 type Props = {
@@ -21,6 +29,16 @@ function StatusBadge({ status }: { status: string }) {
       <span className="evo-badge__dot" />
       {label}
     </span>
+  );
+}
+
+function TraceMetricCard({ label, value, hint }: { label: string; value: string; hint: string }) {
+  return (
+    <div className="evo-trace-kpi">
+      <span className="evo-trace-kpi__label">{label}</span>
+      <strong className="evo-trace-kpi__value">{value}</strong>
+      <span className="evo-trace-kpi__hint">{hint}</span>
+    </div>
   );
 }
 
@@ -47,10 +65,17 @@ export default async function TracesListPage({ params, searchParams }: Props) {
   const slowRows = rows.filter((t) => t.duration_ms > 2000);
   const errorRows = rows.filter((t) => t.status === "error");
   const flaggedRows = rows.filter((t) => t.status === "partial");
+  const ragRows = rows.filter(isTraceRagCandidate);
+  const totalCost = rows.reduce((sum, t) => sum + t.total_cost_usd, 0);
+  const p95DurationMs = percentile(rows.map((t) => t.duration_ms), 95);
+  const latestTrace = rows
+    .map((t) => t.created_at)
+    .sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0];
 
   const displayRows =
     tab === "slow" ? slowRows :
     tab === "flagged" ? flaggedRows :
+    tab === "rag" ? ragRows :
     rows;
 
   const tabBase = `/o/${org}/p/${project}/traces`;
@@ -81,15 +106,16 @@ export default async function TracesListPage({ params, searchParams }: Props) {
   const autoRefreshEnabled = !hasCursor && rows.length > 0;
 
   return (
-    <div className="evo-page">
+    <div className="evo-page evo-traces-page">
       <div className="evo-page-header">
         <div>
+          <p className="evo-page-header__eyebrow">Observabilidade · Traces</p>
           <h1 className="evo-page-header__title">Traces</h1>
           <p className="evo-page-header__subtitle">
-            {rows.length.toLocaleString("pt-BR")} no intervalo selecionado
+            Sinal operacional por execução, erro, custo e contexto RAG detectável na página atual.
           </p>
         </div>
-        <div className="evo-row" style={{ flexWrap: "wrap", justifyContent: "flex-end" }}>
+        <div className="evo-page-header__actions">
           <Link href={exportsHref} className="evo-btn evo-btn--sm">
             <Download size={13} /> Exportar JSONL
           </Link>
@@ -101,8 +127,35 @@ export default async function TracesListPage({ params, searchParams }: Props) {
         </div>
       </div>
 
-      {/* Tabs */}
-      <nav className="evo-tabs">
+      <div className="evo-trace-summary" aria-label="Resumo da lista de traces">
+        <TraceMetricCard
+          label="Traces carregados"
+          value={rows.length.toLocaleString("pt-BR")}
+          hint={traces.next_cursor ? "há próxima página" : "página atual"}
+        />
+        <TraceMetricCard
+          label="Erros"
+          value={errorRows.length.toLocaleString("pt-BR")}
+          hint={errorRows.length > 0 ? "requer atenção" : "sem erros carregados"}
+        />
+        <TraceMetricCard
+          label="Lentos"
+          value={slowRows.length.toLocaleString("pt-BR")}
+          hint={p95DurationMs === null ? "sem duração" : `p95 ${formatLatency(p95DurationMs)}`}
+        />
+        <TraceMetricCard
+          label="RAG detectável"
+          value={ragRows.length.toLocaleString("pt-BR")}
+          hint="via tags/metadata"
+        />
+        <TraceMetricCard
+          label="Custo"
+          value={formatCost(totalCost)}
+          hint={latestTrace ? `último ${formatDateTime(latestTrace)}` : "sem traces"}
+        />
+      </div>
+
+      <nav className="evo-tabs evo-traces-tabs" aria-label="Segmentos de traces">
         <Link href={tabHref("all")} className={`evo-tab${tab === "all" ? " is-active" : ""}`}>
           Todos
           <span className="evo-tab__count">{rows.length.toLocaleString("pt-BR")}</span>
@@ -119,6 +172,14 @@ export default async function TracesListPage({ params, searchParams }: Props) {
           <Clock size={12} /> Lentos
           <span className="evo-tab__count">{slowRows.length}</span>
         </Link>
+        <Link
+          href={tabHref("rag")}
+          className={`evo-tab${tab === "rag" ? " is-active" : ""}`}
+          data-testid="trace-list-rag-tab"
+        >
+          RAG
+          <span className="evo-tab__count">{ragRows.length}</span>
+        </Link>
       </nav>
 
       <TracesFilterBar
@@ -130,33 +191,20 @@ export default async function TracesListPage({ params, searchParams }: Props) {
       />
 
       {displayRows.length === 0 ? (
-        <div className="evo-card" style={{ padding: "48px 24px", textAlign: "center" }}>
-          <p style={{ color: "var(--text-muted)", marginBottom: 8, fontWeight: 600 }}>
+        <div className="evo-card evo-traces-empty">
+          <p>
             Nenhum trace encontrado
           </p>
-          <p style={{ color: "var(--text-faint)", fontSize: 13 }}>
+          <p>
             Conecte o SDK Python ou ajuste os filtros para ver traces neste projeto.
           </p>
-          <pre
-            style={{
-              marginTop: 24,
-              background: "var(--bg-2)",
-              border: "1px solid var(--border-subtle)",
-              borderRadius: 8,
-              padding: "12px 16px",
-              fontSize: 12,
-              textAlign: "left",
-              display: "inline-block",
-              color: "var(--text-dim)",
-              fontFamily: "var(--font-mono)",
-            }}
-          >
+          <pre>
             {`import evalops\nevalops.init(api_key="evk_prod_...", project="${project}", environment="prod")\n\n@evalops.trace("chat.answer")\ndef answer(msg: str): ...`}
           </pre>
         </div>
       ) : (
         <>
-          <div className="evo-table-wrap">
+          <div className="evo-card evo-traces-table-card">
             <table className="evo-table">
               <thead>
                 <tr>
@@ -174,6 +222,7 @@ export default async function TracesListPage({ params, searchParams }: Props) {
                   <th>Status</th>
                   <th>Env</th>
                   <th>Modelo</th>
+                  <th>Causa</th>
                   <th>Duração</th>
                   <th>Tokens</th>
                   <th>Custo</th>
@@ -183,9 +232,15 @@ export default async function TracesListPage({ params, searchParams }: Props) {
                 </tr>
               </thead>
               <tbody>
-                {displayRows.map((trace) => (
-                  <tr key={trace.id} style={{ cursor: "pointer" }}>
-                    <td>
+                {displayRows.map((trace) => {
+                  const model = getTraceModelLabel(trace);
+                  const cause = getTraceCauseLabel(trace);
+                  const qualityScore = getTraceQualityScore(trace);
+                  const isRag = isTraceRagCandidate(trace);
+
+                  return (
+                  <tr key={trace.id} className={`evo-trace-row${trace.status !== "ok" ? " evo-trace-row--attention" : ""}`}>
+                    <td className="evo-trace-row__select">
                       <input
                         type="checkbox"
                         disabled
@@ -197,14 +252,12 @@ export default async function TracesListPage({ params, searchParams }: Props) {
                     <td>
                       <Link
                         href={`/o/${org}/p/${project}/traces/${trace.id}`}
-                        style={{ textDecoration: "none", display: "flex", flexDirection: "column", gap: 2 }}
+                        className="evo-trace-row__link"
                       >
                         <span className="evo-table__name">{trace.name}</span>
-                        {trace.service && (
-                          <span style={{ fontSize: 11, color: "var(--text-faint)", fontFamily: "var(--font-mono)" }}>
-                            {trace.service}
-                          </span>
-                        )}
+                        <span className="evo-trace-row__meta">
+                          {trace.service ?? "serviço não informado"}
+                        </span>
                       </Link>
                     </td>
                     <td>
@@ -216,12 +269,16 @@ export default async function TracesListPage({ params, searchParams }: Props) {
                       <div className="evo-row" style={{ gap: 6 }}>
                         <StatusBadge status={trace.status} />
                         {trace.redacted ? <span className="evo-tag">redigido</span> : null}
+                        {isRag ? <span className="evo-badge evo-badge--eval">RAG</span> : null}
                       </div>
                     </td>
                     <td>
                       <span className="evo-tag">{trace.environment}</span>
                     </td>
-                    <td className="evo-mono evo-muted" style={{ fontSize: 12 }}>—</td>
+                    <td className="evo-mono evo-muted" style={{ fontSize: 12 }}>{model ?? "—"}</td>
+                    <td>
+                      {cause ? <span className="evo-tag">{cause}</span> : <span className="evo-faint">—</span>}
+                    </td>
                     <td className="evo-table__num">
                       <span
                         style={{
@@ -242,7 +299,11 @@ export default async function TracesListPage({ params, searchParams }: Props) {
                     </td>
                     <td className="evo-table__num">{formatCost(trace.total_cost_usd)}</td>
                     <td>
-                      <span className="evo-faint">—</span>
+                      {qualityScore === null ? (
+                        <span className="evo-faint">—</span>
+                      ) : (
+                        <span className="evo-trace-score">{formatTraceScore(qualityScore)}</span>
+                      )}
                     </td>
                     <td className="evo-muted" style={{ fontSize: 12 }}>
                       {formatDateTime(trace.created_at)}
@@ -253,21 +314,13 @@ export default async function TracesListPage({ params, searchParams }: Props) {
                       </Link>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
 
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              marginTop: 16,
-              fontSize: 12,
-              color: "var(--text-muted)",
-            }}
-          >
+          <div className="evo-pagination">
             <span>
               Mostrando {displayRows.length.toLocaleString("pt-BR")} trace
               {displayRows.length !== 1 ? "s" : ""}
