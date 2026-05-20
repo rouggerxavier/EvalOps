@@ -156,19 +156,29 @@ Status legend: ⬜ pendente · 🟨 em andamento · ✅ landed
 - Primitivas CSS (`.evo-summary-row`, `.evo-endpoint-list`) reusadas
   do P7.1 — sem alteração em `globals.css`.
 
-### P7.5 — Chaves API ⬜
+### P7.5 — Chaves API ✅ `8b3743d`
 
-- Arquivos: `apps/web/app/o/[org]/p/[project]/keys/page.tsx`,
-  `keys/loading.tsx`, `keys/error.tsx`.
-- Referência: ZIP `modules.jsx` (`moduleId === "keys"`) + banner
-  segurança já presente do P5.
-- Preservar: `createApiKeyAction`, `revokeApiKeyAction`, máscara
-  de prefix, flash do segredo cru via `consumeApiKeyFlash`, banner
-  de política.
-- Cockpit: summary (ativas, revogadas), tabela com badge
-  `ativa`/`revogada`, ação revogar inline (form com confirm),
-  endpoints reais. **NÃO** adicionar dot de atenção sem
-  `expires_at` no tipo `ApiKey` (gap registrado no handoff-pai).
+- Arquivos alterados:
+  - `apps/web/app/o/[org]/p/[project]/keys/page.tsx` — substitui
+    `.evo-kpi-grid` (4 metric cards) por `.evo-summary-row` (4
+    cards: Chaves, Ativas, Revogadas, Última atividade via
+    `relTime` de `key.created_at` e `key.revoked_at`) + card
+    "Endpoints ativos" read-only (3 rotas reais: list/create
+    api-keys, revoke).
+  - `apps/web/tests/keys-p7.test.mjs` (novo) — 9 testes.
+- Validation: `npm test` 147/147 pass · `tsc --noEmit` limpo.
+- Conteúdo preservado: AuthRequiredPanel, getApiKeys,
+  createApiKeyAction + revokeApiKeyAction, máscara de prefix
+  (`maskPrefix`), flash do segredo cru via `consumeApiKeyFlash`,
+  banner de política (rotação 90 dias / escopo mínimo / revogação),
+  tabela com badge `ativa`/`revogada` + ação Revogar inline, tabs
+  all/active/revoked, formulário de criação (name/environment/
+  scopes), eyebrow + subtitle P5.
+- Premissa (sem dado inventado): NÃO renderiza dot de atenção
+  baseado em `expires_at` — campo ausente no tipo `ApiKey`
+  (gap rastreado no handoff-pai §Pending Work · Gaps condicionais).
+- Primitivas CSS (`.evo-summary-row`, `.evo-endpoint-list`) reusadas
+  do P7.1 — sem alteração em `globals.css`.
 
 ### P7.6 — Exports ⬜
 

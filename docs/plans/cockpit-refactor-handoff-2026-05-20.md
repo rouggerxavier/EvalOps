@@ -139,6 +139,40 @@ versions list, eyebrow P5, flash inline.
 
 ---
 
+## P7.5 — Files Changed (commit `8b3743d`)
+
+P7.5 — `8b3743d` feat(web): P7.5 keys module parity with ZIP design
+- `apps/web/app/o/[org]/p/[project]/keys/page.tsx` — Substitui
+  `.evo-kpi-grid` (4 metric cards: Chaves/Ativas/Revogadas/Scopes)
+  por Summary row (4 cards: Chaves, Ativas, Revogadas, Última
+  atividade via `relTime` calculada de `key.created_at` e
+  `key.revoked_at` — apenas dados do payload) + card "Endpoints
+  ativos" read-only listando rotas reais (GET/POST
+  `/projects/{id}/api-keys`, POST `/api-keys/{id}/revoke`). Sem
+  placeholder banner do ZIP, sem PreviewActionModal, sem dado
+  inventado. Premissa do plano: NÃO renderizar dot de atenção
+  baseado em `expires_at` (campo ausente no tipo `ApiKey` —
+  gap rastreado em §Pending Work · Gaps condicionais).
+- `apps/web/tests/keys-p7.test.mjs` (novo) — 9 testes.
+
+Primitivas CSS reusadas do P7.1 — sem alteração em `globals.css`.
+
+Validation:
+- `npm test`: 147/147 pass (138 anteriores + 9 P7.5).
+- `tsc --noEmit`: limpo.
+
+Preservado deliberadamente: AuthRequiredPanel, server contract
+(`getApiKeys`), `createApiKeyAction` + `revokeApiKeyAction`, máscara
+de prefix (`maskPrefix`), flash do segredo cru via
+`consumeApiKeyFlash` (card "Nova chave criada" + warning amarelo
+"guarde agora"), banner de política (rotação 90 dias / escopo
+mínimo / revogação imediata), tabela com badge `ativa`/`revogada`
++ ação Revogar inline, tabs all/active/revoked com contagens,
+formulário de criação (name + environment + scopes ingest/read),
+flashes `?created`/`?revoked`/`?error`, eyebrow P5.
+
+---
+
 ## P7.4 — Files Changed (commit `d066957`)
 
 P7.4 — `d066957` feat(web): P7.4 experiments module parity with ZIP design
