@@ -4351,6 +4351,84 @@ a.evo-breadcrumbs__seg:hover { color: var(--text); text-decoration: none; }
 }
 
 /* =====================================================================
+   P7 — Module parity primitives (summary row + endpoint list)
+   Scoped to .evo-shell. Reused across prompts, rubrics, datasets,
+   experiments, keys, exports.
+   ===================================================================== */
+.evo-shell .evo-summary-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-bottom: 18px;
+}
+.evo-shell .evo-summary-card {
+  background: var(--surface-1);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md, 10px);
+  padding: 14px 16px;
+}
+.evo-shell .evo-summary-card__label {
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-faint);
+  font-family: var(--font-evo-mono);
+  font-weight: 600;
+  margin: 0 0 8px;
+}
+.evo-shell .evo-summary-card__value {
+  font-family: var(--font-evo-mono);
+  font-size: 22px;
+  color: var(--text);
+  line-height: 1.1;
+}
+.evo-shell .evo-summary-card__hint {
+  font-size: 11px;
+  color: var(--text-faint);
+  margin-top: 4px;
+}
+@media (max-width: 720px) {
+  .evo-shell .evo-summary-row { grid-template-columns: 1fr; }
+}
+
+.evo-shell .evo-endpoint-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.evo-shell .evo-endpoint-row {
+  display: grid;
+  grid-template-columns: 60px 1fr auto;
+  gap: 12px;
+  align-items: center;
+  padding: 9px 12px;
+  background: var(--bg-1, var(--bg-2));
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-sm, 6px);
+  font-family: var(--font-evo-mono);
+  font-size: 11.5px;
+}
+.evo-shell .evo-endpoint-row__method {
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--accent);
+}
+.evo-shell .evo-endpoint-row__method--get    { color: var(--accent); }
+.evo-shell .evo-endpoint-row__method--post   { color: var(--ok); }
+.evo-shell .evo-endpoint-row__method--patch  { color: var(--warn); }
+.evo-shell .evo-endpoint-row__method--delete { color: var(--err); }
+.evo-shell .evo-endpoint-row__path {
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.evo-shell .evo-endpoint-row__note {
+  color: var(--text-faint);
+  font-size: 11px;
+}
+
+/* =====================================================================
    P6 — Toast host (event-driven, scoped to .evo-shell)
    ===================================================================== */
 .evo-shell .evo-toast-host {
