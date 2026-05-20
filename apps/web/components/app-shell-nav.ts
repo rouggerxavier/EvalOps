@@ -22,17 +22,17 @@ export const APP_SHELL_NAV_SECTIONS: AppShellNavSection[] = [
   {
     label: "Assets",
     items: [
-      { id: "prompts", label: "Prompts", path: "/prompts" },
-      { id: "rubrics", label: "Rubricas", path: "/rubrics" },
-      { id: "datasets", label: "Datasets", path: "/datasets" },
+      { id: "prompts", label: "Prompts", path: "/prompts", shortcut: "G P" },
+      { id: "rubrics", label: "Rubricas", path: "/rubrics", shortcut: "G R" },
+      { id: "datasets", label: "Datasets", path: "/datasets", shortcut: "G D" },
       { id: "experiments", label: "Experimentos", path: "/experiments", shortcut: "G X" },
     ],
   },
   {
     label: "Operações / Config",
     items: [
-      { id: "keys", label: "Chaves API", path: "/keys" },
-      { id: "exports", label: "Exports", path: "/exports" },
+      { id: "keys", label: "Chaves API", path: "/keys", shortcut: "G K" },
+      { id: "exports", label: "Exports", path: "/exports", shortcut: "G S" },
     ],
   },
 ];

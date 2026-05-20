@@ -4349,3 +4349,34 @@ a.evo-breadcrumbs__seg:hover { color: var(--text); text-decoration: none; }
 .eval-run-panel .form-body {
   padding: 16px;
 }
+
+/* ── Cockpit a11y: focus-visible scoped to .evo-shell ── */
+.evo-shell .evo-nav-item:focus-visible,
+.evo-shell .evo-btn:focus-visible,
+.evo-shell .evo-tab:focus-visible,
+.evo-shell a:focus-visible,
+.evo-shell button:focus-visible,
+.evo-shell summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+.evo-shell input:focus-visible,
+.evo-shell select:focus-visible,
+.evo-shell textarea:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  border-color: var(--accent);
+}
+
+.evo-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}

@@ -21,7 +21,7 @@ function RowSkeleton() {
 
 export default function Loading() {
   return (
-    <div className="evo-page">
+    <div className="evo-page" aria-busy="true" aria-live="polite">
       <div className="evo-page-header">
         <div>
           <h1 className="evo-page-header__title">Datasets</h1>
@@ -42,4 +42,3 @@ export default function Loading() {
     </div>
   );
 }
-
