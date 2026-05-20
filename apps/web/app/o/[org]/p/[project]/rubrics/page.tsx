@@ -11,6 +11,16 @@ type Props = {
   searchParams: Promise<{ rubric?: string; error?: string; created?: string; versioned?: string }>;
 };
 
+function relTime(iso: string): string {
+  const diff = Date.now() - Date.parse(iso);
+  const mins = Math.floor(diff / 60_000);
+  if (mins < 1) return "agora";
+  if (mins < 60) return `${mins}m atrás`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h atrás`;
+  return `${Math.floor(hrs / 24)}d atrás`;
+}
+
 const DEFAULT_YAML = `slug: answer-quality
 name: Answer Quality
 description: Check if the answer is acceptable
@@ -170,6 +180,23 @@ export default async function RubricsPage({ params, searchParams }: Props) {
 
   const baseUrl = `/o/${org}/p/${project}/rubrics`;
 
+  const totalRubrics = rubrics.length;
+  const totalVersions = rubrics.reduce((acc, r) => acc + (r.current_version ?? 0), 0);
+  const latestActivity = (() => {
+    let mostRecent: string | null = null;
+    for (const r of rubrics) {
+      if (!mostRecent || Date.parse(r.created_at) > Date.parse(mostRecent)) {
+        mostRecent = r.created_at;
+      }
+    }
+    for (const v of versions) {
+      if (!mostRecent || Date.parse(v.created_at) > Date.parse(mostRecent)) {
+        mostRecent = v.created_at;
+      }
+    }
+    return mostRecent;
+  })();
+
   const formatDate = (s: string) =>
     new Date(s).toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric" });
 
@@ -208,6 +235,16 @@ export default async function RubricsPage({ params, searchParams }: Props) {
               Clique em uma rubrica para ver detalhes
             </span>
           )}
+          <button
+            type="button"
+            className="evo-btn evo-btn--sm"
+            disabled
+            data-status="planned"
+            title="Importar rubricas — em breve"
+            style={{ opacity: 0.5, cursor: "not-allowed" }}
+          >
+            Importar
+          </button>
         </div>
       </div>
 
@@ -242,6 +279,27 @@ export default async function RubricsPage({ params, searchParams }: Props) {
           {qp.created ? "Rubrica criada com sucesso." : "Nova versão criada."}
         </div>
       )}
+
+      {/* Summary row — só dados reais do payload */}
+      <section className="evo-summary-row" aria-label="Resumo de rubricas">
+        <div className="evo-summary-card">
+          <p className="evo-summary-card__label">Rubricas</p>
+          <div className="evo-summary-card__value">{totalRubrics.toLocaleString("pt-BR")}</div>
+          <div className="evo-summary-card__hint">critérios versionados em YAML</div>
+        </div>
+        <div className="evo-summary-card">
+          <p className="evo-summary-card__label">Versões</p>
+          <div className="evo-summary-card__value">{totalVersions.toLocaleString("pt-BR")}</div>
+          <div className="evo-summary-card__hint">soma das current_version</div>
+        </div>
+        <div className="evo-summary-card">
+          <p className="evo-summary-card__label">Última atividade</p>
+          <div className="evo-summary-card__value">
+            {latestActivity ? relTime(latestActivity) : "—"}
+          </div>
+          <div className="evo-summary-card__hint">rubrica ou versão</div>
+        </div>
+      </section>
 
       {selected ? (
         /* ---- DETAIL VIEW ---- */
@@ -635,6 +693,48 @@ export default async function RubricsPage({ params, searchParams }: Props) {
           </details>
         </>
       )}
+
+      {/* Endpoints reais — referência somente leitura */}
+      <section className="evo-card" style={{ marginTop: 12 }}>
+        <div className="evo-card__header">
+          <div>
+            <h3 className="evo-card__title">Endpoints ativos</h3>
+            <div className="evo-card__subtitle">Rotas reais do backend que servem este módulo.</div>
+          </div>
+        </div>
+        <div className="evo-card__body">
+          <div className="evo-endpoint-list" aria-label="Endpoints do módulo Rubrics">
+            <div className="evo-endpoint-row">
+              <span className="evo-endpoint-row__method evo-endpoint-row__method--get">GET</span>
+              <span className="evo-endpoint-row__path" title="/v1/projects/{project_id}/rubrics">
+                /projects/{"{project_id}"}/rubrics
+              </span>
+              <span className="evo-endpoint-row__note">ativo</span>
+            </div>
+            <div className="evo-endpoint-row">
+              <span className="evo-endpoint-row__method evo-endpoint-row__method--post">POST</span>
+              <span className="evo-endpoint-row__path" title="/v1/projects/{project_id}/rubrics">
+                /projects/{"{project_id}"}/rubrics
+              </span>
+              <span className="evo-endpoint-row__note">ativo · cria rubrica</span>
+            </div>
+            <div className="evo-endpoint-row">
+              <span className="evo-endpoint-row__method evo-endpoint-row__method--get">GET</span>
+              <span className="evo-endpoint-row__path" title="/v1/rubrics/{rubric_id}/versions">
+                /rubrics/{"{rubric_id}"}/versions
+              </span>
+              <span className="evo-endpoint-row__note">ativo</span>
+            </div>
+            <div className="evo-endpoint-row">
+              <span className="evo-endpoint-row__method evo-endpoint-row__method--post">POST</span>
+              <span className="evo-endpoint-row__path" title="/v1/rubrics/{rubric_id}/versions">
+                /rubrics/{"{rubric_id}"}/versions
+              </span>
+              <span className="evo-endpoint-row__note">ativo · nova versão</span>
+            </div>
+          </div>
+        </div>
+      </section>
     </div>
   );
 }
