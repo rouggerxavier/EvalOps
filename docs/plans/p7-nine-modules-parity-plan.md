@@ -131,14 +131,30 @@ Status legend: ⬜ pendente · 🟨 em andamento · ✅ landed
 - Primitivas CSS (`.evo-summary-row`, `.evo-endpoint-list`) reusadas
   do P7.1 — sem alteração em `globals.css`.
 
-### P7.4 — Experiments ⬜
+### P7.4 — Experiments ✅ `PENDING_HASH`
 
-- Arquivos: `apps/web/app/o/[org]/p/[project]/experiments/page.tsx`.
-- Referência: ZIP `modules.jsx` (`moduleId === "experiments"`).
-- Preservar: `createExperimentAction`, `runExperimentAction`,
-  listagem com estado da run, link pra detalhe.
-- Cockpit: summary (total, em execução, concluídos), badges de
-  estado (`rodando`/`concluído`/`falhou`), tabela premium.
+- Arquivos alterados:
+  - `apps/web/app/o/[org]/p/[project]/experiments/page.tsx` — summary
+    row real (Experimentos, Variantes (soma), Com baseline, Última
+    atividade via `relTime`) + card "Endpoints ativos" read-only
+    (4 rotas reais: list/create experiments, run, get run detail).
+  - `apps/web/tests/experiments-p7.test.mjs` (novo) — 9 testes.
+- Validation: `npm test` 138/138 pass · `tsc --noEmit` limpo · HMR
+  sem erros novos (warning autoprefixer pré-existente).
+- Conteúdo preservado: AuthRequiredPanel, getDatasets + getRubrics
+  + getExperiments + getExperimentRun, createExperimentAction +
+  runExperimentAction, RunResultCard (variants table, delta baseline,
+  winner badge, criteria_failures), tabela de experimentos com
+  variants tags + ação Rodar inline, formulário collapsible de
+  criação (name/baseline/dataset/rubric/variants_json/pass_criteria_json),
+  warning dataset/rubrica ausente, flashes, botão "Exportar relatório"
+  planned, eyebrow + subtitle P5.
+- Premissa 3 (sem dado inventado): summary não traz "em execução"
+  nem "concluídos" — tipo `Experiment` não tem `status` agregado;
+  badges de run só aparecem quando `RunResultCard` é montado via
+  `?run_id&experiment_id` (dado real via `getExperimentRun`).
+- Primitivas CSS (`.evo-summary-row`, `.evo-endpoint-list`) reusadas
+  do P7.1 — sem alteração em `globals.css`.
 
 ### P7.5 — Chaves API ⬜
 

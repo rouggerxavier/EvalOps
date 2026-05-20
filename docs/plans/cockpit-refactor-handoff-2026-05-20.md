@@ -139,6 +139,41 @@ versions list, eyebrow P5, flash inline.
 
 ---
 
+## P7.4 — Files Changed (commit `PENDING_HASH`)
+
+P7.4 — `PENDING_HASH` feat(web): P7.4 experiments module parity with ZIP design
+- `apps/web/app/o/[org]/p/[project]/experiments/page.tsx` — Summary
+  row (4 cards: total experimentos, soma de variantes, com baseline,
+  última atividade via `relTime` de `experiment.created_at` — apenas
+  dados do payload) + card "Endpoints ativos" read-only listando
+  rotas reais (GET/POST `/projects/{id}/experiments`, POST
+  `/experiments/{id}/run`, GET `/experiments/{id}/runs/{run_id}`).
+  Sem placeholder banner do ZIP, sem PreviewActionModal, sem dado
+  inventado. Premissa 3: tipo `Experiment` não traz `status`
+  agregado — summary não fabrica "em execução"/"concluídos"; badges
+  de run só aparecem em `RunResultCard` quando `?run_id&experiment_id`
+  carrega dado real via `getExperimentRun`.
+- `apps/web/tests/experiments-p7.test.mjs` (novo) — 9 testes.
+
+Primitivas CSS reusadas do P7.1 — sem alteração em `globals.css`.
+
+Validation:
+- `npm test`: 138/138 pass (129 anteriores + 9 P7.4).
+- `tsc --noEmit`: limpo.
+
+Preservado deliberadamente: AuthRequiredPanel, server contract
+(getDatasets + getRubrics + getExperiments + getExperimentRun),
+`createExperimentAction` + `runExperimentAction`, `RunResultCard`
+(variants table, Δ baseline, winner badge `<Rocket>`, dist bar,
+`criteria_failures`), tabela com tags de variantes + ação inline
+"Rodar", formulário collapsible de criação (name + baseline_variant +
+dataset_id + rubric_id + variants_json + pass_criteria_json), warning
+"crie dataset/rubrica", flashes (`?created`/`?run`/`?error`),
+botão "Exportar relatório" planned (`disabled data-status="planned"`),
+eyebrow P5.
+
+---
+
 ## P7.3 — Files Changed (commit `a3a0293`)
 
 P7.3 — `a3a0293` feat(web): P7.3 datasets module parity with ZIP design
