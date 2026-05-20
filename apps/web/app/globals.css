@@ -3899,6 +3899,27 @@ a.evo-breadcrumbs__seg:hover { color: var(--text); text-decoration: none; }
 .evo-traces-tabs {
   margin-bottom: var(--sp-4);
 }
+.evo-shell .evo-traces-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ok);
+  border-color: oklch(0.78 0.15 158 / 0.4);
+  background: var(--ok-bg, oklch(0.78 0.15 158 / 0.08));
+  font-family: var(--font-evo-mono);
+  font-size: var(--fs-11);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.evo-shell .evo-traces-live .evo-badge__dot {
+  background: var(--ok);
+  box-shadow: 0 0 0 3px oklch(0.78 0.15 158 / 0.18);
+  animation: evo-traces-live-pulse 2s ease-in-out infinite;
+}
+@keyframes evo-traces-live-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
 .evo-traces-table-card {
   overflow-x: auto;
 }
@@ -3964,6 +3985,21 @@ a.evo-breadcrumbs__seg:hover { color: var(--text); text-decoration: none; }
   gap: var(--sp-2);
   flex-wrap: wrap;
   margin-bottom: var(--sp-2);
+}
+.evo-shell .evo-trace-detail__title {
+  font-size: 22px;
+  letter-spacing: -0.01em;
+  font-weight: 600;
+}
+.evo-shell .evo-trace-detail__back {
+  color: var(--accent);
+  text-transform: none;
+  letter-spacing: 0;
+  font-family: var(--font-evo-mono);
+  text-decoration: none;
+}
+.evo-shell .evo-trace-detail__back:hover {
+  text-decoration: underline;
 }
 .evo-trace-detail__meta {
   display: flex;

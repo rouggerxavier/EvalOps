@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Flag, GitCompare, Play } from "lucide-react";
+import { Flag, GitCompare, Play, Target } from "lucide-react";
 
 import { AuthRequiredPanel } from "@/components/AuthRequiredPanel";
 import { SpanWaterfall } from "@/components/SpanWaterfall";
@@ -72,9 +72,15 @@ export default async function TraceDetailPage({ params, searchParams }: Props) {
     <main className="evo-page evo-trace-detail">
       <div className="evo-page-header">
         <div>
-          <p className="evo-page-header__eyebrow">Observabilidade · Trace detail</p>
+          <p className="evo-page-header__eyebrow">
+            <Link href={`/o/${org}/p/${project}/traces`} className="evo-trace-detail__back">
+              ← Traces
+            </Link>
+            <span aria-hidden="true"> · </span>
+            Observabilidade · Trace detail
+          </p>
           <div className="evo-trace-detail__title-row">
-            <h1 className="evo-page-header__title" style={{ margin: 0 }}>{t.name}</h1>
+            <h1 className="evo-page-header__title evo-mono evo-trace-detail__title" style={{ margin: 0 }}>{t.name}</h1>
             <StatusBadge status={t.status} />
             <span className="evo-tag">{t.environment}</span>
             {ragEnabled ? <span className="evo-badge evo-badge--eval">RAG</span> : null}
@@ -116,6 +122,15 @@ export default async function TraceDetailPage({ params, searchParams }: Props) {
           >
             <GitCompare size={13} /> Comparar
           </button>
+          <button
+            type="button"
+            className="evo-btn evo-btn--sm"
+            disabled
+            data-status="planned"
+            title="Avaliação manual a partir do trace — em breve"
+          >
+            <Target size={13} /> Avaliar
+          </button>
           <Link className="evo-btn evo-btn--sm" href={`/o/${org}/p/${project}/traces`}>
             ← Traces
           </Link>
@@ -138,10 +153,14 @@ export default async function TraceDetailPage({ params, searchParams }: Props) {
 
       <div className="evo-kpi-grid evo-trace-detail__kpis">
         <DetailMetric label="Duração" value={formatLatency(t.duration_ms)} hint="tempo total" />
-        <DetailMetric label="Tokens entrada" value={t.total_tokens_in.toLocaleString("pt-BR")} />
-        <DetailMetric label="Tokens saída" value={t.total_tokens_out.toLocaleString("pt-BR")} />
-        <DetailMetric label="Custo" value={formatCost(t.total_cost_usd)} />
-        <DetailMetric label="Spans / Eventos" value={`${detail.spans.length} / ${detail.events_count}`} />
+        <DetailMetric label="Tokens entrada" value={t.total_tokens_in.toLocaleString("pt-BR")} hint="prompt" />
+        <DetailMetric label="Tokens saída" value={t.total_tokens_out.toLocaleString("pt-BR")} hint="completion" />
+        <DetailMetric label="Custo" value={formatCost(t.total_cost_usd)} hint={traceModel ?? "sem modelo"} />
+        <DetailMetric
+          label="Spans / Eventos"
+          value={`${detail.spans.length} / ${detail.events_count}`}
+          hint="capturados"
+        />
         <DetailMetric
           label="Qualidade RAG"
           value={ragScore === undefined ? "—" : formatTraceScore(ragScore)}
