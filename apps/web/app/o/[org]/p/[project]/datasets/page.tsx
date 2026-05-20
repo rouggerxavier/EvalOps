@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ChevronRight, Database, Plus, RefreshCw, Sparkles, Upload } from "lucide-react";
+import { ChevronRight, Plus, RefreshCw, Upload } from "lucide-react";
 
 import { AuthRequiredPanel } from "@/components/AuthRequiredPanel";
 import { addDatasetItemAction, buildDatasetFromTracesAction, createDatasetAction } from "@/lib/actions";
@@ -66,6 +66,16 @@ function alertStyle(kind: "ok" | "err"): React.CSSProperties {
     fontSize: 13,
     marginBottom: 12,
   };
+}
+
+function relTime(iso: string): string {
+  const diff = Date.now() - Date.parse(iso);
+  const mins = Math.floor(diff / 60_000);
+  if (mins < 1) return "agora";
+  if (mins < 60) return `${mins}m atrás`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h atrás`;
+  return `${Math.floor(hrs / 24)}d atrás`;
 }
 
 function sourceLabel(source: string): string {
@@ -165,6 +175,20 @@ export default async function DatasetsPage({ params, searchParams }: Props) {
   const totalItems = rows.reduce((acc, row) => acc + row.items.length, 0);
   const traceDatasets = rows.filter((row) => row.dataset.source === "traces").length;
   const readyDatasets = rows.filter((row) => row.items.length > 0).length;
+  const latestActivity = (() => {
+    let mostRecent: string | null = null;
+    for (const { dataset, items } of rows) {
+      if (!mostRecent || Date.parse(dataset.created_at) > Date.parse(mostRecent)) {
+        mostRecent = dataset.created_at;
+      }
+      for (const item of items) {
+        if (!mostRecent || Date.parse(item.created_at) > Date.parse(mostRecent)) {
+          mostRecent = item.created_at;
+        }
+      }
+    }
+    return mostRecent;
+  })();
 
   const tabHref = (source: string) =>
     `${basePath}${queryString({
@@ -183,6 +207,16 @@ export default async function DatasetsPage({ params, searchParams }: Props) {
           </p>
         </div>
         <div className="evo-page-header__actions">
+          <button
+            type="button"
+            className="evo-btn evo-btn--sm"
+            disabled
+            data-status="planned"
+            title="Importar datasets — em breve"
+            style={{ opacity: 0.5, cursor: "not-allowed" }}
+          >
+            Importar
+          </button>
           <Link href="#dataset-create" className="evo-btn evo-btn--sm">
             <Plus size={13} />
             Novo dataset
@@ -199,38 +233,29 @@ export default async function DatasetsPage({ params, searchParams }: Props) {
       {qp.items_added && <div style={alertStyle("ok")}>Item adicionado ao dataset.</div>}
       {qp.built && <div style={alertStyle("ok")}>Dataset atualizado com traces do backend.</div>}
 
-      <section className="evo-kpi-grid" style={{ marginBottom: 16 }}>
-        <div className="evo-metric" style={{ minHeight: 112 }}>
-          <div className="evo-metric__label">
-            <Database size={12} />
-            Datasets
-          </div>
-          <div className="evo-metric__value">{rows.length.toLocaleString("pt-BR")}</div>
-          <div className="evo-metric__delta evo-metric__delta--neutral">total no projeto</div>
+      {/* Summary row — só dados reais do payload */}
+      <section className="evo-summary-row" aria-label="Resumo de datasets">
+        <div className="evo-summary-card">
+          <p className="evo-summary-card__label">Datasets</p>
+          <div className="evo-summary-card__value">{rows.length.toLocaleString("pt-BR")}</div>
+          <div className="evo-summary-card__hint">total no projeto</div>
         </div>
-        <div className="evo-metric" style={{ minHeight: 112 }}>
-          <div className="evo-metric__label">
-            <Sparkles size={12} />
-            Itens
-          </div>
-          <div className="evo-metric__value">{totalItems.toLocaleString("pt-BR")}</div>
-          <div className="evo-metric__delta evo-metric__delta--neutral">exemplos registrados</div>
+        <div className="evo-summary-card">
+          <p className="evo-summary-card__label">Itens</p>
+          <div className="evo-summary-card__value">{totalItems.toLocaleString("pt-BR")}</div>
+          <div className="evo-summary-card__hint">exemplos registrados</div>
         </div>
-        <div className="evo-metric" style={{ minHeight: 112 }}>
-          <div className="evo-metric__label">
-            <Upload size={12} />
-            Fonte traces
-          </div>
-          <div className="evo-metric__value">{traceDatasets.toLocaleString("pt-BR")}</div>
-          <div className="evo-metric__delta evo-metric__delta--neutral">datasets alimentados por traces</div>
+        <div className="evo-summary-card">
+          <p className="evo-summary-card__label">Fonte traces</p>
+          <div className="evo-summary-card__value">{traceDatasets.toLocaleString("pt-BR")}</div>
+          <div className="evo-summary-card__hint">datasets de traces · {readyDatasets} prontos</div>
         </div>
-        <div className="evo-metric" style={{ minHeight: 112 }}>
-          <div className="evo-metric__label">
-            <ChevronRight size={12} />
-            Prontos
+        <div className="evo-summary-card">
+          <p className="evo-summary-card__label">Última atividade</p>
+          <div className="evo-summary-card__value">
+            {latestActivity ? relTime(latestActivity) : "—"}
           </div>
-          <div className="evo-metric__value">{readyDatasets.toLocaleString("pt-BR")}</div>
-          <div className="evo-metric__delta evo-metric__delta--neutral">com pelo menos um item</div>
+          <div className="evo-summary-card__hint">dataset ou item</div>
         </div>
       </section>
 
@@ -532,6 +557,55 @@ export default async function DatasetsPage({ params, searchParams }: Props) {
           )}
         </div>
       </div>
+
+      {/* Endpoints reais — referência somente leitura */}
+      <section className="evo-card" style={{ marginTop: 12 }}>
+        <div className="evo-card__header">
+          <div>
+            <h3 className="evo-card__title">Endpoints ativos</h3>
+            <div className="evo-card__subtitle">Rotas reais do backend que servem este módulo.</div>
+          </div>
+        </div>
+        <div className="evo-card__body">
+          <div className="evo-endpoint-list" aria-label="Endpoints do módulo Datasets">
+            <div className="evo-endpoint-row">
+              <span className="evo-endpoint-row__method evo-endpoint-row__method--get">GET</span>
+              <span className="evo-endpoint-row__path" title="/v1/projects/{project_id}/datasets">
+                /projects/{"{project_id}"}/datasets
+              </span>
+              <span className="evo-endpoint-row__note">ativo</span>
+            </div>
+            <div className="evo-endpoint-row">
+              <span className="evo-endpoint-row__method evo-endpoint-row__method--post">POST</span>
+              <span className="evo-endpoint-row__path" title="/v1/projects/{project_id}/datasets">
+                /projects/{"{project_id}"}/datasets
+              </span>
+              <span className="evo-endpoint-row__note">ativo · cria dataset</span>
+            </div>
+            <div className="evo-endpoint-row">
+              <span className="evo-endpoint-row__method evo-endpoint-row__method--get">GET</span>
+              <span className="evo-endpoint-row__path" title="/v1/datasets/{dataset_id}/items">
+                /datasets/{"{dataset_id}"}/items
+              </span>
+              <span className="evo-endpoint-row__note">ativo</span>
+            </div>
+            <div className="evo-endpoint-row">
+              <span className="evo-endpoint-row__method evo-endpoint-row__method--post">POST</span>
+              <span className="evo-endpoint-row__path" title="/v1/datasets/{dataset_id}/items">
+                /datasets/{"{dataset_id}"}/items
+              </span>
+              <span className="evo-endpoint-row__note">ativo · adiciona item</span>
+            </div>
+            <div className="evo-endpoint-row">
+              <span className="evo-endpoint-row__method evo-endpoint-row__method--post">POST</span>
+              <span className="evo-endpoint-row__path" title="/v1/datasets/{dataset_id}/build-from-traces">
+                /datasets/{"{dataset_id}"}/build-from-traces
+              </span>
+              <span className="evo-endpoint-row__note">ativo · ingere traces</span>
+            </div>
+          </div>
+        </div>
+      </section>
     </div>
   );
 }
