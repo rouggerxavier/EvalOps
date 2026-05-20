@@ -1,0 +1,234 @@
+# Cockpit Refactor — Handoff 2026-05-20
+
+> **Update 2026-05-20 (sessão P6):** P6 concluído e commitado em `d602230`.
+> Shortcuts globais (G+letra) e toast event-driven `evo:toast` montados em
+> AppShell. Bridge converte query-params dos server actions em toast sem
+> tocar nos actions. Detalhes em [P6 — Files Changed](#p6--files-changed-commit-d602230).
+>
+> **Update 2026-05-20 (sessão P5):** P5 concluído e commitado em `07efe0c`.
+> Detalhes na seção [Files Changed](#files-changed-commits-p0p4).
+>
+> **Próxima etapa (P7):** Refatorar 9 módulos pra ficarem **bem parecidos**
+> com `evalops-preview` do ZIP de design, conectando ao backend real e
+> mantendo background atual `.evo-shell`. Ordem: prompts → rubrics →
+> datasets → experiments → keys → exports → traces → overview → evaluations.
+> Premissa firme: NÃO virar placeholder, NÃO perder funcionalidade,
+> NÃO trocar background. Ver [Resume Prompt](#resume-prompt).
+
+
+Branch: `refactor/frontend` (parent: `main`)
+Repo: `/home/rouggerxavier/dev/evalops`
+Plano-mãe: `docs/plans/evalops-premium-preview-migration-plan.md` (fases P0→P6)
+ZIP de design original: `segunda refatoração interna EvalOps.zip` (raiz do repo)
+
+---
+
+## Current State
+
+Refatoração visual interna do EvalOps — direção **cockpit dark premium**
+(oklch + radial vignettes + grid backdrop + acento cobalto `#4F8CFF`).
+Tokens escopados em `.evo-shell` para não vazar em landing/login/docs/changelog.
+
+Fases P0 → P6 **landed** em `refactor/frontend`. P7 (9-módulos parity)
+não iniciado.
+
+Working tree dirty (não relacionado ao cockpit):
+- `apps/api/app/db.py`
+- `apps/web/next-env.d.ts`
+
+Servidores dev rodando:
+- web: `http://localhost:3000` (Next.js dev, HMR built-in)
+- api: `http://localhost:8000` (uvicorn `--reload`, WatchFiles)
+- logs: `/tmp/evalops-logs/{web,api}.log`
+
+---
+
+## Decisions Made
+
+- **Tokens em `oklch`** (não HEX) — gamut maior, sem bandas em wide-gamut. Reason: `DESIGN_NOTES.md §1`.
+- **Tokens escopados em `.evo-shell`** (não `:root`) — evita regressão em marketing pages. Reason: plano §3.3.
+- **Não migrar tabs no Trace Detail** — manter seções empilhadas com RAG cards no topo (UI-RAG-1 já testado). Reason: plano §3.3 + §4.1.
+- **Não usar modal-preview de endpoint em produção** — manter padrão `disabled data-status="planned"` (mais honesto). Reason: plano §3.3.
+- **Não substituir `page.tsx` real dos módulos secundários por placeholder** — preview tinha placeholders, mas real é mais completo. Reason: plano §3.4.
+- **Skip de gaps que exigem dado inventado**:
+  - Sidebar count em Traces (sem endpoint barato)
+  - Attention dot em Keys (sem `expires_at` no tipo `ApiKey` — `lib/types.ts:96`)
+  - `avgScore` no Overview (sem fonte real)
+
+---
+
+## Files Changed (commits P0→P4)
+
+P0 — `de61fd1` feat(web): scope cockpit UI tokens
+- `apps/web/app/globals.css` (HEX → oklch, tokens novos, gradientes radiais)
+- `apps/web/tests/cockpit-css.test.mjs` (novo)
+
+P1 — `c9a19fd` feat(web): add premium app shell
+- `apps/web/components/AppShell.tsx` (novo)
+- `apps/web/components/Sidebar.tsx` (eyebrow, project pill, seções, shortcuts, SDK pulse)
+- `apps/web/components/EvoTopbar.tsx` (eyebrow, breadcrumbs, search ⌘K, env pill, planned bell)
+- `apps/web/components/app-shell-nav.ts` (nav config centralizada)
+- `apps/web/app/o/[org]/p/[project]/layout.tsx` (usa AppShell)
+- `apps/web/tests/app-shell.test.mjs` (novo)
+
+P2 — `c96050e` feat(web): refresh traces cockpit UI
+- `apps/web/app/o/[org]/p/[project]/traces/page.tsx`
+- `apps/web/app/o/[org]/p/[project]/traces/[trace]/page.tsx`
+- `apps/web/components/TracesFilterBar.tsx`
+- `apps/web/lib/trace-display.ts` (novo)
+- `apps/web/tests/traces-premium.test.mjs` (novo)
+
+P3 — `0ebed02` feat(web): refresh project overview cockpit
+- `apps/web/app/o/[org]/p/[project]/page.tsx`
+- `apps/web/tests/overview-premium.test.mjs` (novo)
+
+P4 — `be6a191` + `e383150` evaluations cockpit + states
+- `apps/web/app/o/[org]/p/[project]/evaluations/page.tsx`
+- `apps/web/components/DistBars.tsx` (novo)
+- `apps/web/components/RubricDrawer.tsx` (novo)
+- `apps/web/tests/evaluations-premium.test.mjs` (novo)
+
+P5 — `07efe0c` feat(web): polish secondary modules with cockpit headers
+- `apps/web/app/o/[org]/p/[project]/prompts/page.tsx` (+eyebrow)
+- `apps/web/app/o/[org]/p/[project]/rubrics/page.tsx` (+eyebrow)
+- `apps/web/app/o/[org]/p/[project]/datasets/page.tsx` (+eyebrow, 2 blocos)
+- `apps/web/app/o/[org]/p/[project]/datasets/loading.tsx` (+eyebrow)
+- `apps/web/app/o/[org]/p/[project]/datasets/error.tsx` (+eyebrow)
+- `apps/web/app/o/[org]/p/[project]/experiments/page.tsx` (+eyebrow)
+- `apps/web/app/o/[org]/p/[project]/keys/page.tsx` (+eyebrow, 2 blocos, +banner segurança)
+- `apps/web/app/o/[org]/p/[project]/keys/loading.tsx` (+eyebrow)
+- `apps/web/app/o/[org]/p/[project]/keys/error.tsx` (+eyebrow)
+- `apps/web/app/o/[org]/p/[project]/exports/page.tsx` (+eyebrow, 2 blocos)
+- `apps/web/app/o/[org]/p/[project]/exports/loading.tsx` (+eyebrow)
+- `apps/web/app/o/[org]/p/[project]/exports/error.tsx` (+eyebrow)
+
+Eyebrow categories adotadas:
+- "Operação · Prompts" / "Operação · Rubrics" / "Operação · Experimentos"
+- "Dados · Datasets" / "Dados · Exports"
+- "Acesso · Chaves API"
+
+Keys banner: política de rotação 90d, escopo mínimo, revogação imediata,
+não comitar segredos. ShieldCheck cobalto, fundo `--bg-2`, sem alarm.
+
+---
+
+## P6 — Files Changed (commit `d602230`)
+
+P6 — `d602230` feat(web): wire P6 cockpit shortcuts and event-driven toasts
+- `apps/web/lib/toast.ts` (novo) — `emitToast()` SSR-safe + `TOAST_EVENT`.
+- `apps/web/components/EvoToastHost.tsx` (novo) — listener+renderer
+  com aria-live, role=alert pra `err`, dismiss manual + auto TTL.
+- `apps/web/components/EvoToastBridge.tsx` (novo) — lê `searchParams`
+  com chaves flash (created/revoked/versioned/feedback/built/
+  items_added/run/error) → dispatch `evo:toast` → `router.replace`
+  removendo params; usa `consumeKeys` pra `run` carrying `run_id`+
+  `experiment_id`.
+- `apps/web/components/EvoShortcuts.tsx` (novo) — handler global
+  G+letra. Mapa lido de `APP_SHELL_NAV_ITEMS` (G O / G T / G E / G X).
+  Ignora INPUT/TEXTAREA/SELECT/contentEditable/role textbox|combobox|
+  searchbox. Ignora meta/ctrl/alt. Timeout 1.2s no prefixo.
+- `apps/web/components/AppShell.tsx` — monta os 3 dentro de `.evo-shell`;
+  Bridge embrulhado em `<Suspense>` (useSearchParams).
+- `apps/web/app/globals.css` — `.evo-shell .evo-toast-host` + `.evo-toast`
+  tone-scoped border + ícone, animation `evo-toast-in`,
+  `prefers-reduced-motion` respeitado.
+- `apps/web/tests/p6-shortcuts-toast.test.mjs` (novo) — 8 testes.
+
+Não modificado deliberadamente:
+- Server actions em `lib/actions.ts` — bridge transparente, mantém
+  `redirectWithMessage`.
+- Inline alerts `qp.created`/`qp.error` nas pages — redundância com
+  toast vira cleanup separado (P7.x ou pós-P7).
+
+---
+
+## Commands Run
+
+```bash
+# Servidores (já rodando em background)
+cd apps/web && npm run dev               # next dev :3000 com HMR
+cd apps/api && .venv/bin/python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+
+# Testes web
+cd apps/web && npm test                  # node --test sobre tests/*.mjs
+```
+
+---
+
+## Validation
+
+- Commits passaram pelo `pre-commit` (verificar `git log --pretty=format:'%H %s' main..refactor/frontend`).
+- Testes premium específicos existem em `apps/web/tests/`: `cockpit-css`, `app-shell`, `traces-premium`, `overview-premium`, `evaluations-premium`, `p6-shortcuts-toast`.
+- **Tests P6**: 8/8 pass em `node --test tests/p6-shortcuts-toast.test.mjs`. Total suite `npm test`: 102/102 pass. `tsc --noEmit` limpo. HMR sem erros novos (warning autoprefixer pré-existente em globals.css:686).
+- **Não validado nesta sessão**: smoke visual em Chromium+Firefox, contraste ≥ 4.5:1 em texto principal, regressão em landing/login/changelog. Toast/shortcuts não exercitados em browser real.
+
+---
+
+## Pending Work
+
+### Já planejado (plano-mãe §5)
+
+**P6 — Polimento final**
+- Toast system event-driven (`evo:toast`) usado por server actions.
+- Handler global `G+letra` shortcuts (já listados visualmente na sidebar; falta o handler).
+- AttentionStrip no Overview — só com sinais reais (ex.: contagem de erros em 7d). NÃO inventar.
+
+### Gaps condicionais (precisam backend antes)
+
+- Sidebar count em Traces — exige endpoint barato (ex.: `/v1/projects/{id}/overview/counts`).
+- Attention dot em Keys — exige `expires_at` em `ApiKey` (`lib/types.ts:96`).
+- `avgScore` no Overview — exige cálculo server-side ou campo no payload de overview.
+- Cobertura por avaliação no Overview — `evaluation_runs / traces` por rubrica; computável client-side, mas vale endpoint dedicado.
+- Coluna "causa" em Traces — exige `metadata.error_code` no payload de Trace.
+- Claim×Chunk cross-table no Trace Detail — diferencial real do produto; UI-RAG-2 separado.
+
+---
+
+## Risks
+
+- **Regressão em rotas públicas** (landing/login/register/docs/changelog) ao tocar `globals.css`. Sempre validar antes de commit.
+- **UI-RAG-1 já em produção** — qualquer mudança em `RAGSummaryHeader`, `AnswerPreviewCard`, `RetrievalSummaryCard`, `GroundingQualityCard`, `CitationRefsTable` precisa preservar comportamento. Testes em `apps/web/tests/` cobrem parte disso.
+- **Cockpit Potemkin**: tentação de adicionar KPI/banner sem dado real. Não fazer. Plano §3.3.
+- **Tokens em `oklch`**: Safari < 15.4 não suporta. Verificar matriz se for relevante.
+- **Working tree dirty** em `apps/api/app/db.py` e `apps/web/next-env.d.ts` — investigar origem antes de qualquer commit.
+
+---
+
+## Resume Prompt
+
+```text
+Continuando refatoração frontend cockpit no EvalOps.
+
+Repo: /home/rouggerxavier/dev/evalops
+Branch: refactor/frontend
+Handoff: docs/plans/cockpit-refactor-handoff-2026-05-20.md
+Plano-mãe: docs/plans/evalops-premium-preview-migration-plan.md
+
+Status: P0→P5 landed (tokens, AppShell, Traces, Overview, Evaluations,
+módulos secundários com eyebrow + Keys banner). P6 não iniciado.
+
+Próxima etapa pretendida: <ESCOLHA UMA>
+  (a) P6 — handler global G+letra shortcuts + toast event-driven
+      (evo:toast). NÃO criar AttentionStrip sem sinal real.
+  (b) Backend signals — adicionar expires_at em ApiKey OU endpoint
+      /v1/projects/{id}/overview/counts para destravar gaps de P1.
+      (Nota: db.py já tem ALTER de expires_at em working tree não
+      comitado; integrar com tipos + serializer antes do commit.)
+  (c) Auditoria visual — Chromium+Firefox em /o/{org}/p/{project}/*
+      e regressão em landing/login/docs/changelog.
+
+Constraints duras (não violar):
+- Tokens só dentro de .evo-shell (não :root).
+- Não substituir page.tsx real por placeholder.
+- Não inventar métrica sem fonte (cockpit Potemkin).
+- Não trocar seções empilhadas do Trace Detail por tabs (UI-RAG-1).
+- Botões planejados = `disabled data-status="planned"`, não modal.
+
+Servidores dev em background:
+- web :3000 (next dev)
+- api :8000 (uvicorn --reload)
+- logs: /tmp/evalops-logs/{web,api}.log
+
+Skill sugerida: implementation-planner para fatiar a etapa escolhida,
+depois diff-reviewer antes do commit.
+```
