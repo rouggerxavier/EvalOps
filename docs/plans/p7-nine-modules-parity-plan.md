@@ -180,17 +180,30 @@ Status legend: ⬜ pendente · 🟨 em andamento · ✅ landed
 - Primitivas CSS (`.evo-summary-row`, `.evo-endpoint-list`) reusadas
   do P7.1 — sem alteração em `globals.css`.
 
-### P7.6 — Exports ⬜
+### P7.6 — Exports ✅ `0172b18`
 
-- Arquivos: `apps/web/app/o/[org]/p/[project]/exports/page.tsx`,
-  `exports/loading.tsx`, `exports/error.tsx`.
-- Referência: ZIP `modules.jsx` (`moduleId === "exports"`).
-- Preservar: `createExportAction`, painel de usage/quota
-  (Fix-7B.7), download via rota autenticada (`exports/[id]/
-  download`), sanitização de erros.
-- Cockpit: summary (total jobs, prontos, pendentes), tabela com
-  badge `pronto`/`expirado`/`processando`, card "Limites do export"
-  (já existem dados reais no ZIP — replicar texto se aplicável).
+- Arquivos alterados:
+  - `apps/web/app/o/[org]/p/[project]/exports/page.tsx` —
+    substitui `.evo-kpi-grid` (4 metric cards) por
+    `.evo-summary-row` (4 cards: Jobs conhecidos, Em andamento,
+    Concluídos, Última atividade via `relTime` de
+    `row.job.created_at`) + card "Endpoints ativos" read-only
+    (3 rotas reais: POST `/exports`, GET `/exports/{id}`, GET
+    `/api/exports/{id}/download` via proxy Next autenticado).
+  - `apps/web/tests/exports-p7.test.mjs` (novo) — 9 testes.
+- Validation: `npm test` 156/156 pass · `tsc --noEmit` limpo.
+- Conteúdo preservado: AuthRequiredPanel, server contract
+  (`getExport` + `getOrganizationUsage` +
+  `getOrganizationSubscription`), `createExportAction`, painel
+  "Plano e uso" com UsageBar para Traces/Avaliacoes/Exports/Spans/
+  Tokens + Budget mensal de judge, download via
+  `getExportDownloadPath` (rota Next autenticada com redirect
+  sanitizado), tabela com `jobStatusBadge`, tabs
+  all/running/completed/failed, fallback de erro com
+  `safeErrorMessage` (Fix-7B.6), card "Contrato atual" (gap de
+  listagem global e cancelamento), eyebrow + subtitle P5.
+- Primitivas CSS (`.evo-summary-row`, `.evo-endpoint-list`) reusadas
+  do P7.1 — sem alteração em `globals.css`.
 
 ### P7.7 — Traces (re-tune) ⬜
 

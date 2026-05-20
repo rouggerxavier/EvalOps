@@ -139,6 +139,38 @@ versions list, eyebrow P5, flash inline.
 
 ---
 
+## P7.6 — Files Changed (commit `0172b18`)
+
+P7.6 — `0172b18` feat(web): P7.6 exports module parity with ZIP design
+- `apps/web/app/o/[org]/p/[project]/exports/page.tsx` — Substitui
+  `.evo-kpi-grid` (4 metric cards: Jobs conhecidos/Em andamento/
+  Concluidos/Falhas) por Summary row (4 cards: Jobs conhecidos,
+  Em andamento, Concluídos, Última atividade via `relTime`
+  calculada de `row.job.created_at` — apenas dados do payload) +
+  card "Endpoints ativos" read-only listando rotas reais (POST
+  `/exports`, GET `/exports/{id}`, GET `/api/exports/{id}/download`
+  via proxy Next autenticado). Sem placeholder banner do ZIP, sem
+  PreviewActionModal, sem dado inventado.
+- `apps/web/tests/exports-p7.test.mjs` (novo) — 9 testes.
+
+Primitivas CSS reusadas do P7.1 — sem alteração em `globals.css`.
+
+Validation:
+- `npm test`: 156/156 pass (147 anteriores + 9 P7.6).
+- `tsc --noEmit`: limpo.
+
+Preservado deliberadamente: AuthRequiredPanel, server contract
+(`getExport` + `getOrganizationUsage` + `getOrganizationSubscription`),
+`createExportAction`, painel "Plano e uso" com `UsageBar` para
+Traces/Avaliacoes/Exports/Spans/Tokens + Budget mensal de judge
+(Fix-7B.7), download via `getExportDownloadPath` (rota Next
+autenticada com redirect sanitizado), tabela com `jobStatusBadge`,
+tabs all/running/completed/failed com contagens, fallback de erro
+com `safeErrorMessage` (Fix-7B.6), card "Contrato atual" (gap de
+listagem global e cancelamento), eyebrow P5.
+
+---
+
 ## P7.5 — Files Changed (commit `8b3743d`)
 
 P7.5 — `8b3743d` feat(web): P7.5 keys module parity with ZIP design
