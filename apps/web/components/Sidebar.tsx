@@ -4,7 +4,6 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   Activity,
-  ChevronDown,
   Database,
   Download,
   FlaskConical,
@@ -15,40 +14,19 @@ import {
   Target,
 } from "lucide-react";
 
-type NavItem = {
-  id: string;
-  label: string;
-  Icon: React.ElementType;
-  path: string;
-  shortcut?: string;
-};
+import { APP_SHELL_NAV_SECTIONS, projectHref } from "@/components/app-shell-nav";
 
-const SECTIONS: Array<{ label: string; items: NavItem[] }> = [
-  {
-    label: "Projeto",
-    items: [
-      { id: "overview",    label: "Visão geral", Icon: Home,         path: "",             shortcut: "G O" },
-      { id: "traces",      label: "Traces",       Icon: Activity,     path: "/traces",      shortcut: "G T" },
-      { id: "evaluations", label: "Avaliações",   Icon: Target,       path: "/evaluations", shortcut: "G E" },
-      { id: "experiments", label: "Experimentos", Icon: FlaskConical, path: "/experiments", shortcut: "G X" },
-    ],
-  },
-  {
-    label: "Recursos",
-    items: [
-      { id: "prompts",  label: "Prompts",  Icon: Sparkles, path: "/prompts" },
-      { id: "rubrics",  label: "Rubricas", Icon: List,     path: "/rubrics" },
-      { id: "datasets", label: "Datasets", Icon: Database, path: "/datasets" },
-    ],
-  },
-  {
-    label: "Operação",
-    items: [
-      { id: "keys",    label: "Chaves API", Icon: KeyRound, path: "/keys" },
-      { id: "exports", label: "Exports",    Icon: Download, path: "/exports" },
-    ],
-  },
-];
+const NAV_ICONS: Record<string, React.ElementType> = {
+  overview: Home,
+  traces: Activity,
+  evaluations: Target,
+  prompts: Sparkles,
+  rubrics: List,
+  datasets: Database,
+  experiments: FlaskConical,
+  keys: KeyRound,
+  exports: Download,
+};
 
 export function Sidebar({ org, project }: { org: string; project: string }) {
   const pathname = usePathname();
@@ -68,32 +46,42 @@ export function Sidebar({ org, project }: { org: string; project: string }) {
             <circle cx="7" cy="7" r="1.5" fill="#4F8CFF" />
           </svg>
         </div>
-        <div className="evo-sidebar__brand-name">EvalOps</div>
-        <span className="evo-sidebar__brand-meta">v1.0</span>
-      </div>
-
-      <div className="evo-project-switcher">
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div className="evo-project-switcher__org">{org} · prod</div>
-          <div className="evo-project-switcher__name">{project}</div>
+        <div className="evo-sidebar__brand-text">
+          <div className="evo-sidebar__brand-name">EvalOps</div>
+          <div className="evo-sidebar__brand-kicker">Project cockpit</div>
         </div>
-        <ChevronDown size={14} className="evo-project-switcher__chevron" />
       </div>
 
-      {SECTIONS.map((section) => (
+      <div className="evo-project-context" aria-label="Contexto do projeto ativo">
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div className="evo-project-context__eyebrow">Workspace · {org}</div>
+          <div className="evo-project-context__name">{project}</div>
+        </div>
+        <span className="evo-context-pill">
+          <span className="evo-context-pill__dot" aria-hidden="true" />
+          prod
+        </span>
+      </div>
+
+      {APP_SHELL_NAV_SECTIONS.map((section) => (
         <div className="evo-nav-section" key={section.label}>
           <div className="evo-nav-section__label">{section.label}</div>
-          {section.items.map(({ id, label, Icon, path, shortcut }) => (
-            <Link
-              key={id}
-              href={path === "" ? base : `${base}${path}`}
-              className={`evo-nav-item${isActive(path) ? " is-active" : ""}`}
-            >
-              <Icon className="evo-nav-item__icon" size={15} />
-              <span>{label}</span>
-              {shortcut ? <span className="evo-nav-item__shortcut">{shortcut}</span> : null}
-            </Link>
-          ))}
+          {section.items.map(({ id, label, path, shortcut }) => {
+            const Icon = NAV_ICONS[id];
+            const active = isActive(path);
+            return (
+              <Link
+                key={id}
+                href={projectHref(base, path)}
+                className={`evo-nav-item${active ? " is-active" : ""}`}
+                aria-current={active ? "page" : undefined}
+              >
+                <Icon className="evo-nav-item__icon" size={15} />
+                <span className="evo-nav-item__label">{label}</span>
+                {shortcut ? <span className="evo-nav-item__shortcut">{shortcut}</span> : null}
+              </Link>
+            );
+          })}
         </div>
       ))}
 

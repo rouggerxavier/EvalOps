@@ -1,30 +1,12 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import Link from "next/link";
 import { Bell, BookOpen, ChevronRight, Search } from "lucide-react";
 import { usePathname } from "next/navigation";
 
+import { getActiveNavItem, getPageTitle, projectHref } from "@/components/app-shell-nav";
 import { logoutAction } from "@/lib/auth-actions";
-
-const PAGE_NAMES: Record<string, string> = {
-  "":             "Visão geral",
-  "/traces":      "Traces",
-  "/evaluations": "Avaliações",
-  "/experiments": "Experimentos",
-  "/prompts":     "Prompts",
-  "/rubrics":     "Rubricas",
-  "/datasets":    "Datasets",
-  "/keys":        "Chaves API",
-  "/exports":     "Exports",
-};
-
-function getPageName(pathname: string, base: string): string {
-  const sub = pathname.slice(base.length).replace(/\/$/, "");
-  const segment = Object.keys(PAGE_NAMES)
-    .filter((k) => sub === k || sub.startsWith(k + "/"))
-    .sort((a, b) => b.length - a.length)[0];
-  return PAGE_NAMES[segment ?? ""] ?? sub;
-}
 
 export function EvoTopbar({
   org,
@@ -37,36 +19,70 @@ export function EvoTopbar({
 }) {
   const pathname = usePathname();
   const base = `/o/${org}/p/${project}`;
-  const pageName = getPageName(pathname, base);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const activeItem = getActiveNavItem(pathname, base);
+  const pageName = getPageTitle(pathname, base);
+  const isDetailPage = pageName !== activeItem.label;
+
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      const target = event.target as HTMLElement | null;
+      const tagName = target?.tagName.toLowerCase();
+      const isEditable = target?.isContentEditable || tagName === "input" || tagName === "textarea" || tagName === "select";
+      const wantsSearch = event.key === "/" || ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k");
+
+      if (!wantsSearch || isEditable) return;
+
+      event.preventDefault();
+      searchRef.current?.focus();
+    }
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
 
   return (
     <header className="evo-topbar">
-      <div className="evo-breadcrumbs">
-        <span className="evo-breadcrumbs__seg">{org}</span>
-        <span className="evo-breadcrumbs__sep">
-          <ChevronRight size={12} />
-        </span>
-        <span className="evo-breadcrumbs__seg">{project}</span>
-        <span className="evo-breadcrumbs__sep">
-          <ChevronRight size={12} />
-        </span>
-        <span className="evo-breadcrumbs__current">{pageName}</span>
+      <div className="evo-topbar__context">
+        <div className="evo-topbar__eyebrow">Workspace · {org}</div>
+        <div className="evo-breadcrumbs" aria-label="Breadcrumb">
+          <Link className="evo-breadcrumbs__seg" href={base}>{project}</Link>
+          <span className="evo-breadcrumbs__sep">
+            <ChevronRight size={12} />
+          </span>
+          {isDetailPage ? (
+            <>
+              <Link className="evo-breadcrumbs__seg" href={projectHref(base, activeItem.path)}>{activeItem.label}</Link>
+              <span className="evo-breadcrumbs__sep">
+                <ChevronRight size={12} />
+              </span>
+            </>
+          ) : null}
+          <span className="evo-breadcrumbs__current">{pageName}</span>
+        </div>
       </div>
 
       <form className="evo-search" action={`/o/${org}/p/${project}/traces`} method="get">
         <Search size={14} />
-        <input name="name" placeholder="Buscar traces, prompts, rubricas..." />
-        <span className="evo-search__kbd">/</span>
+        <input ref={searchRef} name="name" placeholder="Buscar traces por nome..." />
+        <span className="evo-search__kbd">⌘K</span>
       </form>
 
+      <div className="evo-env-pill" aria-label="Ambiente ativo">
+        <span className="evo-env-pill__dot" aria-hidden="true" />
+        env: prod
+      </div>
       <div className="evo-topbar__divider" />
       <Link className="evo-topbar__action" href="/docs" aria-label="Documentação">
         <BookOpen size={16} />
       </Link>
       <button
         type="button"
-        className="evo-topbar__action evo-topbar__action--dot"
-        aria-label="Notificações"
+        className="evo-topbar__action"
+        aria-label="Alertas planejados"
+        title="Alertas planejados"
+        data-status="planned"
+        disabled
       >
         <Bell size={16} />
       </button>

@@ -1,8 +1,7 @@
 import type { ReactNode } from "react";
 import { redirect } from "next/navigation";
 
-import { EvoTopbar } from "@/components/EvoTopbar";
-import { Sidebar } from "@/components/Sidebar";
+import { AppShell } from "@/components/AppShell";
 import { getSession, hasFallbackToken } from "@/lib/auth";
 
 type Props = {
@@ -26,13 +25,5 @@ export default async function ProjetoLayout({ children, params }: Props) {
         .join("") || org.substring(0, 2).toUpperCase()
     : org.substring(0, 2).toUpperCase();
 
-  return (
-    <div className="evo-shell">
-      <Sidebar org={org} project={project} />
-      <div className="evo-main">
-        <EvoTopbar org={org} project={project} initials={initials} />
-        {children}
-      </div>
-    </div>
-  );
+  return <AppShell org={org} project={project} initials={initials}>{children}</AppShell>;
 }
