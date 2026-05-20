@@ -111,15 +111,25 @@ Status legend: ⬜ pendente · 🟨 em andamento · ✅ landed
 - Primitivas CSS (.evo-summary-row, .evo-endpoint-list)
   reusadas do P7.1 — sem alteração em `globals.css`.
 
-### P7.3 — Datasets ⬜
+### P7.3 — Datasets ✅ `a3a0293`
 
-- Arquivos: `apps/web/app/o/[org]/p/[project]/datasets/page.tsx`,
-  `datasets/loading.tsx`, `datasets/error.tsx`.
-- Referência: ZIP `modules.jsx` (`moduleId === "datasets"`).
-- Preservar: `createDatasetAction`, `addDatasetItemAction`,
-  `buildDatasetFromTracesAction`, listagem com size.
-- Cockpit: summary (total datasets, total itens, fontes), tabela
-  premium, endpoints reais.
+- Arquivos alterados:
+  - `apps/web/app/o/[org]/p/[project]/datasets/page.tsx` — substitui
+    `.evo-kpi-grid` por `.evo-summary-row` (4 cards: Datasets, Itens,
+    Fonte traces · prontos, Última atividade via `relTime`) usando só
+    dados reais do payload; adiciona card "Endpoints ativos"
+    read-only (5 rotas reais: list/create datasets, list/create
+    items, build-from-traces); adiciona botão "Importar" planned
+    (`disabled data-status="planned"`).
+  - `apps/web/tests/datasets-p7.test.mjs` (novo) — 9 testes.
+- Validation: `npm test` 129/129 pass · `tsc --noEmit` limpo.
+- Conteúdo preservado: AuthRequiredPanel, getDatasets +
+  getDatasetItems, createDatasetAction + addDatasetItemAction +
+  buildDatasetFromTracesAction, tabs (all/manual/traces), tabela
+  com `statusForDataset`, `sourceLabel`, item preview (`shortJson`),
+  formulários de criação/ingestão, flashes, eyebrow + subtitle P5.
+- Primitivas CSS (`.evo-summary-row`, `.evo-endpoint-list`) reusadas
+  do P7.1 — sem alteração em `globals.css`.
 
 ### P7.4 — Experiments ⬜
 

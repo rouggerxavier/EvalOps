@@ -139,6 +139,35 @@ versions list, eyebrow P5, flash inline.
 
 ---
 
+## P7.3 — Files Changed (commit `a3a0293`)
+
+P7.3 — `a3a0293` feat(web): P7.3 datasets module parity with ZIP design
+- `apps/web/app/o/[org]/p/[project]/datasets/page.tsx` — Substitui
+  `.evo-kpi-grid` por Summary row (4 cards: total datasets, total
+  itens, fonte traces + readyDatasets, última atividade via
+  `relTime` calculada de `dataset.created_at` e `item.created_at` —
+  apenas dados do payload) + card "Endpoints ativos" read-only
+  listando rotas reais (GET/POST `/projects/{id}/datasets`, GET/POST
+  `/datasets/{id}/items`, POST `/datasets/{id}/build-from-traces`) +
+  botão "Importar" planned (`disabled data-status="planned"`). Sem
+  placeholder banner do ZIP, sem PreviewActionModal, sem dado
+  inventado.
+- `apps/web/tests/datasets-p7.test.mjs` (novo) — 9 testes.
+
+Primitivas CSS reusadas do P7.1 — sem alteração em `globals.css`.
+
+Validation:
+- `npm test`: 129/129 pass (120 anteriores + 9 P7.3).
+- `tsc --noEmit`: limpo.
+
+Preservado deliberadamente: server contract, tabs all/manual/traces,
+tabela com `statusForDataset` + `sourceLabel`, item preview
+(`shortJson`), formulários (createDatasetAction +
+addDatasetItemAction + buildDatasetFromTracesAction), flashes,
+eyebrow P5, banner "Acoes nao disponiveis no contrato atual".
+
+---
+
 ## P7.2 — Files Changed (commit `171ec9a`)
 
 P7.2 — `171ec9a` feat(web): P7.2 rubrics module parity with ZIP design
