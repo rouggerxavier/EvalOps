@@ -1,0 +1,102 @@
+{
+  "trace": {
+    "id": "tr_trunc_example",
+    "project_id": "proj_example",
+    "organization_id": "org_example",
+    "client_trace_id": null,
+    "name": "example.rag_request",
+    "service": "example-rag-service",
+    "environment": "prod",
+    "status": "partial",
+    "started_at": "2026-05-19T12:00:00.000Z",
+    "ended_at": "2026-05-19T12:00:01.000Z",
+    "duration_ms": 1000,
+    "total_tokens_in": 0,
+    "total_tokens_out": 0,
+    "total_cost_usd": 0,
+    "tags": {},
+    "user_ref": null,
+    "metadata": {
+      "pipeline_version": "rag.instrumentation.v1",
+      "retrieved_count": 50,
+      "citation_count": 5,
+      "grounding_ok": true,
+      "quality_level": "medium",
+      "quality_score": 0.55
+    },
+    "redacted": false,
+    "created_at": "2026-05-19T12:00:01.100Z"
+  },
+  "spans": [
+    {
+      "id": "sp_retrieve_trunc",
+      "trace_id": "tr_trunc_example",
+      "parent_span_id": null,
+      "type": "retrieval",
+      "name": "rag.retrieve",
+      "status": "ok",
+      "started_at": "2026-05-19T12:00:00.000Z",
+      "ended_at": "2026-05-19T12:00:00.500Z",
+      "duration_ms": 500,
+      "provider": null,
+      "model": null,
+      "tokens_in": null,
+      "tokens_out": null,
+      "cost_usd": null,
+      "metadata": {},
+      "input": { "query_present": true },
+      "output": {
+        "retrieved_count": 50,
+        "doc_refs": ["doc_aaaaaaaa", "doc_bbbbbbbb", "doc_cccccccc"],
+        "chunk_refs": [
+          { "chunk_ref": "chunk_ref_aaaaaaaa1111", "doc_ref": "doc_aaaaaaaa", "score": 0.91 },
+          { "chunk_ref": "chunk_ref_aaaaaaaa2222", "doc_ref": "doc_aaaaaaaa", "score": 0.88 }
+        ],
+        "limit": 50,
+        "total_available": 320,
+        "truncated": true,
+        "scores": { "retrieval_mode": "hybrid" }
+      },
+      "error": null,
+      "events": []
+    },
+    {
+      "id": "sp_grounding_trunc",
+      "trace_id": "tr_trunc_example",
+      "parent_span_id": null,
+      "type": "tool_call",
+      "name": "rag.grounding.validate",
+      "status": "ok",
+      "started_at": "2026-05-19T12:00:00.500Z",
+      "ended_at": "2026-05-19T12:00:01.000Z",
+      "duration_ms": 500,
+      "provider": null,
+      "model": null,
+      "tokens_in": null,
+      "tokens_out": null,
+      "cost_usd": null,
+      "metadata": {},
+      "input": null,
+      "output": {
+        "citation_count": 5,
+        "citation_refs": [
+          { "fonte_n": 1, "chunk_ref": "chunk_ref_aaaaaaaa1111", "doc_ref": "doc_aaaaaaaa" }
+        ],
+        "limit": 5,
+        "total_available": 12,
+        "truncated": true,
+        "grounding_ok": true,
+        "quality_level": "medium",
+        "quality_score": 0.55,
+        "retry_count": 1,
+        "repair_count": 0,
+        "unsupported_claim_count": 2,
+        "quality_reason_codes": ["partial_support"]
+      },
+      "error": null,
+      "events": []
+    }
+  ],
+  "events_count": 0,
+  "feedback": []
+}

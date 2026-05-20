@@ -59,6 +59,11 @@ export type TraceSpan = {
     occurred_at: string;
     payload: Record<string, unknown>;
   }>;
+  messages_in?: Array<Record<string, unknown>> | null;
+  messages_out?: Array<Record<string, unknown>> | null;
+  tools?: Array<Record<string, unknown>> | null;
+  prompt_version_ref?: string | null;
+  fallback_from_span_id?: string | null;
 };
 
 export type TraceDetailResponse = {

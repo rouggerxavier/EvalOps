@@ -3,9 +3,22 @@ import { Flag, GitCompare, Play } from "lucide-react";
 
 import { AuthRequiredPanel } from "@/components/AuthRequiredPanel";
 import { SpanWaterfall } from "@/components/SpanWaterfall";
+import { RAGSummaryHeader } from "@/components/RAGSummaryHeader";
+import { AnswerPreviewCard } from "@/components/AnswerPreviewCard";
+import { RetrievalSummaryCard } from "@/components/RetrievalSummaryCard";
+import { GroundingQualityCard } from "@/components/GroundingQualityCard";
+import { CitationRefsTable } from "@/components/CitationRefsTable";
 import { getTrace, hasAuthToken } from "@/lib/api";
 import { createTraceFeedbackAction } from "@/lib/actions";
 import { formatCost, formatDateTime, formatLatency } from "@/lib/format";
+import {
+  getAnswerPreview,
+  getCitationRefs,
+  getGroundingQuality,
+  getRagSummary,
+  getRetrievalSummary,
+  isRagTrace,
+} from "@/lib/rag";
 import { safeErrorMessage } from "@/lib/safe-error";
 
 type Props = {
@@ -32,6 +45,13 @@ export default async function TraceDetailPage({ params, searchParams }: Props) {
   const detail = await getTrace(trace);
   const t = detail.trace;
   const safeQueryError = qp.error ? safeErrorMessage(qp.error, "Falha ao registrar feedback.") : null;
+
+  const ragEnabled = isRagTrace(detail);
+  const ragSummary = ragEnabled ? getRagSummary(detail) : undefined;
+  const answerPreview = ragEnabled ? getAnswerPreview(detail) : undefined;
+  const retrievalSummary = ragEnabled ? getRetrievalSummary(detail) : undefined;
+  const groundingQuality = ragEnabled ? getGroundingQuality(detail) : undefined;
+  const citationRefs = ragEnabled ? getCitationRefs(detail) : undefined;
 
   return (
     <main className="evo-page">
@@ -119,6 +139,30 @@ export default async function TraceDetailPage({ params, searchParams }: Props) {
           </div>
         </div>
       </div>
+
+      {/* ── RAG section (only when trace follows §9 convention) ── */}
+      {ragEnabled && (
+        <section
+          aria-label="RAG details"
+          style={{ marginBottom: "var(--sp-5)" }}
+          data-testid="rag-section"
+        >
+          {ragSummary && <RAGSummaryHeader summary={ragSummary} />}
+          <div
+            className="evo-rag-grid"
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+              gap: "var(--sp-3)",
+            }}
+          >
+            {answerPreview && <AnswerPreviewCard answer={answerPreview} />}
+            {groundingQuality && <GroundingQualityCard quality={groundingQuality} />}
+            {retrievalSummary && <RetrievalSummaryCard retrieval={retrievalSummary} />}
+            {citationRefs && <CitationRefsTable citations={citationRefs} />}
+          </div>
+        </section>
+      )}
 
       {/* ── Waterfall ── */}
       <div style={{ marginBottom: "var(--sp-3)" }}>

@@ -1,0 +1,48 @@
+{
+  "trace": {
+    "id": "tr_plain_example",
+    "project_id": "proj_example",
+    "organization_id": "org_example",
+    "client_trace_id": null,
+    "name": "example.llm_call",
+    "service": "example-llm-service",
+    "environment": "prod",
+    "status": "ok",
+    "started_at": "2026-05-19T12:00:00.000Z",
+    "ended_at": "2026-05-19T12:00:00.800Z",
+    "duration_ms": 800,
+    "total_tokens_in": 120,
+    "total_tokens_out": 60,
+    "total_cost_usd": 0.0005,
+    "tags": {},
+    "user_ref": null,
+    "metadata": { "git_sha": "abc1234" },
+    "redacted": false,
+    "created_at": "2026-05-19T12:00:01.000Z"
+  },
+  "spans": [
+    {
+      "id": "sp_llm_plain",
+      "trace_id": "tr_plain_example",
+      "parent_span_id": null,
+      "type": "llm_call",
+      "name": "openai.chat.completions",
+      "status": "ok",
+      "started_at": "2026-05-19T12:00:00.000Z",
+      "ended_at": "2026-05-19T12:00:00.800Z",
+      "duration_ms": 800,
+      "provider": "openai",
+      "model": "gpt-4o-mini",
+      "tokens_in": 120,
+      "tokens_out": 60,
+      "cost_usd": 0.0005,
+      "metadata": { "temperature": 0.2 },
+      "input": { "prompt_present": true },
+      "output": { "completion_present": true },
+      "error": null,
+      "events": []
+    }
+  ],
+  "events_count": 0,
+  "feedback": []
+}

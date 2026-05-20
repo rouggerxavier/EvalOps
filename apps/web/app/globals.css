@@ -3365,6 +3365,7 @@ button { cursor: pointer; }
   .evo-search { width: auto; flex: 1; margin-left: 0; }
   .evo-page-header { flex-direction: column; }
   .evo-kpi-grid { grid-template-columns: 1fr; }
+  .evo-rag-grid { grid-template-columns: 1fr !important; }
 }
 
 /* =====================================================================
