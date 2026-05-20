@@ -94,14 +94,22 @@ Status legend: ⬜ pendente · 🟨 em andamento · ✅ landed
   - `DiffView` renderiza ambos os casos (primeira versão + diff).
   - Nenhum `AttentionStrip`/dado inventado.
 
-### P7.2 — Rubricas ⬜
+### P7.2 — Rubricas ✅ `171ec9a`
 
-- Arquivos: `apps/web/app/o/[org]/p/[project]/rubrics/page.tsx`.
-- Referência: ZIP `modules.jsx` (`moduleId === "rubrics"`).
-- Preservar: criar rubrica (YAML), nova versão, listagem
-  `getRubrics`/`getRubricVersions`.
-- Cockpit: eyebrow já presente; summary (total rubrics, total
-  versions, tipos), tabela premium, coluna endpoints reais.
+- Arquivos alterados:
+  - `apps/web/app/o/[org]/p/[project]/rubrics/page.tsx` — summary
+    row real (totalRubrics, totalVersions via soma de
+    `current_version`, latestActivity) + card "Endpoints ativos"
+    read-only + botão "Importar" planned (`disabled
+    data-status="planned"`).
+  - `apps/web/tests/rubrics-p7.test.mjs` (novo) — 9 testes.
+- Validation: `npm test` 120/120 pass · `tsc --noEmit` limpo.
+- Conteúdo preservado: AuthRequiredPanel, getRubrics +
+  getRubricVersions, createRubric(+Version)Action, YamlBlock,
+  VersionsList, evaluators list, branches detail/list/empty,
+  flash, eyebrow + subtitle P5.
+- Primitivas CSS (.evo-summary-row, .evo-endpoint-list)
+  reusadas do P7.1 — sem alteração em `globals.css`.
 
 ### P7.3 — Datasets ⬜
 

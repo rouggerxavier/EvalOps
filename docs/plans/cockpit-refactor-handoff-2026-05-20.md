@@ -139,6 +139,32 @@ versions list, eyebrow P5, flash inline.
 
 ---
 
+## P7.2 — Files Changed (commit `171ec9a`)
+
+P7.2 — `171ec9a` feat(web): P7.2 rubrics module parity with ZIP design
+- `apps/web/app/o/[org]/p/[project]/rubrics/page.tsx` — Summary row
+  (3 cards: total rubrics, total versões via soma de
+  `current_version`, última atividade — apenas dados do payload) +
+  card "Endpoints ativos" read-only listando rotas reais
+  (GET/POST `/projects/{id}/rubrics`, GET/POST
+  `/rubrics/{id}/versions`) + botão "Importar" planned (`disabled
+  data-status="planned"`). Sem placeholder banner do ZIP, sem
+  PreviewActionModal, sem dado inventado.
+- `apps/web/tests/rubrics-p7.test.mjs` (novo) — 9 testes.
+
+Primitivas CSS reusadas do P7.1 — sem alteração em `globals.css`.
+
+Validation:
+- `npm test`: 120/120 pass (111 anteriores + 9 P7.2).
+- `tsc --noEmit`: limpo.
+
+Preservado deliberadamente: server contract, formulários
+(createRubricAction + createRubricVersionAction), YamlBlock,
+VersionsList, evaluators list, branches detail/list/empty,
+flash, eyebrow P5.
+
+---
+
 ## P6 — Files Changed (commit `d602230`)
 
 P6 — `d602230` feat(web): wire P6 cockpit shortcuts and event-driven toasts
