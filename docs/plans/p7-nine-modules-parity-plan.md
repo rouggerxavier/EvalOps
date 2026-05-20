@@ -205,17 +205,55 @@ Status legend: ⬜ pendente · 🟨 em andamento · ✅ landed
 - Primitivas CSS (`.evo-summary-row`, `.evo-endpoint-list`) reusadas
   do P7.1 — sem alteração em `globals.css`.
 
-### P7.7 — Traces (re-tune) ⬜
+### P7.7 — Traces (re-tune) ✅ `9a130f3`
 
-- Arquivos: `apps/web/app/o/[org]/p/[project]/traces/page.tsx`,
-  `traces/[trace]/page.tsx`, `TracesFilterBar.tsx`.
-- Referência: ZIP `preview/screens/traces.jsx`.
-- Preservar: server contract, cursor guard, RAG segment (UI-RAG-1),
-  auto-refresh client (`Phase 7E`), waterfall, raw metadata,
-  feedback form.
-- Re-tune: aproximar do ZIP em hierarquia visual sem trocar
-  layout (NÃO usar tabs no detail). Ajustes pontuais em headers,
-  badges, spacing.
+- Arquivos alterados:
+  - `apps/web/app/o/[org]/p/[project]/traces/page.tsx` — subtitle
+    re-tune (`{rows.length} traces na página atual · auto-refresh
+    a cada 30s · sinal por execução/erro/custo/RAG`) com contagem
+    real, pill `ao vivo` (`.evo-traces-live` + `data-testid=
+    "trace-list-live-pill"`) renderizada antes do botão Exportar
+    apenas quando `autoRefreshEnabled` (sem cursor + `rows.length
+    > 0`), tab RAG ganha ícone `Layers` mantendo `data-testid=
+    "trace-list-rag-tab"`.
+  - `apps/web/app/o/[org]/p/[project]/traces/[trace]/page.tsx` —
+    eyebrow ganha link `← Traces` (`.evo-trace-detail__back`)
+    seguido de `Observabilidade · Trace detail`; título recebe
+    classes `evo-mono evo-trace-detail__title` (mono ZIP-style);
+    nova ação planned `Avaliar` (`Target` icon · `disabled
+    data-status="planned"`) entre Comparar e botão de volta;
+    hints dos KPIs alinhados ao ZIP (`prompt`, `completion`,
+    `capturados`, `traceModel ?? "sem modelo"`).
+  - `apps/web/components/TracesFilterBar.tsx` — polish: contador
+    `count/total` agora `.evo-mono`, dot live com `aria-label`.
+    Layout (chips de status/env + busca por nome) preservado.
+  - `apps/web/app/globals.css` — adiciona `.evo-shell
+    .evo-traces-live` (pill verde com pulse de 2s),
+    `.evo-shell .evo-trace-detail__title` (mono 22px),
+    `.evo-shell .evo-trace-detail__back` (link mono accent).
+    Todas as primitivas escopadas em `.evo-shell`.
+  - `apps/web/tests/traces-p7.test.mjs` (novo) — 10 testes.
+- Validation: `npm test` 166/166 pass · `tsc --noEmit` limpo.
+- Conteúdo preservado: AuthRequiredPanel, `getTraces`/`getTrace`
+  server contract, cursor guard (`limit: 50` + `cursor: qp.cursor`
+  + `Pausado em página paginada`), `TracesAutoRefresh` (Phase 7E,
+  `enabledByDefault={autoRefreshEnabled}`), tabs all/errors/
+  partial/slow/RAG com `isTraceRagCandidate`, `TracesFilterBar`
+  (busca por nome + chips de status/env + Live dot), tabela densa
+  `.evo-table` com `StatusBadge`, `TraceMetricCard` (5 KPIs reais),
+  `SpanWaterfall`, segmento RAG UI-RAG-1 (`RAGSummaryHeader` +
+  `AnswerPreviewCard` + `GroundingQualityCard` +
+  `RetrievalSummaryCard` + `CitationRefsTable` +
+  `data-testid="rag-section"`), `evo-trace-attention` banner,
+  bloco metadata JSON cru, formulário `createTraceFeedbackAction`
+  + histórico de feedback, `evo-trace-detail__bottom` layout sem
+  tabs, planned controls (`Flagear`/`Reexecutar`/`Comparar`/
+  `Avaliar` · seleção em lote).
+- Premissa "NÃO usar tabs no detail": confirmado por teste
+  (`P7.7 traces detail: flat layout`) que veta `PreviewActionModal`,
+  `useState`, `setTab(` e `tab === "..."`.
+- Sem dado inventado: subtitle e pill derivam de `rows.length` e
+  `autoRefreshEnabled` (já calculados a partir do payload).
 
 ### P7.8 — Overview (re-tune) ⬜
 

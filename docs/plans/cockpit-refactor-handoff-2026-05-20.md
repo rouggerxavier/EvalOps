@@ -139,6 +139,53 @@ versions list, eyebrow P5, flash inline.
 
 ---
 
+## P7.7 — Files Changed (commit `9a130f3`)
+
+P7.7 — `9a130f3` feat(web): P7.7 traces re-tune (header/badges/spacing)
+- `apps/web/app/o/[org]/p/[project]/traces/page.tsx` — subtitle
+  re-tune com contagem real (`{rows.length} traces na página atual ·
+  auto-refresh a cada 30s · sinal por execução/erro/custo/RAG`) +
+  pill `ao vivo` (`.evo-traces-live` · `data-testid=
+  "trace-list-live-pill"`) renderizada antes do botão Exportar
+  apenas quando `autoRefreshEnabled` (sem cursor + `rows.length > 0`)
+  + ícone `Layers` na tab RAG.
+- `apps/web/app/o/[org]/p/[project]/traces/[trace]/page.tsx` —
+  eyebrow ganha link `← Traces` (`.evo-trace-detail__back`); título
+  recebe `evo-mono evo-trace-detail__title`; nova ação planned
+  `Avaliar` (`Target` icon · `disabled data-status="planned"`) entre
+  Comparar e o botão de volta; hints dos KPIs alinhados ao ZIP
+  (`prompt`/`completion`/`capturados`/`traceModel ?? "sem modelo"`).
+- `apps/web/components/TracesFilterBar.tsx` — contador `count/total`
+  agora `.evo-mono` + `aria-label` no Live dot. Chips de status/env e
+  busca por nome inalterados (layout preservado).
+- `apps/web/app/globals.css` — adiciona `.evo-shell .evo-traces-live`
+  (pill verde com `evo-traces-live-pulse` 2s), `.evo-shell
+  .evo-trace-detail__title` (mono 22px), `.evo-shell
+  .evo-trace-detail__back` (link mono accent).
+- `apps/web/tests/traces-p7.test.mjs` (novo) — 10 testes.
+
+Validation:
+- `npm test`: 166/166 pass (156 anteriores + 10 P7.7).
+- `tsc --noEmit`: limpo.
+
+Preservado deliberadamente: AuthRequiredPanel, `getTraces`/`getTrace`
+server contract, cursor guard (`limit: 50` + `cursor: qp.cursor` +
+`Pausado em página paginada`), `TracesAutoRefresh` (Phase 7E,
+`enabledByDefault={autoRefreshEnabled}`), tabs all/errors/partial/
+slow/RAG com `isTraceRagCandidate`, `TracesFilterBar` (busca por
+nome + chips de status/env + Live dot), `.evo-trace-summary` (5 KPIs
+reais via `TraceMetricCard`), tabela densa `.evo-table` com
+`StatusBadge`, `SpanWaterfall`, segmento RAG UI-RAG-1
+(`RAGSummaryHeader` + `AnswerPreviewCard` + `GroundingQualityCard`
++ `RetrievalSummaryCard` + `CitationRefsTable` +
+`data-testid="rag-section"`), banner `evo-trace-attention`, bloco
+metadata JSON cru, formulário `createTraceFeedbackAction` +
+histórico de feedback, layout `evo-trace-detail__bottom` flat (NÃO
+usar tabs no detail — vetado por teste), planned controls
+(`Flagear`/`Reexecutar`/`Comparar`/`Avaliar` + seleção em lote).
+
+---
+
 ## P7.6 — Files Changed (commit `0172b18`)
 
 P7.6 — `0172b18` feat(web): P7.6 exports module parity with ZIP design
