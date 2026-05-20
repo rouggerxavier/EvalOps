@@ -2628,37 +2628,43 @@ button { cursor: pointer; }
    Refatoracao Frontend EvalOps - dashboard correto (/o/[org]/p/[project])
    Escopo: classes evo-* usadas somente pela tela de overview do projeto.
    ===================================================================== */
-:root {
-  --bg-0: #07090e;
-  --bg-1: #0b0e14;
-  --bg-2: #11151d;
-  --surface-1: #141923;
-  --surface-2: #1a2030;
-  --surface-3: #222a3c;
-  --border-subtle: #1b212c;
-  --border: #232b39;
-  --border-strong: #303a4d;
-  --text: #e6eaf2;
-  --text-dim: #b4bbcb;
-  --text-muted: #8a93a6;
-  --text-faint: #5a6378;
-  --accent: #4f8cff;
-  --accent-hover: #6fa0ff;
-  --accent-active: #3d78e8;
-  --accent-bg: rgba(79, 140, 255, 0.10);
-  --accent-bg-strong: rgba(79, 140, 255, 0.18);
-  --accent-border: rgba(79, 140, 255, 0.35);
-  --ok: #22d3a8;
-  --ok-bg: rgba(34, 211, 168, 0.10);
-  --ok-border: rgba(34, 211, 168, 0.30);
-  --warn: #f0b742;
-  --warn-bg: rgba(240, 183, 66, 0.10);
-  --warn-border: rgba(240, 183, 66, 0.30);
-  --err: #ff6b6b;
-  --err-bg: rgba(255, 107, 107, 0.10);
-  --err-border: rgba(255, 107, 107, 0.30);
-  --eval: #a78bfa;
-  --eval-bg: rgba(167, 139, 250, 0.10);
+.evo-dashboard-standalone,
+.evo-shell {
+  --bg-0: oklch(8.4% 0.026 260);
+  --bg-1: oklch(11% 0.03 260);
+  --bg-2: oklch(14.3% 0.031 260);
+  --surface-1: oklch(17.2% 0.036 260);
+  --surface-2: oklch(21.4% 0.04 260);
+  --surface-3: oklch(26.4% 0.045 260);
+  --border-subtle: oklch(25% 0.037 260);
+  --border: oklch(30% 0.04 260);
+  --border-strong: oklch(39% 0.045 260);
+  --text: oklch(94.5% 0.016 260);
+  --text-dim: oklch(78% 0.025 260);
+  --text-muted: oklch(65% 0.033 260);
+  --text-faint: oklch(50% 0.036 260);
+  --accent: oklch(66% 0.17 260);
+  --accent-hover: oklch(72% 0.15 260);
+  --accent-active: oklch(60% 0.18 260);
+  --accent-soft: oklch(66% 0.17 260 / 0.14);
+  --accent-rim: oklch(66% 0.17 260 / 0.28);
+  --accent-bg: oklch(66% 0.17 260 / 0.10);
+  --accent-bg-strong: oklch(66% 0.17 260 / 0.18);
+  --accent-border: oklch(66% 0.17 260 / 0.35);
+  --ok: oklch(78% 0.15 174);
+  --ok-bg: oklch(78% 0.15 174 / 0.10);
+  --ok-border: oklch(78% 0.15 174 / 0.30);
+  --warn: oklch(78% 0.15 80);
+  --warn-bg: oklch(78% 0.15 80 / 0.10);
+  --warn-border: oklch(78% 0.15 80 / 0.30);
+  --err: oklch(69% 0.19 25);
+  --err-bg: oklch(69% 0.19 25 / 0.10);
+  --err-border: oklch(69% 0.19 25 / 0.30);
+  --eval: oklch(72% 0.16 300);
+  --eval-bg: oklch(72% 0.16 300 / 0.10);
+  --eval-soft: oklch(72% 0.16 300 / 0.16);
+  --grid-line: oklch(86% 0.04 260 / 0.045);
+  --vignette: oklch(5.5% 0.02 260 / 0.58);
   --font-evo-sans: "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-evo-mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   --fs-11: 11px;
@@ -2674,6 +2680,7 @@ button { cursor: pointer; }
   --sp-5: 20px;
   --sp-6: 24px;
   --sp-8: 32px;
+  --r-2: 2px;
   --r-4: 4px;
   --r-6: 6px;
   --r-8: 8px;
@@ -2702,14 +2709,51 @@ button { cursor: pointer; }
   display: grid;
   grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
   height: 100vh;
-  background: var(--bg-1);
+  min-height: 100vh;
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  color: var(--text);
+  font-family: var(--font-evo-sans);
+  background:
+    radial-gradient(900px 480px at 16% -14%, var(--accent-soft), transparent 68%),
+    radial-gradient(760px 420px at 96% 4%, var(--eval-soft), transparent 72%),
+    linear-gradient(180deg, var(--bg-1) 0%, var(--bg-0) 100%);
+}
+.evo-shell::before,
+.evo-shell::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+}
+.evo-shell::before {
+  background-image:
+    linear-gradient(var(--grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+  background-size: 56px 56px;
+  mask-image: linear-gradient(to bottom, rgba(0,0,0,0.74), rgba(0,0,0,0.26) 48%, transparent 92%);
+  -webkit-mask-image: linear-gradient(to bottom, rgba(0,0,0,0.74), rgba(0,0,0,0.26) 48%, transparent 92%);
+}
+.evo-shell::after {
+  background:
+    radial-gradient(640px 360px at 48% 100%, var(--accent-rim), transparent 76%),
+    linear-gradient(90deg, var(--vignette), transparent 18%, transparent 82%, var(--vignette));
+  opacity: 0.72;
+}
+.evo-shell > * {
+  position: relative;
+  z-index: 1;
 }
 .evo-sidebar {
-  background: var(--bg-1);
+  background: oklch(11% 0.03 260 / 0.92);
   border-right: 1px solid var(--border-subtle);
   display: flex;
   flex-direction: column;
   padding: var(--sp-3) 0;
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
 }
 .evo-sidebar__brand {
   display: flex;
@@ -2851,16 +2895,18 @@ button { cursor: pointer; }
 }
 @keyframes evo-pulse { 0% { transform: scale(0.9); opacity: 0.6; } 100% { transform: scale(2.2); opacity: 0; } }
 
-.evo-main { display: flex; flex-direction: column; background: var(--bg-2); overflow: hidden; min-width: 0; }
+.evo-main { display: flex; flex-direction: column; background: transparent; overflow: hidden; min-width: 0; }
 .evo-topbar {
   height: var(--topbar-h);
   border-bottom: 1px solid var(--border-subtle);
-  background: var(--bg-1);
+  background: oklch(11% 0.03 260 / 0.88);
   display: flex;
   align-items: center;
   padding: 0 var(--sp-5);
   gap: var(--sp-4);
   flex-shrink: 0;
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
 }
 .evo-breadcrumbs { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-13); color: var(--text-muted); min-width: 0; }
 .evo-breadcrumbs__seg { color: var(--text-muted); }
@@ -3487,4 +3533,3 @@ button { cursor: pointer; }
 .eval-run-panel .form-body {
   padding: 16px;
 }
-
