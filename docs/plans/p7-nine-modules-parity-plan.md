@@ -131,7 +131,7 @@ Status legend: ⬜ pendente · 🟨 em andamento · ✅ landed
 - Primitivas CSS (`.evo-summary-row`, `.evo-endpoint-list`) reusadas
   do P7.1 — sem alteração em `globals.css`.
 
-### P7.4 — Experiments ✅ `PENDING_HASH`
+### P7.4 — Experiments ✅ `d066957`
 
 - Arquivos alterados:
   - `apps/web/app/o/[org]/p/[project]/experiments/page.tsx` — summary

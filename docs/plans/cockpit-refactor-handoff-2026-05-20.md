@@ -139,9 +139,9 @@ versions list, eyebrow P5, flash inline.
 
 ---
 
-## P7.4 — Files Changed (commit `PENDING_HASH`)
+## P7.4 — Files Changed (commit `d066957`)
 
-P7.4 — `PENDING_HASH` feat(web): P7.4 experiments module parity with ZIP design
+P7.4 — `d066957` feat(web): P7.4 experiments module parity with ZIP design
 - `apps/web/app/o/[org]/p/[project]/experiments/page.tsx` — Summary
   row (4 cards: total experimentos, soma de variantes, com baseline,
   última atividade via `relTime` de `experiment.created_at` — apenas
