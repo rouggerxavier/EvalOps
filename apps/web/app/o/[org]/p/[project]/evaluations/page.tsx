@@ -1,15 +1,18 @@
 import Link from "next/link";
-import { History, MoreHorizontal, Play, Plus, Target } from "lucide-react";
+import type { ReactNode } from "react";
+import { CheckCircle2, Coins, FileCode2, History, MoreHorizontal, Play, Plus, Target } from "lucide-react";
 
 import { AuthRequiredPanel } from "@/components/AuthRequiredPanel";
+import { DistBars } from "@/components/DistBars";
+import { RubricDrawer } from "@/components/RubricDrawer";
 import { triggerEvaluationAction } from "@/lib/actions";
-import { getProjectEvaluations, getRubrics, getTraces, hasAuthToken, resolveProject } from "@/lib/api";
+import { getProjectEvaluations, getRubricVersions, getRubrics, getTraces, hasAuthToken, resolveProject } from "@/lib/api";
 import { safeErrorMessage } from "@/lib/safe-error";
-import type { EvaluationRun, Rubric } from "@/lib/types";
+import type { EvaluationRun, Rubric, RubricVersion } from "@/lib/types";
 
 type Props = {
   params: Promise<{ org: string; project: string }>;
-  searchParams: Promise<{ tab?: string; created?: string; error?: string }>;
+  searchParams: Promise<{ tab?: string; rubric?: string; created?: string; error?: string }>;
 };
 
 function buildDistribution(scores: number[], buckets = 6): number[] {
@@ -21,24 +24,7 @@ function buildDistribution(scores: number[], buckets = 6): number[] {
   return dist;
 }
 
-function DistBars({ dist }: { dist: number[] }) {
-  const max = Math.max(...dist, 1);
-  return (
-    <div style={{ display: "flex", alignItems: "flex-end", gap: 2, height: 24 }}>
-      {dist.map((v, i) => {
-        const heightPx = Math.max(2, Math.round((v / max) * 22));
-        const color = i < 2 ? "var(--err)" : i < 4 ? "var(--warn)" : "var(--ok)";
-        return (
-          <div
-            key={i}
-            style={{ width: 12, height: heightPx, background: color, opacity: 0.85, borderRadius: 1 }}
-            title={`${v} run(s)`}
-          />
-        );
-      })}
-    </div>
-  );
-}
+const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
 
 function relTime(iso: string): string {
   const diff = Date.now() - Date.parse(iso);
@@ -57,8 +43,56 @@ function scoreColor(v: number | null): string {
   return "var(--err)";
 }
 
+function isWithinLast7d(run: EvaluationRun): boolean {
+  const timestamp = Date.parse(run.created_at);
+  return Number.isFinite(timestamp) && Date.now() - timestamp <= SEVEN_DAYS_MS;
+}
+
+function passRate(runs: EvaluationRun[]): number | null {
+  const resolved = runs.filter((run) => run.passed !== null);
+  if (resolved.length === 0) return null;
+  return resolved.filter((run) => run.passed === true).length / resolved.length;
+}
+
+function formatPassRate(value: number | null): string {
+  if (value === null) return "—";
+  return `${Math.round(value * 100)}%`;
+}
+
+function formatCost(value: number): string {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: value > 0 && value < 0.01 ? 4 : 2,
+    maximumFractionDigits: value > 0 && value < 0.01 ? 4 : 2,
+  }).format(value);
+}
+
 function isHeuristic(rubric: Rubric): boolean {
   return rubric.slug.includes("heuristic") || (rubric.description ?? "").toLowerCase().includes("heurística");
+}
+
+function EvaluationSummaryCard({
+  hint,
+  icon,
+  label,
+  value,
+}: {
+  hint: string;
+  icon: ReactNode;
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="evo-metric evo-evaluation-metric">
+      <span className="evo-metric__label">
+        {icon}
+        {label}
+      </span>
+      <strong className="evo-metric__value">{value}</strong>
+      <span className="evo-metric__delta evo-metric__delta--neutral">{hint}</span>
+    </div>
+  );
 }
 
 export default async function EvaluationsPage({ params, searchParams }: Props) {
@@ -77,12 +111,17 @@ export default async function EvaluationsPage({ params, searchParams }: Props) {
     getTraces({ projectId: resolved.project_id, limit: 20 }),
   ]);
 
-  const runs = evalsRes.data;
+  const runs = [...evalsRes.data].sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
   const rubrics = rubricsRes.data;
   const traces = tracesRes.data;
   const safeQueryError = qp.error ? safeErrorMessage(qp.error, "Falha ao criar avaliação.") : null;
 
   const rubricMap = new Map<string, Rubric>(rubrics.map((r) => [r.id, r]));
+  const selectedRubric = qp.rubric ? (rubricMap.get(qp.rubric) ?? null) : null;
+  let selectedRubricVersions: RubricVersion[] = [];
+  if (selectedRubric) {
+    selectedRubricVersions = (await getRubricVersions(selectedRubric.id)).data;
+  }
 
   const byRubric = new Map<string, { rubric: Rubric; runs: EvaluationRun[] }>();
   for (const run of runs) {
@@ -91,26 +130,34 @@ export default async function EvaluationsPage({ params, searchParams }: Props) {
     if (!byRubric.has(run.rubric_id)) byRubric.set(run.rubric_id, { rubric, runs: [] });
     byRubric.get(run.rubric_id)!.runs.push(run);
   }
-  const evalRows = Array.from(byRubric.values());
+  const evalRows = rubrics.map((rubric) => byRubric.get(rubric.id) ?? { rubric, runs: [] });
 
-  const tabHref = (t: string) => `/o/${org}/p/${project}/evaluations?tab=${t}`;
+  const runs7d = runs.filter(isWithinLast7d).length;
+  const overallPassRate = passRate(runs);
+  const costUsd = runs.reduce((sum, run) => sum + run.cost_usd, 0);
+  const baseUrl = `/o/${org}/p/${project}/evaluations`;
+  const tabHref = (t: string) => `${baseUrl}?tab=${t}`;
+  const rubricDrawerHref = (rubricId: string) => `${baseUrl}?tab=active&rubric=${rubricId}`;
 
   return (
     <div className="evo-page">
       {/* Header */}
       <div className="evo-page-header">
         <div>
+          <p className="evo-page-header__eyebrow">Operação · Avaliações</p>
           <h1 className="evo-page-header__title">Evaluations</h1>
           <p className="evo-page-header__subtitle">
             Avaliações LLM-as-judge e heurísticas rodadas sobre traces de produção.
           </p>
         </div>
-        <div className="evo-row">
-          <Link href="#run-evaluation" className="evo-btn evo-btn--sm">
-            <Play size={13} /> Rodar agora
-          </Link>
+        <div className="evo-page-header__actions">
+          {traces.length > 0 && rubrics.length > 0 && (
+            <Link href="#run-evaluation" className="evo-btn evo-btn--sm">
+              <Play size={13} /> Rodar agora
+            </Link>
+          )}
           <Link href={`/o/${org}/p/${project}/rubrics`} className="evo-btn evo-btn--sm evo-btn--primary">
-            <Plus size={13} /> Nova rubric
+            <Plus size={13} /> {rubrics.length === 0 ? "Criar rubrica" : "Nova rubrica"}
           </Link>
         </div>
       </div>
@@ -126,6 +173,33 @@ export default async function EvaluationsPage({ params, searchParams }: Props) {
           Run de avaliação criada com sucesso.
         </div>
       )}
+
+      <section className="evo-kpi-grid evo-evaluations-summary" aria-label="Resumo de avaliacoes">
+        <EvaluationSummaryCard
+          icon={<Target size={13} />}
+          label="Rubricas"
+          value={rubrics.length.toLocaleString("pt-BR")}
+          hint="Fonte: getRubrics"
+        />
+        <EvaluationSummaryCard
+          icon={<History size={13} />}
+          label="Runs 7d"
+          value={runs7d.toLocaleString("pt-BR")}
+          hint="Fonte: created_at das runs"
+        />
+        <EvaluationSummaryCard
+          icon={<CheckCircle2 size={13} />}
+          label="Pass rate"
+          value={formatPassRate(overallPassRate)}
+          hint={overallPassRate === null ? "Sem runs concluídas" : "Fonte: passed"}
+        />
+        <EvaluationSummaryCard
+          icon={<Coins size={13} />}
+          label="Custo"
+          value={formatCost(costUsd)}
+          hint="Fonte: cost_usd das runs"
+        />
+      </section>
 
       {/* Tabs */}
       <nav className="evo-tabs">
@@ -143,15 +217,20 @@ export default async function EvaluationsPage({ params, searchParams }: Props) {
         </Link>
       </nav>
 
+      <div className={selectedRubric ? "evo-evaluations-layout" : undefined}>
+        <div>
       {/* Table: Ativas */}
       {tab === "active" && (
         <div className="evo-table-wrap">
           {evalRows.length === 0 ? (
-            <div style={{ padding: "40px 24px", textAlign: "center" }}>
-              <p style={{ color: "var(--text-muted)", marginBottom: 8, fontWeight: 600 }}>Nenhuma avaliação ainda</p>
+            <div className="evo-evaluations-empty">
+              <p style={{ color: "var(--text-muted)", marginBottom: 8, fontWeight: 600 }}>Nenhuma rubrica cadastrada</p>
               <p style={{ color: "var(--text-faint)", fontSize: 13 }}>
-                Ingira ao menos um trace via SDK e crie uma rubrica para começar.
+                Crie uma rubrica YAML antes de rodar avaliações sobre traces.
               </p>
+              <Link href={`/o/${org}/p/${project}/rubrics`} className="evo-btn evo-btn--sm evo-btn--primary">
+                <Plus size={13} /> Criar rubrica
+              </Link>
             </div>
           ) : (
             <table className="evo-table">
@@ -160,12 +239,12 @@ export default async function EvaluationsPage({ params, searchParams }: Props) {
                   <th>Evaluation</th>
                   <th>Rubric</th>
                   <th>Tipo</th>
-                  <th>Judge model</th>
                   <th className="evo-table__sortable">Runs (7d)</th>
+                  <th className="evo-table__sortable">Pass rate</th>
                   <th className="evo-table__sortable">Score médio</th>
                   <th>Distribuição</th>
                   <th className="evo-table__sortable">Atualizada</th>
-                  <th style={{ width: 32 }} />
+                  <th style={{ width: 72 }} />
                 </tr>
               </thead>
               <tbody>
@@ -175,6 +254,8 @@ export default async function EvaluationsPage({ params, searchParams }: Props) {
                   const dist = buildDistribution(scores);
                   const lastRun = rubricRuns[0];
                   const heuristic = isHeuristic(rubric);
+                  const rubricRuns7d = rubricRuns.filter(isWithinLast7d).length;
+                  const rubricPassRate = passRate(rubricRuns);
                   return (
                     <tr key={rubric.id}>
                       <td>
@@ -196,8 +277,12 @@ export default async function EvaluationsPage({ params, searchParams }: Props) {
                           {heuristic ? "Heurística" : "LLM-as-judge"}
                         </span>
                       </td>
-                      <td className="evo-mono evo-muted" style={{ fontSize: 12 }}>—</td>
-                      <td className="evo-table__num">{rubricRuns.length.toLocaleString("pt-BR")}</td>
+                      <td className="evo-table__num">{rubricRuns7d.toLocaleString("pt-BR")}</td>
+                      <td>
+                        <span className="evo-mono evo-muted" style={{ fontSize: 12 }}>
+                          {formatPassRate(rubricPassRate)}
+                        </span>
+                      </td>
                       <td>
                         {avg === null ? (
                           <span className="evo-faint">—</span>
@@ -212,15 +297,25 @@ export default async function EvaluationsPage({ params, searchParams }: Props) {
                       </td>
                       <td className="evo-muted">{lastRun ? relTime(lastRun.created_at) + " atrás" : "—"}</td>
                       <td>
-                        <button
-                          type="button"
-                          className="evo-btn evo-btn--ghost evo-btn--sm evo-btn--icon"
-                          disabled
-                          data-status="planned"
-                          title="Ações por avaliação — em breve"
-                        >
-                          <MoreHorizontal size={14} />
-                        </button>
+                        <div className="evo-row">
+                          <Link
+                            href={rubricDrawerHref(rubric.id)}
+                            className="evo-btn evo-btn--ghost evo-btn--sm evo-btn--icon"
+                            title="Ver YAML da rubrica"
+                            aria-label={`Ver YAML de ${rubric.slug}`}
+                          >
+                            <FileCode2 size={14} />
+                          </Link>
+                          <button
+                            type="button"
+                            className="evo-btn evo-btn--ghost evo-btn--sm evo-btn--icon"
+                            disabled
+                            data-status="planned"
+                            title="Ações por avaliação — em breve"
+                          >
+                            <MoreHorizontal size={14} />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -235,11 +330,22 @@ export default async function EvaluationsPage({ params, searchParams }: Props) {
       {tab === "runs" && (
         <div className="evo-table-wrap">
           {runs.length === 0 ? (
-            <div style={{ padding: "40px 24px", textAlign: "center" }}>
+            <div className="evo-evaluations-empty">
               <p style={{ color: "var(--text-muted)", marginBottom: 8, fontWeight: 600 }}>Nenhuma run ainda</p>
               <p style={{ color: "var(--text-faint)", fontSize: 13 }}>
                 Avaliações precisam de traces capturados e uma rubrica YAML versionada.
               </p>
+              <div className="evo-row" style={{ justifyContent: "center", marginTop: 14 }}>
+                {rubrics.length === 0 ? (
+                  <Link href={`/o/${org}/p/${project}/rubrics`} className="evo-btn evo-btn--sm evo-btn--primary">
+                    <Plus size={13} /> Criar rubrica
+                  </Link>
+                ) : (
+                  <Link href={tabHref("active")} className="evo-btn evo-btn--sm">
+                    <Play size={13} /> Rodar agora
+                  </Link>
+                )}
+              </div>
             </div>
           ) : (
             <table className="evo-table">
@@ -368,6 +474,12 @@ export default async function EvaluationsPage({ params, searchParams }: Props) {
           </div>
         </details>
       )}
+        </div>
+
+        {selectedRubric && (
+          <RubricDrawer closeHref={tabHref(tab)} rubric={selectedRubric} versions={selectedRubricVersions} />
+        )}
+      </div>
     </div>
   );
 }

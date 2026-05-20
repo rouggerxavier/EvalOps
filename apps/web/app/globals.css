@@ -3192,6 +3192,12 @@ a.evo-breadcrumbs__seg:hover { color: var(--text); text-decoration: none; }
 .evo-table tbody tr:last-child td { border-bottom: 0; }
 .evo-table__name { color: var(--text); font-weight: 500; }
 .evo-table__num { font-family: var(--font-evo-mono); white-space: nowrap; }
+.evo-table-wrap {
+  overflow: auto;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-8);
+  background: var(--surface-1);
+}
 .evo-empty-row { text-align: center; color: var(--text-faint) !important; padding: 30px var(--sp-4) !important; }
 .evo-model-cell { display: flex; flex-direction: column; gap: 2px; }
 .evo-model-cell span:last-child { font-size: var(--fs-11); color: var(--text-faint); font-family: var(--font-evo-mono); }
@@ -4074,6 +4080,11 @@ a.evo-breadcrumbs__seg:hover { color: var(--text); text-decoration: none; }
   .evo-trace-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .evo-trace-detail__kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .evo-trace-detail__bottom { grid-template-columns: 1fr; }
+  .evo-evaluations-layout { grid-template-columns: 1fr; }
+  .evo-rubric-drawer {
+    position: static;
+    max-height: none;
+  }
   .evo-grid-2col { grid-template-columns: 1fr; }
   .evo-overview-hero,
   .evo-overview-main-grid,
@@ -4101,6 +4112,8 @@ a.evo-breadcrumbs__seg:hover { color: var(--text); text-decoration: none; }
   .evo-kpi-grid { grid-template-columns: 1fr; }
   .evo-trace-summary,
   .evo-trace-detail__kpis { grid-template-columns: 1fr; }
+  .evo-rubric-drawer__yaml { max-height: 320px; }
+  .evo-rubric-drawer__line { grid-template-columns: 36px minmax(280px, 1fr); }
   .evo-overview-metric-grid,
   .evo-overview-actions,
   .evo-overview-context,
@@ -4199,9 +4212,96 @@ a.evo-breadcrumbs__seg:hover { color: var(--text); text-decoration: none; }
   min-height: 3px;
   transition: opacity var(--duration-fast);
 }
-.dist-bar--low  { background: var(--danger);  opacity: 0.8; }
-.dist-bar--mid  { background: var(--warning); opacity: 0.8; }
-.dist-bar--high { background: var(--success); opacity: 0.8; }
+.dist-bar--low  { background: var(--err);  opacity: 0.82; }
+.dist-bar--mid  { background: var(--warn); opacity: 0.82; }
+.dist-bar--high { background: var(--ok); opacity: 0.82; }
+
+.evo-evaluations-summary {
+  margin-bottom: var(--sp-5);
+}
+.evo-evaluation-metric {
+  min-height: 116px;
+}
+.evo-evaluations-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 390px);
+  gap: var(--sp-4);
+  align-items: start;
+}
+.evo-evaluations-empty {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  padding: 40px 24px;
+  text-align: center;
+}
+.evo-rubric-drawer {
+  position: sticky;
+  top: var(--sp-4);
+  max-height: calc(100vh - var(--topbar-h) - var(--sp-8));
+  overflow: hidden;
+}
+.evo-rubric-drawer__header {
+  align-items: flex-start;
+}
+.evo-rubric-drawer__body {
+  display: grid;
+  gap: var(--sp-3);
+}
+.evo-rubric-drawer__facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.evo-rubric-drawer__yaml {
+  overflow: auto;
+  max-height: 420px;
+}
+.evo-rubric-drawer__code {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  min-width: max-content;
+}
+.evo-rubric-drawer__line {
+  display: grid;
+  grid-template-columns: 42px minmax(360px, 1fr);
+  min-height: 20px;
+}
+.evo-rubric-drawer__line-no {
+  padding: 0 10px 0 12px;
+  color: var(--text-faint);
+  text-align: right;
+  border-right: 1px solid var(--border-subtle);
+  user-select: none;
+}
+.evo-rubric-drawer__line-text {
+  padding: 0 14px;
+  color: var(--text-dim);
+  white-space: pre;
+}
+.evo-rubric-drawer__versions {
+  display: grid;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-6);
+  overflow: hidden;
+}
+.evo-rubric-drawer__version {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) auto;
+  gap: 8px;
+  padding: 8px 10px;
+  border-top: 1px solid var(--border-subtle);
+  color: var(--text-muted);
+  font-size: var(--fs-12);
+}
+.evo-rubric-drawer__version:first-child {
+  border-top: 0;
+}
+.evo-rubric-drawer__version strong {
+  color: var(--ok);
+  font-weight: 600;
+}
 
 /* Score value with semantic color */
 .score-num {
