@@ -25,6 +25,7 @@ function buildDistribution(scores: number[], buckets = 6): number[] {
 }
 
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+const EVALUATION_RUNS_LIMIT = 100;
 
 function relTime(iso: string): string {
   const diff = Date.now() - Date.parse(iso);
@@ -106,7 +107,7 @@ export default async function EvaluationsPage({ params, searchParams }: Props) {
 
   const resolved = await resolveProject(org, project);
   const [evalsRes, rubricsRes, tracesRes] = await Promise.all([
-    getProjectEvaluations(resolved.project_id),
+    getProjectEvaluations(resolved.project_id, EVALUATION_RUNS_LIMIT),
     getRubrics(resolved.project_id),
     getTraces({ projectId: resolved.project_id, limit: 20 }),
   ]);
@@ -135,6 +136,10 @@ export default async function EvaluationsPage({ params, searchParams }: Props) {
   const runs7d = runs.filter(isWithinLast7d).length;
   const overallPassRate = passRate(runs);
   const costUsd = runs.reduce((sum, run) => sum + run.cost_usd, 0);
+  const loadedRunsHint =
+    runs.length >= EVALUATION_RUNS_LIMIT
+      ? `Fonte: ultimas ${EVALUATION_RUNS_LIMIT} runs carregadas`
+      : "Fonte: runs carregadas";
   const baseUrl = `/o/${org}/p/${project}/evaluations`;
   const tabHref = (t: string) => `${baseUrl}?tab=${t}`;
   const rubricDrawerHref = (rubricId: string) => `${baseUrl}?tab=active&rubric=${rubricId}`;
@@ -185,19 +190,19 @@ export default async function EvaluationsPage({ params, searchParams }: Props) {
           icon={<History size={13} />}
           label="Runs 7d"
           value={runs7d.toLocaleString("pt-BR")}
-          hint="Fonte: created_at das runs"
+          hint={`${loadedRunsHint}; filtro created_at`}
         />
         <EvaluationSummaryCard
           icon={<CheckCircle2 size={13} />}
           label="Pass rate"
           value={formatPassRate(overallPassRate)}
-          hint={overallPassRate === null ? "Sem runs concluídas" : "Fonte: passed"}
+          hint={overallPassRate === null ? "Sem runs concluidas nas runs carregadas" : `${loadedRunsHint}; campo passed`}
         />
         <EvaluationSummaryCard
           icon={<Coins size={13} />}
-          label="Custo"
+          label="Custo carregado"
           value={formatCost(costUsd)}
-          hint="Fonte: cost_usd das runs"
+          hint={`${loadedRunsHint}; campo cost_usd`}
         />
       </section>
 
@@ -333,12 +338,20 @@ export default async function EvaluationsPage({ params, searchParams }: Props) {
             <div className="evo-evaluations-empty">
               <p style={{ color: "var(--text-muted)", marginBottom: 8, fontWeight: 600 }}>Nenhuma run ainda</p>
               <p style={{ color: "var(--text-faint)", fontSize: 13 }}>
-                Avaliações precisam de traces capturados e uma rubrica YAML versionada.
+                {rubrics.length === 0
+                  ? "Crie uma rubrica YAML antes de rodar avaliacoes."
+                  : traces.length === 0
+                    ? "Capture um trace antes de rodar avaliacoes."
+                    : "Use uma rubrica versionada e um trace elegivel para iniciar a primeira run."}
               </p>
               <div className="evo-row" style={{ justifyContent: "center", marginTop: 14 }}>
                 {rubrics.length === 0 ? (
                   <Link href={`/o/${org}/p/${project}/rubrics`} className="evo-btn evo-btn--sm evo-btn--primary">
                     <Plus size={13} /> Criar rubrica
+                  </Link>
+                ) : traces.length === 0 ? (
+                  <Link href={`/o/${org}/p/${project}/traces`} className="evo-btn evo-btn--sm">
+                    Ver traces
                   </Link>
                 ) : (
                   <Link href={tabHref("active")} className="evo-btn evo-btn--sm">

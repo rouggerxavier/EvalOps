@@ -13,7 +13,7 @@ function escaped(token) {
 
 test("P4 Evaluations premium: keeps real endpoints and server actions", () => {
   for (const token of [
-    "getProjectEvaluations(resolved.project_id)",
+    "getProjectEvaluations(resolved.project_id, EVALUATION_RUNS_LIMIT)",
     "getRubrics(resolved.project_id)",
     "getTraces({ projectId: resolved.project_id, limit: 20 })",
     "getRubricVersions(selectedRubric.id)",
@@ -32,8 +32,10 @@ test("P4 Evaluations premium: summary KPIs come from loaded run and rubric data"
     "cost_usd",
     "created_at",
     "passed",
+    "EVALUATION_RUNS_LIMIT",
     "Fonte: getRubrics",
-    "Fonte: cost_usd das runs",
+    "Fonte: runs carregadas",
+    "Custo carregado",
   ]) {
     assert.match(evaluationsPage, escaped(token));
   }
@@ -65,6 +67,8 @@ test("P4 Evaluations premium: empty states and planned controls stay honest", ()
     "Nenhuma rubrica cadastrada",
     "Criar rubrica",
     "Rodar agora",
+    "traces.length === 0",
+    "Ver traces",
     "data-status=\"planned\"",
     "disabled",
     "href=\"#run-evaluation\"",
