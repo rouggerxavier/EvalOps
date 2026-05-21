@@ -464,7 +464,8 @@ for (const section of ["datasets", "exports", "keys"]) {
       new URL(`../app/o/[org]/p/[project]/${section}/error.tsx`, import.meta.url),
       "utf8",
     );
-    assert.match(src, /safeErrorMessage\(error,/);
+    const routeError = readFileSync(new URL("../components/RouteError.tsx", import.meta.url), "utf8");
+    assert.match(`${src}\n${routeError}`, /safeErrorMessage\(error,/);
     assert.equal(/\{error\.message/.test(src), false);
   });
 }

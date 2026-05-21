@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Flag, GitCompare, Play } from "lucide-react";
+import { Flag, GitCompare, Play, Target } from "lucide-react";
 
 import { AuthRequiredPanel } from "@/components/AuthRequiredPanel";
 import { SpanWaterfall } from "@/components/SpanWaterfall";
@@ -20,6 +20,7 @@ import {
   isRagTrace,
 } from "@/lib/rag";
 import { safeErrorMessage } from "@/lib/safe-error";
+import { formatTraceScore, getTraceCauseLabel, getTraceModelLabel } from "@/lib/trace-display";
 
 type Props = {
   params: Promise<{ org: string; project: string; trace: string }>;
@@ -33,6 +34,16 @@ function StatusBadge({ status }: { status: string }) {
       <span className="evo-badge__dot" />
       {status.toUpperCase()}
     </span>
+  );
+}
+
+function DetailMetric({ label, value, hint }: { label: string; value: string; hint?: string }) {
+  return (
+    <div className="evo-metric evo-trace-detail__metric">
+      <div className="evo-metric__label">{label}</div>
+      <div className="evo-metric__value evo-metric__value--mono">{value}</div>
+      {hint ? <div className="evo-metric__delta evo-metric__delta--neutral">{hint}</div> : null}
+    </div>
   );
 }
 
@@ -52,27 +63,38 @@ export default async function TraceDetailPage({ params, searchParams }: Props) {
   const retrievalSummary = ragEnabled ? getRetrievalSummary(detail) : undefined;
   const groundingQuality = ragEnabled ? getGroundingQuality(detail) : undefined;
   const citationRefs = ragEnabled ? getCitationRefs(detail) : undefined;
+  const traceCause = getTraceCauseLabel(t);
+  const traceModel = getTraceModelLabel(t) ?? ragSummary?.model;
+  const attentionTitle = t.status === "error" ? "Trace com erro" : t.status === "partial" ? "Trace parcial" : null;
+  const ragScore = groundingQuality?.quality_score ?? ragSummary?.quality_score;
 
   return (
-    <main className="evo-page">
-      {/* ── Header ── */}
+    <main className="evo-page evo-trace-detail">
       <div className="evo-page-header">
         <div>
-          <div className="evo-row" style={{ marginBottom: 8 }}>
-            <h1 className="evo-page-header__title" style={{ margin: 0 }}>{t.name}</h1>
+          <p className="evo-page-header__eyebrow">
+            <Link href={`/o/${org}/p/${project}/traces`} className="evo-trace-detail__back">
+              ← Traces
+            </Link>
+            <span aria-hidden="true"> · </span>
+            Observabilidade · Trace detail
+          </p>
+          <div className="evo-trace-detail__title-row">
+            <h1 className="evo-page-header__title evo-mono evo-trace-detail__title" style={{ margin: 0 }}>{t.name}</h1>
             <StatusBadge status={t.status} />
             <span className="evo-tag">{t.environment}</span>
+            {ragEnabled ? <span className="evo-badge evo-badge--eval">RAG</span> : null}
             {t.redacted ? <span className="evo-tag">Redigido</span> : null}
           </div>
-          <div className="evo-row" style={{ fontSize: 12, color: "var(--text-muted)", gap: 12 }}>
+          <div className="evo-trace-detail__meta">
             <span className="evo-mono" style={{ fontSize: 11 }}>{t.id}</span>
-            <span>·</span>
-            {t.service && <><span>{t.service}</span><span>·</span></>}
+            {t.service && <span>{t.service}</span>}
+            {traceModel && <span className="evo-mono">{traceModel}</span>}
             <span>{formatDateTime(t.created_at)}</span>
-            {t.user_ref && <><span>·</span><span className="evo-mono">user: {t.user_ref}</span></>}
+            {t.user_ref && <span className="evo-mono">user: {t.user_ref}</span>}
           </div>
         </div>
-        <div className="evo-row">
+        <div className="evo-page-header__actions">
           <button
             type="button"
             className="evo-btn evo-btn--sm"
@@ -100,62 +122,66 @@ export default async function TraceDetailPage({ params, searchParams }: Props) {
           >
             <GitCompare size={13} /> Comparar
           </button>
+          <button
+            type="button"
+            className="evo-btn evo-btn--sm"
+            disabled
+            data-status="planned"
+            title="Avaliação manual a partir do trace — em breve"
+          >
+            <Target size={13} /> Avaliar
+          </button>
           <Link className="evo-btn evo-btn--sm" href={`/o/${org}/p/${project}/traces`}>
             ← Traces
           </Link>
         </div>
       </div>
 
-      {/* ── KPI grid ── */}
-      <div className="evo-kpi-grid" style={{ gridTemplateColumns: "repeat(5, minmax(0,1fr))" }}>
-        <div className="evo-metric">
-          <div className="evo-metric__label">Duração</div>
-          <div className="evo-metric__value evo-metric__value--mono">
-            {(t.duration_ms / 1000).toFixed(2)}<span className="evo-metric__unit">s</span>
+      {attentionTitle && (
+        <div className={`evo-trace-attention evo-trace-attention--${t.status === "error" ? "error" : "partial"}`}>
+          <div>
+            <strong>{attentionTitle}</strong>
+            <span>
+              {traceCause
+                ? `Causa informada: ${traceCause}.`
+                : "Sem causa estruturada em metadata; confira waterfall e JSON cru."}
+            </span>
           </div>
+          <span className="evo-tag">{t.status}</span>
         </div>
-        <div className="evo-metric">
-          <div className="evo-metric__label">Tokens entrada</div>
-          <div className="evo-metric__value evo-metric__value--mono">
-            {t.total_tokens_in.toLocaleString("pt-BR")}
-          </div>
-        </div>
-        <div className="evo-metric">
-          <div className="evo-metric__label">Tokens saída</div>
-          <div className="evo-metric__value evo-metric__value--mono">
-            {t.total_tokens_out.toLocaleString("pt-BR")}
-          </div>
-        </div>
-        <div className="evo-metric">
-          <div className="evo-metric__label">Custo</div>
-          <div className="evo-metric__value evo-metric__value--mono">
-            {formatCost(t.total_cost_usd)}
-          </div>
-        </div>
-        <div className="evo-metric">
-          <div className="evo-metric__label">Spans / Eventos</div>
-          <div className="evo-metric__value evo-metric__value--mono">
-            {detail.spans.length}<span className="evo-metric__unit">/ {detail.events_count}</span>
-          </div>
-        </div>
+      )}
+
+      <div className="evo-kpi-grid evo-trace-detail__kpis">
+        <DetailMetric label="Duração" value={formatLatency(t.duration_ms)} hint="tempo total" />
+        <DetailMetric label="Tokens entrada" value={t.total_tokens_in.toLocaleString("pt-BR")} hint="prompt" />
+        <DetailMetric label="Tokens saída" value={t.total_tokens_out.toLocaleString("pt-BR")} hint="completion" />
+        <DetailMetric label="Custo" value={formatCost(t.total_cost_usd)} hint={traceModel ?? "sem modelo"} />
+        <DetailMetric
+          label="Spans / Eventos"
+          value={`${detail.spans.length} / ${detail.events_count}`}
+          hint="capturados"
+        />
+        <DetailMetric
+          label="Qualidade RAG"
+          value={ragScore === undefined ? "—" : formatTraceScore(ragScore)}
+          hint={ragEnabled ? "sinal capturado" : "não-RAG"}
+        />
       </div>
 
-      {/* ── RAG section (only when trace follows §9 convention) ── */}
       {ragEnabled && (
         <section
           aria-label="RAG details"
-          style={{ marginBottom: "var(--sp-5)" }}
+          className="evo-trace-section evo-trace-section--rag"
           data-testid="rag-section"
         >
+          <div className="evo-trace-section__header">
+            <div>
+              <h2>RAG</h2>
+              <p>Resposta, retrieval, grounding e citações preservados do emissor do trace.</p>
+            </div>
+          </div>
           {ragSummary && <RAGSummaryHeader summary={ragSummary} />}
-          <div
-            className="evo-rag-grid"
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-              gap: "var(--sp-3)",
-            }}
-          >
+          <div className="evo-rag-grid">
             {answerPreview && <AnswerPreviewCard answer={answerPreview} />}
             {groundingQuality && <GroundingQualityCard quality={groundingQuality} />}
             {retrievalSummary && <RetrievalSummaryCard retrieval={retrievalSummary} />}
@@ -164,11 +190,13 @@ export default async function TraceDetailPage({ params, searchParams }: Props) {
         </section>
       )}
 
-      {/* ── Waterfall ── */}
-      <div style={{ marginBottom: "var(--sp-3)" }}>
-        <h2 style={{ fontSize: "var(--fs-14)", fontWeight: 600, color: "var(--text)", marginBottom: "var(--sp-3)" }}>
-          Waterfall
-        </h2>
+      <section className="evo-trace-section" data-testid="trace-waterfall-section">
+        <div className="evo-trace-section__header">
+          <div>
+            <h2>Waterfall</h2>
+            <p>Ordem dos spans, duração relativa e payload do span selecionado.</p>
+          </div>
+        </div>
         {detail.spans.length === 0 ? (
           <div className="evo-card" style={{ padding: "40px 24px", textAlign: "center" }}>
             <p style={{ color: "var(--text-muted)" }}>Nenhum span capturado neste trace.</p>
@@ -180,14 +208,15 @@ export default async function TraceDetailPage({ params, searchParams }: Props) {
             traceStartedAt={t.started_at}
           />
         )}
-      </div>
+      </section>
 
-      {/* ── Bottom grid: metadata + feedback ── */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 340px", gap: "var(--sp-3)" }}>
-        {/* Metadata */}
+      <div className="evo-trace-detail__bottom">
         <div className="evo-card">
           <div className="evo-card__header">
-            <h3 className="evo-card__title">Metadata do trace</h3>
+            <div>
+              <h3 className="evo-card__title">Metadata do trace</h3>
+              <p className="evo-card__subtitle">JSON cru preservado para inspeção.</p>
+            </div>
           </div>
           <div className="evo-card__body">
             <div className="evo-code">
@@ -198,8 +227,7 @@ export default async function TraceDetailPage({ params, searchParams }: Props) {
           </div>
         </div>
 
-        {/* Feedback rail */}
-        <div style={{ display: "flex", flexDirection: "column", gap: "var(--sp-3)" }}>
+        <div className="evo-trace-feedback-rail">
           <div className="evo-card">
             <div className="evo-card__header">
               <h3 className="evo-card__title">Feedback humano</h3>

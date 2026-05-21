@@ -93,12 +93,13 @@ export function TracesFilterBar({ initialName = "", initialStatus = "", initialE
         ))}
 
         <div className="evo-spacer" />
-        <span style={{ fontSize: 12, color: "var(--text-faint)" }}>
+        <span className="evo-mono" style={{ fontSize: 11, color: "var(--text-faint)" }}>
           {count.toLocaleString("pt-BR")} de {total.toLocaleString("pt-BR")}
         </span>
         <span
-          style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--ok)", display: "inline-block", position: "relative" }}
+          aria-label="Live"
           title="Live"
+          style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--ok)", display: "inline-block", position: "relative" }}
         />
       </div>
     </div>

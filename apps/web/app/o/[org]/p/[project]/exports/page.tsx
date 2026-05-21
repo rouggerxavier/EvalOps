@@ -120,6 +120,16 @@ function exportSource(job: ExportJob): string {
   return `traces/${env}`;
 }
 
+function relTime(iso: string): string {
+  const diff = Date.now() - Date.parse(iso);
+  const mins = Math.floor(diff / 60_000);
+  if (mins < 1) return "agora";
+  if (mins < 60) return `${mins}m atrás`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h atrás`;
+  return `${Math.floor(hrs / 24)}d atrás`;
+}
+
 function percent(value: number, limit: number): number {
   if (!limit || limit <= 0) return 0;
   return Math.max(0, Math.min(100, (value / limit) * 100));
@@ -161,6 +171,7 @@ export default async function ExportsPage({ params, searchParams }: Props) {
       <div className="evo-page">
         <div className="evo-page-header">
           <div>
+            <p className="evo-page-header__eyebrow">Dados · Exports</p>
             <h1 className="evo-page-header__title">Exports</h1>
             <p className="evo-page-header__subtitle">Jobs de exportacao para JSONL e auditoria.</p>
           </div>
@@ -198,6 +209,17 @@ export default async function ExportsPage({ params, searchParams }: Props) {
   const runningCount = exportRows.filter((row) => row.job && ["running", "queued"].includes(row.job.status.toLowerCase())).length;
   const completedCount = exportRows.filter((row) => row.job?.status.toLowerCase() === "completed").length;
   const failedCount = exportRows.filter((row) => row.error || (row.job && ["error", "failed"].includes(row.job.status.toLowerCase()))).length;
+  const latestActivity = (() => {
+    let mostRecent: string | null = null;
+    for (const row of exportRows) {
+      const value = row.job?.created_at;
+      if (!value) continue;
+      if (!mostRecent || Date.parse(value) > Date.parse(mostRecent)) {
+        mostRecent = value;
+      }
+    }
+    return mostRecent;
+  })();
 
   const filteredRows = exportRows.filter((row) => {
     const status = row.job?.status.toLowerCase();
@@ -223,6 +245,7 @@ export default async function ExportsPage({ params, searchParams }: Props) {
     <div className="evo-page">
       <div className="evo-page-header">
         <div>
+          <p className="evo-page-header__eyebrow">Dados · Exports</p>
           <h1 className="evo-page-header__title">Exports</h1>
           <p className="evo-page-header__subtitle">
             Exports para JSONL, auditoria e analise offline com dados reais de traces.
@@ -243,26 +266,28 @@ export default async function ExportsPage({ params, searchParams }: Props) {
       {qp.created === "1" && <div style={alertStyle("ok")}>Export criado e adicionado na lista de jobs conhecidos.</div>}
       {sanitizedQueryError && <div style={alertStyle("err")}>{sanitizedQueryError}</div>}
 
-      <section className="evo-kpi-grid" style={{ marginBottom: 16 }}>
-        <div className="evo-metric" style={{ minHeight: 112 }}>
-          <div className="evo-metric__label">Jobs conhecidos</div>
-          <div className="evo-metric__value">{exportRows.length.toLocaleString("pt-BR")}</div>
-          <div className="evo-metric__delta evo-metric__delta--neutral">consultados por ID</div>
+      <section className="evo-summary-row" aria-label="Resumo de exports">
+        <div className="evo-summary-card">
+          <p className="evo-summary-card__label">Jobs conhecidos</p>
+          <div className="evo-summary-card__value">{exportRows.length.toLocaleString("pt-BR")}</div>
+          <div className="evo-summary-card__hint">consultados por ID</div>
         </div>
-        <div className="evo-metric" style={{ minHeight: 112 }}>
-          <div className="evo-metric__label">Em andamento</div>
-          <div className="evo-metric__value">{runningCount.toLocaleString("pt-BR")}</div>
-          <div className="evo-metric__delta evo-metric__delta--neutral">running/queued</div>
+        <div className="evo-summary-card">
+          <p className="evo-summary-card__label">Em andamento</p>
+          <div className="evo-summary-card__value">{runningCount.toLocaleString("pt-BR")}</div>
+          <div className="evo-summary-card__hint">running/queued</div>
         </div>
-        <div className="evo-metric" style={{ minHeight: 112 }}>
-          <div className="evo-metric__label">Concluidos</div>
-          <div className="evo-metric__value">{completedCount.toLocaleString("pt-BR")}</div>
-          <div className="evo-metric__delta evo-metric__delta--neutral">prontos</div>
+        <div className="evo-summary-card">
+          <p className="evo-summary-card__label">Concluídos</p>
+          <div className="evo-summary-card__value">{completedCount.toLocaleString("pt-BR")}</div>
+          <div className="evo-summary-card__hint">prontos para download</div>
         </div>
-        <div className="evo-metric" style={{ minHeight: 112 }}>
-          <div className="evo-metric__label">Falhas</div>
-          <div className="evo-metric__value">{failedCount.toLocaleString("pt-BR")}</div>
-          <div className="evo-metric__delta evo-metric__delta--neutral">erro de job ou consulta</div>
+        <div className="evo-summary-card">
+          <p className="evo-summary-card__label">Última atividade</p>
+          <div className="evo-summary-card__value">
+            {latestActivity ? relTime(latestActivity) : "—"}
+          </div>
+          <div className="evo-summary-card__hint">job mais recente consultado</div>
         </div>
       </section>
 
@@ -568,6 +593,40 @@ export default async function ExportsPage({ params, searchParams }: Props) {
           </section>
         </div>
       </div>
+
+      <section className="evo-card" style={{ marginTop: 12 }}>
+        <div className="evo-card__header">
+          <div>
+            <h3 className="evo-card__title">Endpoints ativos</h3>
+            <div className="evo-card__subtitle">Rotas reais do backend que servem este módulo.</div>
+          </div>
+        </div>
+        <div className="evo-card__body">
+          <div className="evo-endpoint-list" aria-label="Endpoints do módulo Exports">
+            <div className="evo-endpoint-row">
+              <span className="evo-endpoint-row__method evo-endpoint-row__method--post">POST</span>
+              <span className="evo-endpoint-row__path" title="/v1/exports">
+                /exports
+              </span>
+              <span className="evo-endpoint-row__note">ativo · cria job</span>
+            </div>
+            <div className="evo-endpoint-row">
+              <span className="evo-endpoint-row__method evo-endpoint-row__method--get">GET</span>
+              <span className="evo-endpoint-row__path" title="/v1/exports/{export_id}">
+                /exports/{"{export_id}"}
+              </span>
+              <span className="evo-endpoint-row__note">ativo · status do job</span>
+            </div>
+            <div className="evo-endpoint-row">
+              <span className="evo-endpoint-row__method evo-endpoint-row__method--get">GET</span>
+              <span className="evo-endpoint-row__path" title="/api/exports/{export_id}/download (Next proxy autenticado)">
+                /api/exports/{"{export_id}"}/download
+              </span>
+              <span className="evo-endpoint-row__note">ativo · proxy autenticado</span>
+            </div>
+          </div>
+        </div>
+      </section>
     </div>
   );
 }

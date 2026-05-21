@@ -157,11 +157,33 @@ export default async function PromptsPage({ params, searchParams }: Props) {
 
   const base = `/o/${org}/p/${project}/prompts`;
 
+  const totalPrompts = prompts.length;
+  const totalVersions = Array.from(versionsByPrompt.values()).reduce(
+    (acc, list) => acc + list.length,
+    0,
+  );
+  const latestActivity = (() => {
+    let mostRecent: string | null = null;
+    for (const p of prompts) {
+      if (!mostRecent || Date.parse(p.created_at) > Date.parse(mostRecent)) {
+        mostRecent = p.created_at;
+      }
+      const versions = versionsByPrompt.get(p.id) ?? [];
+      for (const v of versions) {
+        if (!mostRecent || Date.parse(v.created_at) > Date.parse(mostRecent)) {
+          mostRecent = v.created_at;
+        }
+      }
+    }
+    return mostRecent;
+  })();
+
   return (
     <div className="evo-page">
       {/* Header */}
       <div className="evo-page-header">
         <div>
+          <p className="evo-page-header__eyebrow">Operação · Prompts</p>
           <h1 className="evo-page-header__title">Prompts</h1>
           <p className="evo-page-header__subtitle">
             Templates versionados. Cada versão é referenciada por traces e experimentos.
@@ -195,6 +217,27 @@ export default async function PromptsPage({ params, searchParams }: Props) {
           {qp.created ? "Prompt criado com sucesso." : "Nova versão criada com sucesso."}
         </div>
       )}
+
+      {/* Summary row — só dados reais do payload */}
+      <section className="evo-summary-row" aria-label="Resumo de prompts">
+        <div className="evo-summary-card">
+          <p className="evo-summary-card__label">Prompts</p>
+          <div className="evo-summary-card__value">{totalPrompts.toLocaleString("pt-BR")}</div>
+          <div className="evo-summary-card__hint">slugs versionados ativos</div>
+        </div>
+        <div className="evo-summary-card">
+          <p className="evo-summary-card__label">Versões</p>
+          <div className="evo-summary-card__value">{totalVersions.toLocaleString("pt-BR")}</div>
+          <div className="evo-summary-card__hint">total publicado</div>
+        </div>
+        <div className="evo-summary-card">
+          <p className="evo-summary-card__label">Última atividade</p>
+          <div className="evo-summary-card__value">
+            {latestActivity ? relTime(latestActivity) : "—"}
+          </div>
+          <div className="evo-summary-card__hint">prompt ou versão</div>
+        </div>
+      </section>
 
       {prompts.length === 0 ? (
         /* ── Empty state + create form ── */
@@ -395,6 +438,48 @@ export default async function PromptsPage({ params, searchParams }: Props) {
           )}
         </div>
       )}
+
+      {/* Endpoints reais — referência somente leitura */}
+      <section className="evo-card" style={{ marginTop: 12 }}>
+        <div className="evo-card__header">
+          <div>
+            <h3 className="evo-card__title">Endpoints ativos</h3>
+            <div className="evo-card__subtitle">Rotas reais do backend que servem este módulo.</div>
+          </div>
+        </div>
+        <div className="evo-card__body">
+          <div className="evo-endpoint-list" aria-label="Endpoints do módulo Prompts">
+            <div className="evo-endpoint-row">
+              <span className="evo-endpoint-row__method evo-endpoint-row__method--get">GET</span>
+              <span className="evo-endpoint-row__path" title="/v1/projects/{project_id}/prompts">
+                /projects/{"{project_id}"}/prompts
+              </span>
+              <span className="evo-endpoint-row__note">ativo</span>
+            </div>
+            <div className="evo-endpoint-row">
+              <span className="evo-endpoint-row__method evo-endpoint-row__method--post">POST</span>
+              <span className="evo-endpoint-row__path" title="/v1/projects/{project_id}/prompts">
+                /projects/{"{project_id}"}/prompts
+              </span>
+              <span className="evo-endpoint-row__note">ativo · cria prompt</span>
+            </div>
+            <div className="evo-endpoint-row">
+              <span className="evo-endpoint-row__method evo-endpoint-row__method--get">GET</span>
+              <span className="evo-endpoint-row__path" title="/v1/prompts/{prompt_id}/versions">
+                /prompts/{"{prompt_id}"}/versions
+              </span>
+              <span className="evo-endpoint-row__note">ativo</span>
+            </div>
+            <div className="evo-endpoint-row">
+              <span className="evo-endpoint-row__method evo-endpoint-row__method--post">POST</span>
+              <span className="evo-endpoint-row__path" title="/v1/prompts/{prompt_id}/versions">
+                /prompts/{"{prompt_id}"}/versions
+              </span>
+              <span className="evo-endpoint-row__note">ativo · nova versão</span>
+            </div>
+          </div>
+        </div>
+      </section>
 
       {/* Create new version (collapsible) — only when prompts exist */}
       {prompts.length > 0 && (

@@ -18,9 +18,10 @@ function RowSkeleton() {
 
 export default function Loading() {
   return (
-    <div className="evo-page">
+    <div className="evo-page" aria-busy="true" aria-live="polite">
       <div className="evo-page-header">
         <div>
+          <p className="evo-page-header__eyebrow">Dados · Exports</p>
           <h1 className="evo-page-header__title">Exports</h1>
           <p className="evo-page-header__subtitle">Carregando jobs de export...</p>
         </div>
@@ -39,4 +40,3 @@ export default function Loading() {
     </div>
   );
 }
-
