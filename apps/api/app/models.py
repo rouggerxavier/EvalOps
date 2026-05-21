@@ -50,6 +50,7 @@ class Project(Base):
     name: Mapped[str] = mapped_column(String(255))
     slug: Mapped[str] = mapped_column(String(255))
     description: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    default_environment: Mapped[str] = mapped_column(String(16), default="prod", server_default="prod")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 

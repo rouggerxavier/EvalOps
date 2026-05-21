@@ -11,12 +11,13 @@ from app.deps import ensure_org_membership, get_current_user, get_project_from_a
 from app.domain.services import api_key_service
 from app.domain.services.audit_service import record_audit
 from app.domain.services.trace_ingest_service import ingest_trace_batch
-from app.models import Event, HumanFeedback, Membership, Notification, Organization, Project, Span, Trace, User, utcnow
+from app.models import EvaluationRun, Event, HumanFeedback, Membership, Notification, Organization, Project, Span, Trace, User, utcnow
 from app.ownership import get_owned_project, get_owned_trace
 from app.schemas import (
     AttentionResponse,
     ApiKeyCreate,
     ApiKeyCreateOut,
+    MemberOut,
     NotificationListResponse,
     NotificationMarkReadIn,
     NotificationOut,
@@ -24,6 +25,7 @@ from app.schemas import (
     OrganizationOut,
     ProjectCreate,
     ProjectOut,
+    ProjectUpdateIn,
     SdkStatusOut,
     TraceBatchIn,
     TraceOut,
@@ -148,11 +150,75 @@ def create_project(
         name=payload.name,
         slug=payload.slug,
         description=payload.description,
+        default_environment=payload.default_environment,
     )
     db.add(project)
     db.commit()
     db.refresh(project)
     return project
+
+
+@router.patch("/projects/{project_id}", response_model=ProjectOut)
+def update_project(
+    payload: ProjectUpdateIn,
+    project: Project = Depends(get_owned_project),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> Project:
+    changes: dict[str, object] = {}
+    if payload.name is not None and payload.name != project.name:
+        changes["name"] = {"from": project.name, "to": payload.name}
+        project.name = payload.name
+    if "description" in payload.model_fields_set and payload.description != project.description:
+        changes["description"] = {"from": project.description, "to": payload.description}
+        project.description = payload.description
+    if payload.default_environment is not None and payload.default_environment != project.default_environment:
+        changes["default_environment"] = {
+            "from": project.default_environment,
+            "to": payload.default_environment,
+        }
+        project.default_environment = payload.default_environment
+    db.add(project)
+    if changes:
+        record_audit(
+            db, "project.updated",
+            organization_id=project.organization_id,
+            actor_user_id=user.id,
+            target_type="project",
+            target_id=project.id,
+            payload={"changes": changes},
+        )
+    db.commit()
+    db.refresh(project)
+    return project
+
+
+@router.get("/organizations/{org_id}/members")
+def list_organization_members(
+    org_id: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    ensure_org_membership(db, user.id, org_id)
+    rows = (
+        db.query(Membership, User)
+        .join(User, User.id == Membership.user_id)
+        .filter(Membership.organization_id == org_id)
+        .order_by(Membership.created_at.asc(), User.email.asc())
+        .all()
+    )
+    return {
+        "data": [
+            MemberOut(
+                user_id=member.user_id,
+                email=row_user.email,
+                name=row_user.name,
+                role=member.role,
+                joined_at=member.created_at,
+            ).model_dump()
+            for member, row_user in rows
+        ]
+    }
 
 
 @router.get("/projects/{project_id}/api-keys")
@@ -374,7 +440,23 @@ def list_traces(
     rows = query.order_by(Trace.created_at.desc(), Trace.id.desc()).limit(page_limit + 1).all()
     has_more = len(rows) > page_limit
     rows = rows[:page_limit]
-    data = [TraceOut.model_validate(row).model_dump() for row in rows]
+    trace_ids = [row.id for row in rows]
+    last_scores: dict[str, float | None] = {}
+    if trace_ids:
+        runs = (
+            db.query(EvaluationRun)
+            .filter(EvaluationRun.trace_id.in_(trace_ids))
+            .order_by(EvaluationRun.trace_id.asc(), EvaluationRun.created_at.desc())
+            .all()
+        )
+        for run in runs:
+            if run.trace_id not in last_scores:
+                last_scores[run.trace_id] = float(run.aggregate_score) if run.aggregate_score is not None else None
+    data = []
+    for row in rows:
+        item = TraceOut.model_validate(row).model_dump()
+        item["last_score"] = last_scores.get(row.id)
+        data.append(item)
     next_cursor = _encode_cursor(rows[-1].created_at, rows[-1].id) if has_more and rows else None
     return {"data": data, "next_cursor": next_cursor}
 

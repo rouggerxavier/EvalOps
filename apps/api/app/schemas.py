@@ -22,6 +22,7 @@ class ProjectCreate(BaseModel):
     name: str = Field(min_length=2, max_length=255)
     slug: str = Field(min_length=2, max_length=255, pattern=r"^[a-z0-9-]+$")
     description: str | None = None
+    default_environment: str = Field(default="prod", pattern=r"^(dev|staging|prod)$")
 
 
 class ProjectOut(BaseModel):
@@ -32,7 +33,22 @@ class ProjectOut(BaseModel):
     name: str
     slug: str
     description: str | None = None
+    default_environment: str = "prod"
     created_at: datetime
+
+
+class ProjectUpdateIn(BaseModel):
+    name: str | None = Field(default=None, min_length=2, max_length=255)
+    description: str | None = None
+    default_environment: str | None = Field(default=None, pattern=r"^(dev|staging|prod)$")
+
+
+class MemberOut(BaseModel):
+    user_id: str
+    email: str
+    name: str
+    role: str
+    joined_at: datetime
 
 
 class ApiKeyCreate(BaseModel):
