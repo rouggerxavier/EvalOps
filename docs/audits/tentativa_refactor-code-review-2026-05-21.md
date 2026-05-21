@@ -75,30 +75,29 @@ Plan §4.6 explícito:
 Só a parte do `replay_of` foi feita.
 
 ### Como corrigir
-Três caminhos, em ordem de preferência:
 
-**A. Implementar de verdade (preferido):**
-1. Criar `apps/api/app/domain/services/trace_replay_service.py` com função `enqueue_replay(db, original_trace, payload)`.
-2. Reusar a infra do `experiment_runner` (provavelmente em `apps/api/app/workers/`). Identificar o `Celery`/`RQ`/`apscheduler` task e adicionar `replay_trace(original_trace_id, model_override, variables)`.
-3. O worker:
-   - Lê `prompt_version_ref` do span LLM original (`spans[].name == "llm.generate"` ou similar).
-   - Lê `metadata.input` ou reconstrói do span `request.input`.
-   - Chama provider via mesmo cliente que ingest usa.
-   - Faz ingest do novo trace com `metadata.replay_of` e `metadata.replay_status = "completed"|"failed"`.
-4. `rerun_trace` route apenas:
-   - Valida payload (já faz).
-   - Cria `Trace` placeholder.
-   - Submete task ao worker.
-   - Devolve `new_trace_id` + `status="queued"`.
-5. Adicionar `metadata.replay_status` no schema (transition `queued → running → completed|failed`).
-6. Teste: `test_rerun_trace_actually_enqueues_worker` — mockar o worker submit, asserir que foi chamado com os args certos.
+> **Caminho escolhido: Opção A — implementar via `arq` + Redis (já disponível no projeto).**
+>
+> Spec completa com plano de execução por fase em:
+> `docs/plans/evalops-async-worker-replay-spec.md`
+>
+> Resumo das fases:
+> - **Fase A** (~2h): adicionar `arq>=0.26` ao `pyproject.toml`, criar `apps/api/app/workers/settings.py`, adicionar service `worker` no `docker-compose.yml`.
+> - **Fase B** (~4h): implementar `apps/api/app/workers/replay_worker.py` — lê span LLM original, reexecuta no provider, ingesta resultado no placeholder.
+> - **Fase C** (~2h): modificar `rerun_trace` em `routes_trace_actions.py:291-330` para enfileirar job via `arq` após criar placeholder. Se Redis indisponível → `503`, não cria trace fantasma.
+> - **Fase D** (~1h): atualizar badge de `metadata.replay_status` no detalhe do trace (pode ser adiada).
+> - **Fase E** (~2h): testes e2e + logging estruturado.
+>
+> Total estimado: ~11h. Redis já está disponível em `docker-compose.yml` e em uso no projeto (`rate_limit_service.py`). Tracking de estado via `metadata.replay_status` no próprio `Trace` — sem nova tabela.
+
+**A. (Não usar) Implementação ad-hoc sem spec:**
+Descartada — sem plano de lifecycle do pool arq, sem decisão de fail policy se Redis cair.
 
 **B. Marcar como dev-only e esconder no UI:**
-- Ocultar o botão "Reexecutar" se `process.env.NEXT_PUBLIC_FEATURE_RERUN !== "1"`.
-- Documentar no plan §11 (Definition of Done) que rerun fica fora do MVP da fase.
+Descartada — mantém o stub no banco, polui métricas se alguém habilitar.
 
 **C. Remover a feature:**
-- Drop da rota, do action, do botão. Remove confusão.
+Alternativa válida se a spec A for adiada indefinidamente. Drop da rota, do action, do botão.
 
 ### Como evitar regressão
 Adicionar teste de integração que verifica que `metadata.replay_status` chega em `"completed"` ou `"failed"` em até X segundos, ou que o worker `replay_trace` foi chamado (mock).
