@@ -537,6 +537,7 @@ class PromptUsageTraceOut(BaseModel):
 class PromptUsageOut(BaseModel):
     prompt_id: str
     usage_count: int
+    usage_count_truncated: bool = False
     traces: list[PromptUsageTraceOut]
 
 

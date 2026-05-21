@@ -4,8 +4,8 @@ from fastapi.testclient import TestClient
 
 from app.db import Base, SessionLocal, engine
 from app.main import app
-from app.models import User
-from app.security import create_access_token
+from app.models import Project, Trace, User
+from app.security import create_access_token, new_id
 
 
 def setup_function() -> None:
@@ -217,6 +217,70 @@ def test_members_rejects_unknown_org() -> None:
     headers, _, _ = _bootstrap(client)
     response = client.get("/v1/organizations/org_nope/members", headers=headers)
     assert response.status_code == 404
+
+
+def _insert_meta_ref_traces(project_id: str, prompt_slug: str, version: int, count: int) -> None:
+    now = datetime.now(timezone.utc)
+    with SessionLocal() as db:
+        project = db.get(Project, project_id)
+        assert project is not None
+        for i in range(count):
+            db.add(
+                Trace(
+                    id=new_id("tr"),
+                    project_id=project_id,
+                    organization_id=project.organization_id,
+                    client_trace_id=f"meta-{i}",
+                    name="chat.answer",
+                    service="bot",
+                    environment="prod",
+                    started_at=now - timedelta(seconds=i),
+                    ended_at=now - timedelta(seconds=i) + timedelta(milliseconds=100),
+                    duration_ms=100,
+                    status="ok",
+                    tags={},
+                    metadata_json={"prompt_ref": f"{prompt_slug}@{version}"},
+                    total_tokens_in=0,
+                    total_tokens_out=0,
+                    total_cost_usd=0,
+                )
+            )
+        db.commit()
+
+
+def test_prompt_usage_counts_metadata_only_traces_and_signals_truncation() -> None:
+    client = TestClient(app)
+    headers, project_id, _ = _bootstrap(client)
+    prompt = client.post(
+        f"/v1/projects/{project_id}/prompts",
+        headers=headers,
+        json={
+            "slug": "chatbot",
+            "description": "",
+            "template": "answer",
+            "variables": {},
+            "metadata": {},
+        },
+    ).json()["prompt"]
+
+    _insert_meta_ref_traces(project_id, prompt_slug="chatbot", version=1, count=5)
+
+    response = client.get(
+        f"/v1/prompts/{prompt['id']}/usage?limit=3", headers=headers
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["usage_count"] == 5
+    assert body["usage_count_truncated"] is True
+    assert len(body["traces"]) == 3
+    assert all(t["prompt_version_ref"] == "chatbot@1" for t in body["traces"])
+
+    full = client.get(
+        f"/v1/prompts/{prompt['id']}/usage?limit=50", headers=headers
+    ).json()
+    assert full["usage_count"] == 5
+    assert full["usage_count_truncated"] is False
+    assert len(full["traces"]) == 5
 
 
 def test_bulk_flag_traces_creates_one_per_id() -> None:

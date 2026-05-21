@@ -223,7 +223,18 @@ Teste backend: criar 60 traces lentos, paginar com `limit=10`, conferir que tab 
 
 ---
 
-## 🟠 5. `GET /v1/prompts/{id}/usage` faz full-table-scan + sub-conta
+## ✅ 5. `GET /v1/prompts/{id}/usage` faz full-table-scan + sub-conta — **CORRIGIDO**
+
+> **Status:** corrigido em `<este commit>` (branch `claude/repository-access-X2Zcv`)
+>
+> - Query refatorada usa `or_(Trace.id.in_(span_trace_ids), meta_ref_expr.in_(refs))` direto em SQL com `LIMIT` (sem full-table-scan).
+> - `usage_count` agora vem de `db.query(func.count(Trace.id)).filter(base_filter).scalar()` — contagem real.
+> - `PromptUsageOut.usage_count_truncated: bool` adicionado: `True` quando `len(traces) < usage_count`.
+> - Migration `0006_prompt_ref_index.py` cria índices em `metadata->>'prompt_ref'` e `metadata->>'prompt_version_ref'` (Postgres-only via `bind.dialect.name`; SQLite no-op).
+> - `meta_ref_expr` usa `func.coalesce(Trace.metadata_json["prompt_ref"].as_string(), ...)` — portátil SQLite + Postgres.
+> - Teste regressão `test_prompt_usage_counts_metadata_only_traces_and_signals_truncation` adicionado em `tests/test_refactor_endpoints_edge_cases.py`.
+
+
 
 ### Onde
 `apps/api/app/api/routes_phase5.py:200-219`
@@ -866,9 +877,9 @@ Antes de marcar como pronto:
 
 - [ ] Bug #1: **adiado** — spec completa em `docs/plans/evalops-async-worker-replay-spec.md`. Implementar após correção dos demais bugs (requer Fase A–E: arq + worker + rota + front + testes, ~11h).
 - [x] Bug #2: `listExports` integrado em `exports/page.tsx` — lista vem do servidor, mesclada com `knownIds`. Card "Contrato atual" removido. Coluna "Tamanho" mostra `—` (sem `file_size_bytes` no model — migration futura).
-- [ ] Bug #3: Bell e WorkspaceSwitcher montados em `EvoTopbar.tsx`/`Sidebar.tsx`.
-- [ ] Bug #4: backend aceita `duration_gt` / `rag=true`, frontend não filtra em JS.
-- [ ] Bug #5: migration `0006_prompt_ref_index.py` + LIMIT na query + `usage_count` honesto.
+- [x] Bug #3: Bell e WorkspaceSwitcher montados em `EvoTopbar.tsx`/`AppShell.tsx`. **Pendência:** `markRead` Server Action e fechar Bug #8 antes de adicionar.
+- [x] Bug #4: backend aceita `duration_gt` / `rag=true`, frontend não filtra em JS. Filtro RAG portátil SQLite (`("true","1")`). **Pendência:** endpoint global `/traces/segments` para counts cross-tab.
+- [x] Bug #5: migration `0006_prompt_ref_index.py` + LIMIT na query + `usage_count` honesto + `usage_count_truncated`.
 - [ ] Bug #6: subquery/window function para `last_score` + índice composto.
 - [ ] Bug #7: cálculo de p95 corrigido.
 - [ ] Bug #8: schema `min_length=1` em `NotificationMarkReadIn.ids`.
