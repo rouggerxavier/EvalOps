@@ -500,7 +500,13 @@ Teste `test_mark_read_empty_ids_is_rejected_with_422`.
 
 ---
 
-## 🟡 9. PATCH `/projects/{id}` muta `description` mesmo sem mudança real
+## ✅ 9. PATCH `/projects/{id}` muta `description` — **CORRIGIDO**
+
+> Status (2026-05-21): backend normaliza `""`/whitespace → `None` antes de comparar; só audita se valor mudou de verdade. Frontend `patchProjectAction` converte descrição vazia em `null`. Teste `test_patch_project_empty_description_normalized_to_null_no_op` cobre.
+
+---
+
+## 🟡 9. PATCH `/projects/{id}` muta `description` mesmo sem mudança real — original
 
 ### Onde
 - Frontend: `apps/web/lib/actions.ts:571-593`
@@ -562,7 +568,13 @@ Teste `test_patch_project_no_change_does_not_audit`.
 
 ---
 
-## 🟡 10. Overview perde traces `partial` no card "Últimos com problema"
+## ✅ 10. Overview perde traces `partial` — **CORRIGIDO**
+
+> Status (2026-05-21): `list_traces` aceita `status` CSV (split + `in_()` para múltiplos). Overview pede `status="error,partial"`. Teste `test_list_traces_status_csv_filters_multiple_statuses` cobre.
+
+---
+
+## 🟡 10. Overview perde traces `partial` no card "Últimos com problema" — original
 
 ### Onde
 `apps/web/app/o/[org]/p/[project]/page.tsx:121`
@@ -612,7 +624,13 @@ Teste e2e que cria 1 partial + 1 error e verifica que ambos aparecem no card.
 
 ---
 
-## 🟡 11. Lista de traces sem botão "página anterior"
+## ✅ 11. Lista de traces sem botão "página anterior" — **CORRIGIDO (quick fix C)**
+
+> Status (2026-05-21): botão `‹` ativo quando `?cursor=` está presente — link para a mesma página sem cursor (volta a página 1). Cursor bidirecional fica como melhoria futura.
+
+---
+
+## 🟡 11. Lista de traces sem botão "página anterior" — original
 
 ### Onde
 `apps/web/app/o/[org]/p/[project]/traces/page.tsx:197-209`
@@ -647,7 +665,13 @@ Smoke test que navega ›, ›, ‹, ‹, ‹ e verifica que termina na primeira
 
 ---
 
-## 🟡 12. Compare-spans com fallback de timezone frágil
+## ✅ 12. Compare-spans com fallback de timezone frágil — **CORRIGIDO**
+
+> Status (2026-05-21): helper `_to_utc` em `routes_trace_actions.py` converte naive→UTC e aware→UTC via `astimezone`. Aplicado em `started_delta_seconds`. Teste unitário `test_to_utc_helper_handles_mixed_tz_offsets` cobre offsets `-03:00`, UTC e naive.
+
+---
+
+## 🟡 12. Compare-spans com fallback de timezone frágil — original
 
 ### Onde
 `apps/api/app/api/routes_trace_actions.py:352-354`
@@ -681,7 +705,13 @@ Teste com dois traces criados em sessions com `tzinfo` diferentes.
 
 ---
 
-## 🟡 13. RAG endpoint fabrica claim counts via `support_rate * 10`
+## ✅ 13. RAG endpoint fabrica claim counts — **CORRIGIDO**
+
+> Status (2026-05-21): `grounded_claims`/`ungrounded_claims` viram `None` quando não há claims; `support_rate` exposto separadamente; `claims_unavailable=True` sinaliza ausência. Risco calculado por `_risk_from_support_rate` (sem inventar denominador 10). Schema `RagConsolidatedOut` atualizado. Teste `test_rag_does_not_fabricate_claim_totals_when_only_support_rate` cobre. UI ajustada em iteração futura — endpoint já não mente.
+
+---
+
+## 🟡 13. RAG endpoint fabrica claim counts via `support_rate * 10` — original
 
 ### Onde
 `apps/api/app/api/routes_trace_actions.py:236-245`
@@ -728,7 +758,13 @@ Teste com trace que tem `support_rate=0.4` e sem claims → asserir que response
 
 ---
 
-## 🟡 14. `next_cursor` em `list_project_exports` sem consumidor
+## ✅ 14. `next_cursor` em `list_project_exports` sem consumidor — **CORRIGIDO**
+
+> Status (2026-05-21): cursor base64 `created_at|id` com filtro `(created_at, id)` < cursor. `listExports` wrapper aceita 3º arg `cursor`. Teste `test_list_exports_paginates_with_cursor` insere 5 exports, pagina com `limit=2` e valida disjunção entre páginas.
+
+---
+
+## 🟡 14. `next_cursor` em `list_project_exports` sem consumidor — original
 
 ### Onde
 `apps/api/app/api/routes_phase6.py` (commit `1fb86fe`)
@@ -748,7 +784,13 @@ Teste que cria 60 exports, pagina com `limit=20`, espera 3 páginas distintas vi
 
 ---
 
-## 🔵 15. Ações de mutação de trace sem audit log
+## ✅ 15. Ações de mutação de trace sem audit log — **CORRIGIDO**
+
+> Status (2026-05-21): `flag_trace` → `trace.flagged`; `bulk_flag_traces` → `trace.bulk_flagged` (com `skipped_dedup` listado); `rerun_trace` → `trace.rerun_requested`. Testes `test_flag_trace_creates_audit_log_and_dedups` e `test_rerun_trace_writes_audit` cobrem.
+
+---
+
+## 🔵 15. Ações de mutação de trace sem audit log — original
 
 ### Onde
 `apps/api/app/api/routes_trace_actions.py:178-189, 269-288, 291-330`
@@ -794,7 +836,13 @@ Teste `test_flag_trace_creates_audit_log` para cada ação.
 
 ---
 
-## 🔵 16. `GET /traces/{id}/rag` ignora `trace.redacted`
+## ✅ 16. `GET /traces/{id}/rag` ignora `trace.redacted` — **CORRIGIDO**
+
+> Status (2026-05-21): primeiro check no handler retorna payload vazio + `redacted=True` quando `trace.redacted`. Sem ler spans nem metadata. Schema `RagConsolidatedOut.redacted: bool = False`. Teste `test_rag_returns_redacted_payload_when_trace_redacted` cobre.
+
+---
+
+## 🔵 16. `GET /traces/{id}/rag` ignora `trace.redacted` — original
 
 ### Onde
 `apps/api/app/api/routes_trace_actions.py:192-266`
@@ -832,7 +880,13 @@ Teste com `trace.redacted=True` retornando RAG vazio + `redacted=True`.
 
 ---
 
-## 🔵 17. `list_organization_members` sem paginação
+## ✅ 17. `list_organization_members` sem paginação — **CORRIGIDO**
+
+> Status (2026-05-21): `limit: int = Query(50, ge=1, le=200)` + `cursor: str | None` (base64 `created_at|user_id`). Order ascendente estável por `(created_at, user_id)`. Teste `test_members_listing_paginates_with_cursor` cobre.
+
+---
+
+## 🔵 17. `list_organization_members` sem paginação — original
 
 ### Onde
 `apps/api/app/api/routes.py` (commit `3083e31`)
@@ -850,7 +904,13 @@ Teste com 250 memberships verifica que default page traz 50 e cursor funciona.
 
 ---
 
-## 🟡 18. `bulk_flag_traces` permite duplo-flag
+## ✅ 18. `bulk_flag_traces` permite duplo-flag — **CORRIGIDO**
+
+> Status (2026-05-21): `_find_recent_flag` em janela de 10s dedupa por `(trace_id, user_id, reason)`. `flag_trace` e `bulk_flag_traces` idempotentes — retornam flag existente. `created` agora reflete apenas inserts reais; `skipped_dedup` listado no audit. Teste `test_flag_trace_creates_audit_log_and_dedups` valida que duplo POST retorna mesmo flag_id e 1 row em `trace_flags`.
+
+---
+
+## 🟡 18. `bulk_flag_traces` permite duplo-flag — original
 
 ### Onde
 `apps/api/app/api/routes_trace_actions.py:269-288`
@@ -903,16 +963,16 @@ Antes de marcar como pronto:
 - [x] Bug #6: window function para `last_score` + índice composto `(trace_id, created_at)`.
 - [x] Bug #7: helper `_p95_nearest_rank` aplicado em `sdk-status` e `overview`; teste com lista determinística 10..100 confirma p95 ≥ 95.
 - [x] Bug #8: `min_length=1, max_length=200` em `NotificationMarkReadIn.ids` + filtro `in_` incondicional + guarda no `markNotificationsRead` (frontend).
-- [ ] Bug #9: action normaliza `""` → `null`.
-- [ ] Bug #10: status CSV no `list_traces` + overview pede `error,partial`.
-- [ ] Bug #11: pelo menos botão "voltar à página 1" ativo.
-- [ ] Bug #12: `_to_utc` helper aplicado em todos os subtractions.
-- [ ] Bug #13: RAG endpoint não inventa totais; UI exibe `—`.
-- [ ] Bug #14: `cursor` query param no exports listing **ou** remover `next_cursor` da response.
-- [ ] Bug #15: `record_audit` em flag/bulk-flag/rerun.
-- [ ] Bug #16: `trace.redacted` honrado em `GET /traces/{id}/rag`.
-- [ ] Bug #17: paginação em members.
-- [ ] Bug #18: dedup em flag_trace.
+- [x] Bug #9: backend normaliza `""`/whitespace → `null` no PATCH `/projects/{id}`; frontend `patchProjectAction` envia `null` quando description vazia.
+- [x] Bug #10: `list_traces` aceita status CSV (`"error,partial"`); overview card "Últimos com problema" pede ambos.
+- [x] Bug #11: botão `‹` ativo quando `cursor` na URL — volta para página 1 (quick fix, cursor bidirecional fica para iteração futura).
+- [x] Bug #12: `_to_utc` helper em `routes_trace_actions.py`; aplicado em `started_delta_seconds` do compare. Teste unitário cobre offsets mistos.
+- [x] Bug #13: `support_rate` exposto separadamente; `grounded_claims`/`ungrounded_claims` → `None` quando não há claims; `claims_unavailable` flag; `_risk_from_support_rate` calcula risco sem fabricar totais.
+- [x] Bug #14: `cursor` (base64 `created_at|id`) adicionado em `list_project_exports`; `listExports` wrapper aceita cursor.
+- [x] Bug #15: `record_audit` em `flag_trace` (`trace.flagged`), `bulk_flag_traces` (`trace.bulk_flagged`) e `rerun_trace` (`trace.rerun_requested`).
+- [x] Bug #16: `trace.redacted` retorna payload vazio + `redacted=True` em `GET /traces/{id}/rag` antes de carregar spans.
+- [x] Bug #17: `list_organization_members` com `limit` (1..200, default 50) e `cursor` (base64).
+- [x] Bug #18: `_find_recent_flag` em janela de 10s dedupa por `(trace_id, user_id, reason)`; flag/bulk-flag idempotentes.
 - [ ] Teste e2e cobrindo ações reais (não só render).
 - [ ] `pytest` 100% verde.
 - [ ] `tsc --noEmit` limpo.

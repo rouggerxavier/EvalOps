@@ -573,7 +573,8 @@ export async function patchProjectAction(formData: FormData): Promise<void> {
   const project = String(formData.get("project") ?? "");
   const projectId = String(formData.get("project_id") ?? "");
   const name = String(formData.get("name") ?? "");
-  const description = String(formData.get("description") ?? "");
+  const descriptionRaw = String(formData.get("description") ?? "");
+  const description = descriptionRaw.trim() === "" ? null : descriptionRaw;
   const defaultEnvironment = String(formData.get("default_environment") ?? "") as "dev" | "staging" | "prod" | "";
   const path = projectPath(org, project, "settings");
 

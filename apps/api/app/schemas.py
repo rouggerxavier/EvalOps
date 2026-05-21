@@ -564,13 +564,16 @@ class RagClaimChunkOut(BaseModel):
 class RagConsolidatedOut(BaseModel):
     retrieved_docs: int
     avg_score: float | None = None
-    grounded_claims: int
-    ungrounded_claims: int
+    grounded_claims: int | None = None
+    ungrounded_claims: int | None = None
+    support_rate: float | None = None
+    claims_unavailable: bool = False
     hallucination_risk: str
     answer_preview: str | None = None
     citations: list[RagCitationOut]
     claims: list[RagClaimOut]
     claim_to_chunk: list[RagClaimChunkOut]
+    redacted: bool = False
 
 
 class SdkStatusOut(BaseModel):

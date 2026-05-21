@@ -179,9 +179,13 @@ def update_project(
     if payload.name is not None and payload.name != project.name:
         changes["name"] = {"from": project.name, "to": payload.name}
         project.name = payload.name
-    if "description" in payload.model_fields_set and payload.description != project.description:
-        changes["description"] = {"from": project.description, "to": payload.description}
-        project.description = payload.description
+    if "description" in payload.model_fields_set:
+        new_description = payload.description
+        if isinstance(new_description, str) and new_description.strip() == "":
+            new_description = None
+        if new_description != project.description:
+            changes["description"] = {"from": project.description, "to": new_description}
+            project.description = new_description
     if payload.default_environment is not None and payload.default_environment != project.default_environment:
         changes["default_environment"] = {
             "from": project.default_environment,
@@ -203,19 +207,52 @@ def update_project(
     return project
 
 
+def _encode_member_cursor(created_at: datetime, user_id: str) -> str:
+    raw = f"{created_at.isoformat()}|{user_id}"
+    return base64.urlsafe_b64encode(raw.encode()).decode().rstrip("=")
+
+
+def _decode_member_cursor(cursor: str) -> tuple[datetime, str]:
+    try:
+        padded = cursor + "=" * (-len(cursor) % 4)
+        raw = base64.urlsafe_b64decode(padded.encode()).decode()
+        ca_str, user_id = raw.rsplit("|", 1)
+        return datetime.fromisoformat(ca_str), user_id
+    except Exception:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="invalid_cursor")
+
+
 @router.get("/organizations/{org_id}/members")
 def list_organization_members(
     org_id: str,
+    limit: int = Query(50, ge=1, le=200),
+    cursor: str | None = Query(None),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
     ensure_org_membership(db, user.id, org_id)
-    rows = (
+    query = (
         db.query(Membership, User)
         .join(User, User.id == Membership.user_id)
         .filter(Membership.organization_id == org_id)
-        .order_by(Membership.created_at.asc(), User.email.asc())
+    )
+    if cursor:
+        cursor_created_at, cursor_user_id = _decode_member_cursor(cursor)
+        query = query.filter(
+            or_(
+                Membership.created_at > cursor_created_at,
+                and_(Membership.created_at == cursor_created_at, Membership.user_id > cursor_user_id),
+            )
+        )
+    rows = (
+        query.order_by(Membership.created_at.asc(), Membership.user_id.asc())
+        .limit(limit + 1)
         .all()
+    )
+    has_more = len(rows) > limit
+    rows = rows[:limit]
+    next_cursor = (
+        _encode_member_cursor(rows[-1][0].created_at, rows[-1][0].user_id) if has_more and rows else None
     )
     return {
         "data": [
@@ -227,7 +264,8 @@ def list_organization_members(
                 joined_at=member.created_at,
             ).model_dump()
             for member, row_user in rows
-        ]
+        ],
+        "next_cursor": next_cursor,
     }
 
 
@@ -432,7 +470,11 @@ def list_traces(
     project_id = project.id
     query = db.query(Trace).filter(Trace.project_id == project_id, Trace.deleted_at.is_(None))
     if trace_status:
-        query = query.filter(Trace.status == trace_status)
+        status_values = [s.strip() for s in trace_status.split(",") if s.strip()]
+        if len(status_values) == 1:
+            query = query.filter(Trace.status == status_values[0])
+        elif status_values:
+            query = query.filter(Trace.status.in_(status_values))
     if environment:
         query = query.filter(Trace.environment == environment)
     if name:

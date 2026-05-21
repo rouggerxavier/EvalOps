@@ -1,5 +1,5 @@
 from collections import defaultdict
-from datetime import timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.deps import get_current_user
+from app.domain.services.audit_service import record_audit
 from app.models import Span, Trace, TraceFlag, User, utcnow
 from app.ownership import load_trace
 from app.schemas import (
@@ -35,6 +36,30 @@ def _trace_flag(trace: Trace, user: User, payload: TraceFlagIn) -> TraceFlag:
         reason=payload.reason,
         note=payload.note,
     )
+
+
+_FLAG_DEDUP_WINDOW = timedelta(seconds=10)
+
+
+def _find_recent_flag(db: Session, trace_id: str, user_id: str, reason: str) -> TraceFlag | None:
+    cutoff = utcnow() - _FLAG_DEDUP_WINDOW
+    return (
+        db.query(TraceFlag)
+        .filter(
+            TraceFlag.trace_id == trace_id,
+            TraceFlag.user_id == user_id,
+            TraceFlag.reason == reason,
+            TraceFlag.created_at >= cutoff,
+        )
+        .order_by(TraceFlag.created_at.desc())
+        .first()
+    )
+
+
+def _to_utc(dt: datetime) -> datetime:
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
 
 
 def _decimal_to_float(value: Decimal | float | int | None) -> float:
@@ -159,13 +184,25 @@ def _normalize_claim_links(source: object) -> list[dict]:
     return rows
 
 
-def _risk_from_counts(grounded: int, ungrounded: int, avg_score: float | None) -> str:
-    total = grounded + ungrounded
-    if total and ungrounded / total > 0.5:
+def _risk_from_counts(grounded: int | None, ungrounded: int | None, avg_score: float | None) -> str:
+    if grounded is None and ungrounded is None and avg_score is None:
+        return "unknown"
+    g = grounded or 0
+    u = ungrounded or 0
+    total = g + u
+    if total and u / total > 0.5:
         return "high"
     if avg_score is not None and avg_score < 0.5:
         return "high"
-    if ungrounded > 0 or (avg_score is not None and avg_score < 0.75):
+    if u > 0 or (avg_score is not None and avg_score < 0.75):
+        return "medium"
+    return "low"
+
+
+def _risk_from_support_rate(support_rate: float, avg_score: float | None) -> str:
+    if support_rate < 0.5 or (avg_score is not None and avg_score < 0.5):
+        return "high"
+    if support_rate < 0.85 or (avg_score is not None and avg_score < 0.75):
         return "medium"
     return "low"
 
@@ -182,8 +219,20 @@ def flag_trace(
     db: Session = Depends(get_db),
 ) -> TraceFlag:
     trace = load_trace(db, user.id, trace_id)
+    existing = _find_recent_flag(db, trace.id, user.id, payload.reason)
+    if existing:
+        return existing
     flag = _trace_flag(trace, user, payload)
     db.add(flag)
+    record_audit(
+        db,
+        "trace.flagged",
+        organization_id=trace.organization_id,
+        actor_user_id=user.id,
+        target_type="trace",
+        target_id=trace.id,
+        payload={"reason": payload.reason, "note": payload.note, "flag_id": flag.id},
+    )
     db.commit()
     db.refresh(flag)
     return flag
@@ -196,6 +245,21 @@ def get_trace_rag(
     db: Session = Depends(get_db),
 ) -> dict:
     trace = load_trace(db, user.id, trace_id)
+    if getattr(trace, "redacted", False):
+        return {
+            "retrieved_docs": 0,
+            "avg_score": None,
+            "grounded_claims": None,
+            "ungrounded_claims": None,
+            "support_rate": None,
+            "claims_unavailable": True,
+            "hallucination_risk": "unknown",
+            "answer_preview": None,
+            "citations": [],
+            "claims": [],
+            "claim_to_chunk": [],
+            "redacted": True,
+        }
     spans = db.query(Span).filter(Span.trace_id == trace.id).order_by(Span.started_at.asc()).all()
     retrieve = _pick_span(spans, "rag.retrieve")
     grounding = _pick_span(spans, "rag.grounding.validate")
@@ -233,16 +297,20 @@ def get_trace_rag(
         score_values.append(quality_score)
     avg_score = round(sum(score_values) / len(score_values), 4) if score_values else None
 
-    grounded = sum(1 for claim in claims if claim["grounded"])
-    ungrounded = sum(1 for claim in claims if not claim["grounded"])
+    grounded: int | None = sum(1 for claim in claims if claim["grounded"]) if claims else None
+    ungrounded: int | None = sum(1 for claim in claims if not claim["grounded"]) if claims else None
+    support_rate = _as_number(grounding_out.get("support_rate") or finalize_out.get("support_rate") or meta.get("support_rate"))
+    claims_unavailable = False
     if not claims:
-        unsupported = int(_as_number(grounding_out.get("unsupported_claim_count") or meta.get("unsupported_claim_count")) or 0)
-        support_rate = _as_number(grounding_out.get("support_rate") or finalize_out.get("support_rate") or meta.get("support_rate"))
+        unsupported_raw = _as_number(grounding_out.get("unsupported_claim_count") or meta.get("unsupported_claim_count"))
+        if support_rate is not None or unsupported_raw is not None:
+            claims_unavailable = True
         if support_rate is not None:
-            grounded = int(round(support_rate * 10))
-            ungrounded = max(unsupported, 10 - grounded)
+            risk = _risk_from_support_rate(float(support_rate), avg_score)
         else:
-            ungrounded = unsupported
+            risk = _risk_from_counts(None, None, avg_score)
+    else:
+        risk = _risk_from_counts(grounded, ungrounded, avg_score)
 
     answer_preview = (
         _as_string(finalize_out.get("answer_preview") or finalize_out.get("answer"))
@@ -258,7 +326,9 @@ def get_trace_rag(
         "avg_score": avg_score,
         "grounded_claims": grounded,
         "ungrounded_claims": ungrounded,
-        "hallucination_risk": _risk_from_counts(grounded, ungrounded, avg_score),
+        "support_rate": float(support_rate) if support_rate is not None else None,
+        "claims_unavailable": claims_unavailable,
+        "hallucination_risk": risk,
         "answer_preview": answer_preview,
         "citations": citations,
         "claims": claims,
@@ -276,16 +346,42 @@ def bulk_flag_traces(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
-    flags = []
+    flags: list[TraceFlag] = []
+    created_ids: list[str] = []
+    skipped_ids: list[str] = []
+    org_ids: set[str] = set()
     for trace_id in payload.trace_ids:
         trace = load_trace(db, user.id, trace_id)
+        existing = _find_recent_flag(db, trace.id, user.id, payload.reason)
+        if existing:
+            flags.append(existing)
+            skipped_ids.append(trace.id)
+            continue
         flag = _trace_flag(trace, user, payload)
         db.add(flag)
         flags.append(flag)
+        created_ids.append(trace.id)
+        org_ids.add(trace.organization_id)
+    if created_ids:
+        for org_id in org_ids:
+            record_audit(
+                db,
+                "trace.bulk_flagged",
+                organization_id=org_id,
+                actor_user_id=user.id,
+                target_type="trace",
+                target_id=created_ids[0],
+                payload={
+                    "trace_ids": created_ids,
+                    "skipped_dedup": skipped_ids,
+                    "reason": payload.reason,
+                    "note": payload.note,
+                },
+            )
     db.commit()
     for flag in flags:
         db.refresh(flag)
-    return {"data": flags, "created": len(flags)}
+    return {"data": flags, "created": len(created_ids)}
 
 
 @router.post("/traces/{trace_id}/rerun", response_model=TraceRerunOut)
@@ -326,6 +422,19 @@ def rerun_trace(
         metadata_json=metadata,
     )
     db.add(new_trace)
+    record_audit(
+        db,
+        "trace.rerun_requested",
+        organization_id=trace.organization_id,
+        actor_user_id=user.id,
+        target_type="trace",
+        target_id=trace.id,
+        payload={
+            "new_trace_id": new_trace.id,
+            "model": payload.model,
+            "variables": payload.variables,
+        },
+    )
     db.commit()
     return {"new_trace_id": new_trace.id, "status": "queued"}
 
@@ -349,9 +458,7 @@ def compare_traces(
         "cost_delta_usd": _decimal_to_float(right.total_cost_usd) - _decimal_to_float(left.total_cost_usd),
         "token_delta": (right.total_tokens_in + right.total_tokens_out)
         - (left.total_tokens_in + left.total_tokens_out),
-        "started_delta_seconds": int((right.started_at - left.started_at).total_seconds())
-        if right.started_at.tzinfo == left.started_at.tzinfo
-        else int((right.started_at.replace(tzinfo=timezone.utc) - left.started_at.replace(tzinfo=timezone.utc)).total_seconds()),
+        "started_delta_seconds": int((_to_utc(right.started_at) - _to_utc(left.started_at)).total_seconds()),
         "spans": _compare_spans(left_spans, right_spans),
     }
     return {

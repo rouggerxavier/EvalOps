@@ -73,6 +73,15 @@ export default async function TracesListPage({ params, searchParams }: Props) {
       })()
     : null;
 
+  const firstPageHref = qp.cursor
+    ? (() => {
+        const p = new URLSearchParams(baseParams);
+        if (tab !== "all") p.set("tab", tab);
+        const s = p.toString();
+        return s ? `${tabBase}?${s}` : tabBase;
+      })()
+    : null;
+
   const exportsHref = `/o/${org}/p/${project}/exports`;
   const hasCursor = Boolean(qp.cursor);
   const autoRefreshEnabled = !hasCursor && rows.length > 0;
@@ -185,9 +194,15 @@ export default async function TracesListPage({ params, searchParams }: Props) {
           {hasCursor ? " (próxima página)" : ""}
         </span>
         <div className="row" style={{ gap: 6 }}>
-          <button type="button" className="btn btn--sm btn--ghost" disabled>
-            ‹
-          </button>
+          {firstPageHref ? (
+            <Link href={firstPageHref} className="btn btn--sm btn--ghost" title="Voltar à primeira página">
+              ‹
+            </Link>
+          ) : (
+            <button type="button" className="btn btn--sm btn--ghost" disabled>
+              ‹
+            </button>
+          )}
           {nextPageHref ? (
             <Link href={nextPageHref} className="btn btn--sm btn--ghost">
               ›

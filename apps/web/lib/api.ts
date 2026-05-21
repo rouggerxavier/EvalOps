@@ -430,8 +430,13 @@ export async function getExport(exportId: string): Promise<ExportJob> {
   return fetchJson<ExportJob>(`/exports/${exportId}`);
 }
 
-export async function listExports(projectId: string, limit = 50): Promise<ExportListResponse> {
+export async function listExports(
+  projectId: string,
+  limit = 50,
+  cursor?: string,
+): Promise<ExportListResponse> {
   const params = new URLSearchParams({ limit: String(limit) });
+  if (cursor) params.set("cursor", cursor);
   return fetchJson<ExportListResponse>(`/projects/${projectId}/exports?${params.toString()}`);
 }
 
