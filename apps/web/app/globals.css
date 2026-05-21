@@ -101,6 +101,15 @@
   --space-5:  12px; --space-6:  16px; --space-7:  20px; --space-8:  24px;
   --space-9:  32px; --space-10: 40px; --space-11: 48px; --space-12: 64px;
 
+  /* Preview spacing aliases */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --sp-8: 32px;
+
   /* Radius */
   --radius-xs:   4px;
   --radius-sm:   6px;
@@ -108,6 +117,30 @@
   --radius-lg:   10px;
   --radius-xl:   14px;
   --radius-pill: 999px;
+
+  /* Preview radius aliases */
+  --r-xs: 4px;
+  --r-sm: 6px;
+  --r-md: 8px;
+  --r-lg: 12px;
+  --r-2: 2px;
+  --r-4: var(--r-xs);
+  --r-6: var(--r-sm);
+  --r-8: var(--r-md);
+  --r-10: 10px;
+  --r-full: 999px;
+
+  /* Preview layout aliases */
+  --sidebar-w: 232px;
+  --topbar-h: 48px;
+
+  /* Preview semantic accents adapted to the current palette */
+  --eval: var(--info);
+  --eval-bg: var(--info-soft);
+  --eval-soft: rgba(154, 122, 255, 0.14);
+  --rag: #5ad4d4;
+  --rag-soft: rgba(90, 212, 212, 0.14);
+  --rag-border: rgba(90, 212, 212, 0.32);
 
   /* Shadows */
   --shadow-xs:  0 1px 0 rgba(0,0,0,0.18);
@@ -2630,66 +2663,45 @@ button { cursor: pointer; }
    ===================================================================== */
 .evo-dashboard-standalone,
 .evo-shell {
-  --bg-0: oklch(8.4% 0.026 260);
-  --bg-1: oklch(11% 0.03 260);
-  --bg-2: oklch(14.3% 0.031 260);
-  --surface-1: oklch(17.2% 0.036 260);
-  --surface-2: oklch(21.4% 0.04 260);
-  --surface-3: oklch(26.4% 0.045 260);
-  --border-subtle: oklch(25% 0.037 260);
-  --border: oklch(30% 0.04 260);
-  --border-strong: oklch(39% 0.045 260);
-  --text: oklch(94.5% 0.016 260);
-  --text-dim: oklch(78% 0.025 260);
-  --text-muted: oklch(65% 0.033 260);
-  --text-faint: oklch(50% 0.036 260);
-  --accent: oklch(66% 0.17 260);
-  --accent-hover: oklch(72% 0.15 260);
-  --accent-active: oklch(60% 0.18 260);
-  --accent-soft: oklch(66% 0.17 260 / 0.14);
-  --accent-rim: oklch(66% 0.17 260 / 0.28);
-  --accent-bg: oklch(66% 0.17 260 / 0.10);
-  --accent-bg-strong: oklch(66% 0.17 260 / 0.18);
-  --accent-border: oklch(66% 0.17 260 / 0.35);
-  --ok: oklch(78% 0.15 174);
-  --ok-bg: oklch(78% 0.15 174 / 0.10);
-  --ok-border: oklch(78% 0.15 174 / 0.30);
-  --warn: oklch(78% 0.15 80);
-  --warn-bg: oklch(78% 0.15 80 / 0.10);
-  --warn-border: oklch(78% 0.15 80 / 0.30);
-  --err: oklch(69% 0.19 25);
-  --err-bg: oklch(69% 0.19 25 / 0.10);
-  --err-border: oklch(69% 0.19 25 / 0.30);
-  --eval: oklch(72% 0.16 300);
-  --eval-bg: oklch(72% 0.16 300 / 0.10);
-  --eval-soft: oklch(72% 0.16 300 / 0.16);
-  --grid-line: oklch(86% 0.04 260 / 0.045);
-  --vignette: oklch(5.5% 0.02 260 / 0.58);
-  --font-evo-sans: "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-evo-mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --bg-0: var(--surface-0);
+  --bg-1: var(--surface-1);
+  --bg-2: var(--surface-2);
+  --border: var(--border-default);
+  --text: var(--fg-1);
+  --text-dim: var(--fg-2);
+  --text-muted: var(--fg-3);
+  --text-faint: var(--fg-4);
+  --accent: var(--primary-400);
+  --accent-hover: var(--primary-300);
+  --accent-active: var(--primary-500);
+  --accent-soft: var(--primary-glow);
+  --accent-rim: rgba(59, 141, 245, 0.36);
+  --accent-bg: rgba(59, 141, 245, 0.1);
+  --accent-bg-strong: rgba(59, 141, 245, 0.18);
+  --accent-border: rgba(59, 141, 245, 0.35);
+  --ok: var(--success);
+  --ok-bg: var(--success-soft);
+  --ok-border: var(--success-border);
+  --warn: var(--warning);
+  --warn-bg: var(--warning-soft);
+  --warn-border: var(--warning-border);
+  --err: var(--danger);
+  --err-bg: var(--danger-soft);
+  --err-border: var(--danger-border);
+  --eval: var(--info);
+  --eval-bg: var(--info-soft);
+  --grid-line: rgba(238, 242, 255, 0.045);
+  --vignette: rgba(6, 10, 24, 0.58);
+  --font-evo-sans: var(--font-sans);
+  --font-evo-mono: var(--font-mono);
   --fs-11: 11px;
   --fs-12: 12px;
   --fs-13: 13px;
   --fs-14: 14px;
   --fs-24: 24px;
   --fs-30: 30px;
-  --sp-1: 4px;
-  --sp-2: 8px;
-  --sp-3: 12px;
-  --sp-4: 16px;
-  --sp-5: 20px;
-  --sp-6: 24px;
-  --sp-8: 32px;
-  --r-2: 2px;
-  --r-4: 4px;
-  --r-6: 6px;
-  --r-8: 8px;
-  --r-10: 10px;
-  --r-full: 999px;
   --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
   --d-fast: 120ms;
-  --sidebar-w: 240px;
-  --topbar-h: 52px;
 }
 
 .evo-dashboard-standalone {
