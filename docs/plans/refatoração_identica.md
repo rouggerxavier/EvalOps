@@ -488,7 +488,7 @@ Status atualizado em 2026-05-21:
 | 14 | ✅ feito | `feat(modules): migrate prompts/rubrics/datasets/experiments/keys/exports to cockpit` | `feat(modules): rewrite prompts/rubrics/datasets/experiments/keys/exports with real backend` |
 | 15 | ✅ feito | `feat(traces): add compare page` | `feat(traces): add compare page` |
 | 16 | ✅ feito | `feat(settings): add stub settings page (project patch + members)` | `feat(settings): add stub settings page (project patch + members)` |
-| 17 | ⏳ pendente | — | `feat(shortcuts): extend G+letter shortcuts (G S settings)` |
+| 17 | ✅ feito | `c267780 feat(shortcuts): extend G+letter shortcuts (G S settings)` | `feat(shortcuts): extend G+letter shortcuts (G S settings)` |
 | 18 | ⏳ pendente | — | `chore(cleanup): remove deprecated components (AnswerPreviewCard, CitationRefsTable, etc.)` |
 | 19 | ⏳ pendente | — | `docs(readme): replace root README per spec §10` |
 | 20 | ⏳ pendente | — | `test: add backend unit tests for new endpoints` |
@@ -504,7 +504,8 @@ Observações:
 - Pendências de §14 carry-over para o commit 20 (testes) e revisão final: integração `listExports` no listing de Exports, wizard "from-traces" em Datasets, aviso de chave-expira-em-7d em Keys, e column "Em uso por" nos demais módulos onde aplicável.
 - Commit 15 entregou `/o/[org]/p/[project]/traces/compare`: aceita `?left=&right=`, dispara `getTrace`x2 + `compareTraces` em paralelo, renderiza 2 `TraceCard`s (status/env/model/copyable id + 4 KPIs), 5 KPIs de diff (status, Δ duração, Δ custo, Δ tokens, Δ início) com tone bom/ruim, waterfalls lado a lado e tabela de spans agregados por `(type,name)` com Δ duração/erros/modelos. Empty state quando faltam params. Botão "Inverter" troca lados. `tsc --noEmit` limpo.
 - Commit 16 entregou `/o/[org]/p/[project]/settings`: General card (form ligado a `patchProjectAction` → `PATCH /v1/projects/{id}` com name/description/default_environment), Members card (tabela via `GET /v1/organizations/{id}/members`), Billing card (link para `/o/{org}/usage`) e card "Ações reais". Adicionado wrapper `getProjects(orgId)` em `apps/web/lib/api.ts` (usa `GET /v1/projects?organization_id=`) para popular dados do projeto atual. Banners de success/error via query string (`?updated=1` / `?error=`). `tsc --noEmit` limpo, rota responde HTTP 200.
-- Próximo commit funcional do plano: **17 — Extend G+letter shortcuts (G S settings)**.
+- Commit 17 adicionou item `settings` a `APP_SHELL_NAV_SECTIONS` (seção Operacao, path `/settings`, shortcut `G S`). `EvoShortcuts` consome `APP_SHELL_NAV_ITEMS`, então o atalho aciona `router.push` para `/o/{org}/p/{project}/settings` sem mudanças adicionais; Sidebar renderiza o link automaticamente. Teste `ux-polish-p6` ajustado: assert do par `id: "settings", shortcut: "G S"` (preview não atribui letra a exports). Conjunto de letras inalterado.
+- Próximo commit funcional do plano: **18 — Cleanup de componentes deprecados (AnswerPreviewCard, CitationRefsTable, GroundingQualityCard, RAGSummaryHeader, RetrievalSummaryCard, SpanWaterfall legado etc.)**.
 
 ---
 
