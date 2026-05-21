@@ -27,6 +27,7 @@ export type Trace = {
   metadata: Record<string, unknown>;
   redacted: boolean;
   created_at: string;
+  last_score?: number | null;
 };
 
 export type TraceListResponse = {
@@ -91,6 +92,17 @@ export type OverviewResponse = {
     calls: number;
   }>;
   recent_flagged: Trace[];
+  last_window?: "24h" | "7d" | "30d";
+};
+
+export type Project = {
+  id: string;
+  organization_id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  default_environment: "dev" | "staging" | "prod";
+  created_at: string;
 };
 
 export type ApiKey = {
@@ -280,6 +292,133 @@ export type ExportJob = {
   created_by: string | null;
   created_at: string;
   completed_at: string | null;
+};
+
+export type AttentionResponse = {
+  count: number;
+  items: Array<{
+    trace_id: string;
+    cause: string;
+    service: string | null;
+    at: string;
+  }>;
+};
+
+export type CoverageResponse = {
+  data: Array<{
+    rubric_id: string;
+    rubric_slug: string;
+    coverage: number;
+    runs_7d: number;
+  }>;
+};
+
+export type SdkStatus = {
+  p95_ingestion_ms: number;
+  spans_per_minute: number;
+  last_event_at: string | null;
+  services_seen: string[];
+};
+
+export type NotificationItem = {
+  id: string;
+  project_id: string;
+  kind: string;
+  title: string;
+  meta: Record<string, unknown>;
+  created_at: string;
+  read_at: string | null;
+};
+
+export type NotificationListResponse = {
+  data: NotificationItem[];
+  unread_count: number;
+};
+
+export type TraceFlag = {
+  id: string;
+  trace_id: string;
+  org_id: string;
+  user_id: string;
+  reason: string;
+  note: string | null;
+  created_at: string;
+};
+
+export type BulkTraceFlagResponse = {
+  data: TraceFlag[];
+  created: number;
+};
+
+export type TraceRerunResponse = {
+  new_trace_id: string;
+  status: string;
+};
+
+export type TraceCompareResponse = {
+  left: Trace;
+  right: Trace;
+  diff: Record<string, unknown>;
+};
+
+export type RagConsolidated = {
+  retrieved_docs: number;
+  avg_score: number | null;
+  grounded_claims: number;
+  ungrounded_claims: number;
+  hallucination_risk: "low" | "medium" | "high" | string;
+  answer_preview: string | null;
+  citations: Array<{
+    rank: number;
+    title: string | null;
+    score: number | null;
+    source: string | null;
+    chunk: string | null;
+  }>;
+  claims: Array<{
+    text: string;
+    grounded: boolean;
+    cite: string | null;
+  }>;
+  claim_to_chunk: Array<{
+    claim: string;
+    chunk: string;
+    score: number | null;
+  }>;
+};
+
+export type EvaluationSummary = {
+  active_rubrics: number;
+  runs_7d: number;
+  pass_rate: number | null;
+  cost_usd: number;
+};
+
+export type PromptUsage = {
+  prompt_id: string;
+  usage_count: number;
+  traces: Array<{
+    trace_id: string;
+    name: string;
+    service: string | null;
+    environment: string;
+    status: string;
+    prompt_version_ref: string | null;
+    used_at: string;
+  }>;
+};
+
+export type ExportListResponse = {
+  data: ExportJob[];
+  next_cursor: string | null;
+};
+
+export type Member = {
+  user_id: string;
+  email: string;
+  name: string;
+  role: string;
+  joined_at: string;
 };
 
 export type OrgSubscription = {
