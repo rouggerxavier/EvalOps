@@ -3,7 +3,6 @@ import { AlertCircle, Clock, Download, Flag, Layers, Search } from "lucide-react
 
 import { AuthRequiredPanel } from "@/components/AuthRequiredPanel";
 import { getTraces, hasAuthToken, resolveProject } from "@/lib/api";
-import { isTraceRagCandidate } from "@/lib/trace-display";
 
 import { TracesAutoRefresh } from "./traces-auto-refresh";
 import { TracesEmpty, TracesTable } from "./traces-table";
@@ -40,25 +39,22 @@ export default async function TracesListPage({ params, searchParams }: Props) {
     projectId: resolved.project_id,
     status: tabStatus,
     environment: qp.environment,
-    name: tab === "rag" ? "rag." : qp.name,
+    name: tab !== "rag" ? qp.name : undefined,
     limit: 50,
     cursor: qp.cursor,
+    duration_gt: tab === "slow" ? 2000 : undefined,
+    rag: tab === "rag" ? true : undefined,
   });
 
   const rows = traces.data;
-  const displayRows =
-    tab === "slow"
-      ? rows.filter((t) => t.duration_ms > 2000)
-      : tab === "rag"
-      ? rows.filter(isTraceRagCandidate)
-      : rows;
+  const displayRows = rows;
 
   const counts = {
-    all: rows.length,
-    errors: rows.filter((t) => t.status === "error").length,
-    partial: rows.filter((t) => t.status === "partial").length,
-    slow: rows.filter((t) => t.duration_ms > 2000).length,
-    rag: rows.filter(isTraceRagCandidate).length,
+    all: tab === "all" ? rows.length : undefined,
+    errors: tab === "errors" ? rows.length : undefined,
+    partial: tab === "partial" ? rows.length : undefined,
+    slow: tab === "slow" ? rows.length : undefined,
+    rag: tab === "rag" ? rows.length : undefined,
   };
 
   const tabBase = `/o/${org}/p/${project}/traces`;

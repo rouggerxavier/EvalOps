@@ -417,6 +417,8 @@ def list_traces(
     name: str | None = None,
     limit: int = 50,
     cursor: str | None = None,
+    duration_gt: int | None = Query(None, ge=0),
+    rag: bool | None = Query(None),
     project: Project = Depends(get_owned_project),
     db: Session = Depends(get_db),
 ) -> dict:
@@ -428,6 +430,15 @@ def list_traces(
         query = query.filter(Trace.environment == environment)
     if name:
         query = query.filter(Trace.name.ilike(f"%{name}%"))
+    if duration_gt is not None:
+        query = query.filter(Trace.duration_ms > duration_gt)
+    if rag is True:
+        query = query.filter(
+            or_(
+                Trace.name.ilike("rag.%"),
+                Trace.metadata_json["is_rag"].as_string() == "true",
+            )
+        )
     if cursor:
         cursor_created_at, cursor_id = _decode_cursor(cursor)
         query = query.filter(
