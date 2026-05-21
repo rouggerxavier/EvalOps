@@ -9,6 +9,7 @@ import {
   getOrganizationSubscription,
   getOrganizationUsage,
   hasAuthToken,
+  listExports,
   resolveProject,
 } from "@/lib/api";
 import { formatCost, formatCount, formatDateTime } from "@/lib/format";
@@ -187,13 +188,16 @@ export default async function ExportsPage({ params, searchParams }: Props) {
     );
   }
 
-  const [usageResult, subResult, exportRows] = await Promise.all([
+  const [usageResult, subResult, serverExports, knownRows] = await Promise.all([
     getOrganizationUsage(resolvedProject.org_id)
       .then((usage) => ({ usage, error: null as string | null }))
       .catch((error) => ({ usage: null, error: safeErrorMessage(error, "Falha ao carregar uso.") })),
     getOrganizationSubscription(resolvedProject.org_id)
       .then((subscription) => ({ subscription, error: null as string | null }))
       .catch((error) => ({ subscription: null, error: safeErrorMessage(error, "Falha ao carregar plano.") })),
+    listExports(resolvedProject.project_id)
+      .then((res) => res.data)
+      .catch((): ExportJob[] => []),
     Promise.all(
       knownIds.map(async (id): Promise<ExportRow> => {
         try {
@@ -205,6 +209,13 @@ export default async function ExportsPage({ params, searchParams }: Props) {
       }),
     ),
   ]);
+
+  // Mesclar: server é fonte primária; knownIds complementa com IDs não listados (ex.: recém-criado)
+  const serverIds = new Set(serverExports.map((j) => j.id));
+  const exportRows: ExportRow[] = [
+    ...serverExports.map((job) => ({ id: job.id, job, error: null })),
+    ...knownRows.filter((row) => !serverIds.has(row.id)),
+  ];
 
   const runningCount = exportRows.filter((row) => row.job && ["running", "queued"].includes(row.job.status.toLowerCase())).length;
   const completedCount = exportRows.filter((row) => row.job?.status.toLowerCase() === "completed").length;
@@ -263,14 +274,14 @@ export default async function ExportsPage({ params, searchParams }: Props) {
         </div>
       </div>
 
-      {qp.created === "1" && <div style={alertStyle("ok")}>Export criado e adicionado na lista de jobs conhecidos.</div>}
+      {qp.created === "1" && <div style={alertStyle("ok")}>Export criado com sucesso.</div>}
       {sanitizedQueryError && <div style={alertStyle("err")}>{sanitizedQueryError}</div>}
 
       <section className="module-summary" aria-label="Resumo de exports">
         <div className="summary-card">
-          <p className="summary-card__label">Jobs conhecidos</p>
+          <p className="summary-card__label">Jobs do projeto</p>
           <div className="summary-card__value">{exportRows.length.toLocaleString("pt-BR")}</div>
-          <div className="summary-card__hint">consultados por ID</div>
+          <div className="summary-card__hint">listados do servidor</div>
         </div>
         <div className="summary-card">
           <p className="summary-card__label">Em andamento</p>
@@ -395,7 +406,7 @@ export default async function ExportsPage({ params, searchParams }: Props) {
                           </td>
                           <td>{jobStatusBadge(row.job.status)}</td>
                           <td className="t__muted" style={{ fontSize: 12 }}>{formatDateTime(row.job.created_at)}</td>
-                          <td className="mono t__muted" style={{ fontSize: 12 }}>nao disponivel</td>
+                          <td className="mono t__muted" style={{ fontSize: 12 }}>—</td>
                           <td>
                             <div className="row" style={{ justifyContent: "flex-end" }}>
                               {isDownloadReady ? (
@@ -444,11 +455,11 @@ export default async function ExportsPage({ params, searchParams }: Props) {
                 Exports ajudam em JSONL/CSV, auditoria e pipelines externos.
               </p>
               <p style={{ marginTop: 0, marginBottom: 14, color: "var(--text-muted)", fontSize: 13 }}>
-                O contrato atual permite criar export e consultar por ID. Nao existe endpoint de historico completo.
+                Nenhum export criado ainda para este projeto.
               </p>
               <ol style={{ margin: 0, paddingLeft: 18, color: "var(--text-muted)", fontSize: 13, lineHeight: 1.8 }}>
                 <li>Crie um export com filtros reais.</li>
-                <li>O job criado entra na lista desta pagina via ID.</li>
+                <li>O job aparece automaticamente nesta lista.</li>
                 <li>Quando o status ficar concluido, use o botao Download para baixar o JSONL.</li>
               </ol>
             </div>
@@ -578,19 +589,6 @@ export default async function ExportsPage({ params, searchParams }: Props) {
             </div>
           </section>
 
-          <section className="card">
-            <div className="card__header">
-              <h3 className="card__title">Contrato atual</h3>
-            </div>
-            <div className="card__body" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              <p style={{ margin: 0, color: "var(--text-faint)", fontSize: 12 }}>
-                O backend atual nao expoe endpoint para listar historico global nem cancelar jobs.
-              </p>
-              <p style={{ margin: 0, color: "var(--text-faint)", fontSize: 12 }}>
-                O download de exports concluidos usa o endpoint autenticado do proprio contrato.
-              </p>
-            </div>
-          </section>
         </div>
       </div>
     </div>

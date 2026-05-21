@@ -12,9 +12,10 @@ test("P7.6 exports: page preserves server contract and real APIs", () => {
   assert.match(page, /import \{ createExportAction \}/);
   assert.match(
     page,
-    /getExport,\s*getExportDownloadPath,\s*getOrganizationSubscription,\s*getOrganizationUsage,\s*hasAuthToken,\s*resolveProject,/,
+    /getExport,\s*getExportDownloadPath,\s*getOrganizationSubscription,\s*getOrganizationUsage,\s*hasAuthToken,\s*listExports,\s*resolveProject,/,
   );
   assert.match(page, /await getExport\(id\)/);
+  assert.match(page, /listExports\(resolvedProject\.project_id\)/);
   assert.match(page, /getOrganizationUsage\(resolvedProject\.org_id\)/);
   assert.match(page, /getOrganizationSubscription\(resolvedProject\.org_id\)/);
 });

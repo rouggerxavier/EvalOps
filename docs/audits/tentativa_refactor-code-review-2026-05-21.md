@@ -10,8 +10,8 @@
 
 | # | Severidade | Tema | Arquivo principal |
 |---|---|---|---|
-| 1 | 🔴 quebra feature | `POST /traces/{id}/rerun` não enfileira nada | `apps/api/app/api/routes_trace_actions.py` |
-| 2 | 🔴 quebra feature | Página de Exports não usa `listExports` | `apps/web/app/o/[org]/p/[project]/exports/page.tsx` |
+| 1 | 🔴 quebra feature | `POST /traces/{id}/rerun` não enfileira nada — **adiado** (spec em `docs/plans/evalops-async-worker-replay-spec.md`) | `apps/api/app/api/routes_trace_actions.py` |
+| 2 | ✅ corrigido | Página de Exports integra `listExports` do servidor | `apps/web/app/o/[org]/p/[project]/exports/page.tsx` |
 | 3 | 🔴 quebra feature | Topbar bell + workspace switcher não montados | `apps/web/components/EvoTopbar.tsx` |
 | 4 | 🔴 quebra feature | Tabs "Lentos" e "RAG" filtram só página atual | `apps/web/app/o/[org]/p/[project]/traces/page.tsx` |
 | 5 | 🟠 perf / scalability | `GET /prompts/{id}/usage` faz full-table-scan | `apps/api/app/api/routes_phase5.py` |
@@ -104,46 +104,28 @@ Adicionar teste de integração que verifica que `metadata.replay_status` chega 
 
 ---
 
-## 🔴 2. Página de Exports não usa o endpoint `GET /projects/{id}/exports`
+## ✅ 2. Página de Exports não usa o endpoint `GET /projects/{id}/exports` — **CORRIGIDO**
+
+> **Status:** corrigido em `4fc50f3` → commit `<próximo>` (branch `claude/repository-access-X2Zcv`)
 
 ### Onde
-- Frontend: `apps/web/app/o/[org]/p/[project]/exports/page.tsx:163,190-207`
-- Backend pronto: `apps/api/app/api/routes_phase6.py` (commit `1fb86fe`)
-- Wrapper pronto: `apps/web/lib/api.ts:422` (`listExports`)
+- Frontend: `apps/web/app/o/[org]/p/[project]/exports/page.tsx`
+- Backend: `apps/api/app/api/routes_phase6.py`
+- Wrapper: `apps/web/lib/api.ts:422` (`listExports`)
 
-### O que está errado
-A página constrói a lista visível a partir de:
-```ts
-const knownIds = parseExportIds(qp.export_id, qp.ids);
-```
-ou seja, apenas IDs presentes no query string da URL. O wrapper `listExports(projectId)` existe mas **não é chamado em nenhum lugar do front**.
+### O que estava errado
+A página construía a lista apenas com IDs presentes no query string da URL. O wrapper `listExports(projectId)` existia mas **não era chamado**.
 
-### Impacto no usuário
-- Recarregar a página com URL limpa → lista vazia.
-- Trocar de browser ou aba → lista vazia.
-- Membros diferentes da mesma org **não veem** os exports criados pelos colegas.
-- Histórico não persiste entre sessões.
-- Coluna "Tamanho" (linha 398) é literal `"nao disponivel"` hardcoded.
+### O que foi corrigido
+1. `listExports(resolvedProject.project_id)` adicionado no `Promise.all` da página.
+2. Resultado do servidor mesclado com `knownIds` (dedup por `id`): server é fonte primária, `knownIds` complementa com IDs recém-criados ainda não listados.
+3. Coluna "Tamanho" marcada como `—` (sem `file_size_bytes` no model atual — campo pode ser adicionado em migration futura).
+4. Card "Contrato atual" removido (dizia que não existia endpoint de listagem — desatualizado).
+5. Empty state e summary card atualizados para refletir listagem real do servidor.
 
-### Quebra do plano
-Plan §3.6.10 / §4.11 / §14 carry-over reconhece: *"integração `listExports` no listing de Exports"* — pendência registrada mas não fechada.
-
-### Como corrigir
-1. Em `apps/web/app/o/[org]/p/[project]/exports/page.tsx`, dentro do `Promise.all` da linha 190, adicionar:
-   ```ts
-   listExports(resolvedProject.project_id)
-     .then((res) => ({ exports: res.data, error: null as string | null }))
-     .catch((error) => ({ exports: [], error: safeErrorMessage(error, "Falha ao listar exports.") })),
-   ```
-2. Mesclar com `knownIds` (deduplicar por `id`), priorizando o resultado do servidor.
-3. Para a coluna "Tamanho", expor `file_size_bytes` no schema `ExportJobOut` (existe no model? checar `apps/api/app/models.py`). Se não existe, criar em migration próxima ou marcar a coluna como `—` em vez de string ruim.
-4. Remover o card "Contrato atual" que diz "O backend atual nao expoe endpoint para listar historico global" — desatualizado.
-
-### Como evitar regressão
-Adicionar teste e2e em `apps/web/e2e/smoke.spec.ts` que:
-1. Cria 2 exports via API direta.
-2. Acessa `/o/{org}/p/{project}/exports`.
-3. Asserta que ambos aparecem na tabela.
+### Pendências deixadas para depois
+- Coluna "Tamanho" mostra `—` — `file_size_bytes` não existe no model `ExportJob`. Requer migration.
+- Teste e2e (criar 2 exports via API, verificar que aparecem na tabela) não foi adicionado nesta rodada.
 
 ---
 
@@ -882,8 +864,8 @@ Teste `test_double_flag_same_reason_returns_existing`.
 
 Antes de marcar como pronto:
 
-- [ ] Bug #1: rerun enfileira worker **ou** botão escondido **ou** rota removida.
-- [ ] Bug #2: `listExports` chamado em `exports/page.tsx`.
+- [ ] Bug #1: **adiado** — spec completa em `docs/plans/evalops-async-worker-replay-spec.md`. Implementar após correção dos demais bugs (requer Fase A–E: arq + worker + rota + front + testes, ~11h).
+- [x] Bug #2: `listExports` integrado em `exports/page.tsx` — lista vem do servidor, mesclada com `knownIds`. Card "Contrato atual" removido. Coluna "Tamanho" mostra `—` (sem `file_size_bytes` no model — migration futura).
 - [ ] Bug #3: Bell e WorkspaceSwitcher montados em `EvoTopbar.tsx`/`Sidebar.tsx`.
 - [ ] Bug #4: backend aceita `duration_gt` / `rag=true`, frontend não filtra em JS.
 - [ ] Bug #5: migration `0006_prompt_ref_index.py` + LIMIT na query + `usage_count` honesto.
