@@ -468,27 +468,37 @@ Padrão: cada Action chama wrapper, captura erro com `sanitizeApiError`, redirec
 
 Em `tentativa_refactor`:
 
-1. `chore(refactor): scaffold branch + extract preview source`
-2. `feat(tokens): add radii/spacing/font-mono/eval/rag tokens preserving palette`
-3. `feat(css): port preview design-system classes adapted to current palette`
-4. `feat(ui): create shared components (Card, Metric, Badge, PageHeader, Tabs, etc.)`
-5. `feat(shell): rewrite Sidebar + Topbar matching preview`
-6. `feat(api): add attention/coverage/sdk-status/notifications endpoints + migrations`
-7. `feat(api): add trace flags + rerun + compare endpoints + migrations`
-8. `feat(api): add rag consolidated + evaluation summary + prompt usage + exports listing`
-9. `feat(api): add members + project patch + last_score in trace listing`
-10. `feat(lib): add api wrappers + server actions for new endpoints`
-11. `feat(overview): rewrite to match preview cockpit (attention strip, 5 KPIs, suggestions, coverage)`
-12. `feat(traces): rewrite list + detail (tabs, filters, bulk flag, RAG panel)`
-13. `feat(evaluations): rewrite summary + tabs + drawer`
-14. `feat(modules): rewrite prompts/rubrics/datasets/experiments/keys/exports with real backend`
-15. `feat(traces): add compare page`
-16. `feat(settings): add stub settings page (project patch + members)`
-17. `feat(shortcuts): extend G+letter shortcuts (G S settings)`
-18. `chore(cleanup): remove deprecated components (AnswerPreviewCard, CitationRefsTable, etc.)`
-19. `docs(readme): replace root README per spec §10`
-20. `test: add backend unit tests for new endpoints`
-21. `test(e2e): add Playwright smoke for each refactored route`
+Status atualizado em 2026-05-21:
+
+| # | Status | Commit real | Plano original |
+|---:|---|---|---|
+| 1 | ✅ feito | `46ba04f chore(refactor): scaffold branch + extract preview source` | `chore(refactor): scaffold branch + extract preview source` |
+| 2 | ✅ feito | `0c3cf75 feat(tokens): add preview tokens preserving palette` | `feat(tokens): add radii/spacing/font-mono/eval/rag tokens preserving palette` |
+| 3 | ✅ feito | `bef3fc6 feat(css): port preview design-system classes` | `feat(css): port preview design-system classes adapted to current palette` |
+| 4 | ✅ feito | `2c19d14 feat(ui): add shared cockpit components` | `feat(ui): create shared components (Card, Metric, Badge, PageHeader, Tabs, etc.)` |
+| 5 | ✅ feito | `a2e39a1 feat(shell): match preview cockpit chrome` | `feat(shell): rewrite Sidebar + Topbar matching preview` |
+| 6 | ✅ feito | `a6fc2bf feat(api): add cockpit status endpoints` | `feat(api): add attention/coverage/sdk-status/notifications endpoints + migrations` |
+| 7 | ✅ feito | `f6e7ef1 feat(api): add trace action endpoints` | `feat(api): add trace flags + rerun + compare endpoints + migrations` |
+| 8 | ✅ feito | `1fb86fe feat(api): add read model endpoints` | `feat(api): add rag consolidated + evaluation summary + prompt usage + exports listing` |
+| 9 | ✅ feito | `3083e31 feat(api): add project admin endpoints` | `feat(api): add members + project patch + last_score in trace listing` |
+| 10 | ✅ feito | `5db1f22 feat(lib): add endpoint actions` | `feat(lib): add api wrappers + server actions for new endpoints` |
+| 11 | ✅ feito | `feat(overview): rewrite to match preview cockpit` | `feat(overview): rewrite to match preview cockpit (attention strip, 5 KPIs, suggestions, coverage)` |
+| 12 | ⏳ próximo | — | `feat(traces): rewrite list + detail (tabs, filters, bulk flag, RAG panel)` |
+| 13 | ⏳ pendente | — | `feat(evaluations): rewrite summary + tabs + drawer` |
+| 14 | ⏳ pendente | — | `feat(modules): rewrite prompts/rubrics/datasets/experiments/keys/exports with real backend` |
+| 15 | ⏳ pendente | — | `feat(traces): add compare page` |
+| 16 | ⏳ pendente | — | `feat(settings): add stub settings page (project patch + members)` |
+| 17 | ⏳ pendente | — | `feat(shortcuts): extend G+letter shortcuts (G S settings)` |
+| 18 | ⏳ pendente | — | `chore(cleanup): remove deprecated components (AnswerPreviewCard, CitationRefsTable, etc.)` |
+| 19 | ⏳ pendente | — | `docs(readme): replace root README per spec §10` |
+| 20 | ⏳ pendente | — | `test: add backend unit tests for new endpoints` |
+| 21 | ⏳ pendente | — | `test(e2e): add Playwright smoke for each refactored route` |
+
+Observações:
+- Os commits 6 a 9 foram agrupados por contratos de backend reais, mantendo os endpoints planejados e testes correspondentes.
+- O commit 10 também adicionou tipos em `apps/web/lib/types.ts`, além de wrappers e Server Actions.
+- Commit 11 entregou a Overview alinhada ao preview (header c/ janela 24h/7d/30d, attention strip via `GET /v1/projects/{id}/attention`, 5 KPIs com sparkline, custo+volume area chart, custo por modelo, traces flagged, SDK status, sugestões com modais ligadas a Server Actions e cobertura por avaliação via `GET /v1/projects/{id}/coverage`).
+- Próximo commit funcional do plano: **12 — Traces list + detail**.
 
 ---
 
