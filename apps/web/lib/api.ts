@@ -33,6 +33,8 @@ import type {
   TraceListResponse,
   TraceRerunResponse,
 } from "./types";
+import { cache } from "react";
+
 import { getAuthToken, getSession, hasFallbackToken } from "./auth";
 import { getApiBaseUrl } from "./config";
 
@@ -64,10 +66,12 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
   return (await res.json()) as T;
 }
 
-export async function resolveProject(orgSlug: string, projectSlug: string): Promise<ResolvedProject> {
-  const params = new URLSearchParams({ org_slug: orgSlug, project_slug: projectSlug });
-  return fetchJson<ResolvedProject>(`/resolve?${params.toString()}`);
-}
+export const resolveProject = cache(
+  async (orgSlug: string, projectSlug: string): Promise<ResolvedProject> => {
+    const params = new URLSearchParams({ org_slug: orgSlug, project_slug: projectSlug });
+    return fetchJson<ResolvedProject>(`/resolve?${params.toString()}`);
+  },
+);
 
 export function hasDashboardToken(): boolean {
   return hasFallbackToken();

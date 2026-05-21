@@ -436,7 +436,7 @@ def list_traces(
         query = query.filter(
             or_(
                 Trace.name.ilike("rag.%"),
-                Trace.metadata_json["is_rag"].as_string() == "true",
+                Trace.metadata_json["is_rag"].as_string().in_(("true", "1")),
             )
         )
     if cursor:

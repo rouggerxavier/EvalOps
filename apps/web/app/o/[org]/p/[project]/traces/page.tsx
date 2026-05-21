@@ -49,13 +49,7 @@ export default async function TracesListPage({ params, searchParams }: Props) {
   const rows = traces.data;
   const displayRows = rows;
 
-  const counts = {
-    all: tab === "all" ? rows.length : undefined,
-    errors: tab === "errors" ? rows.length : undefined,
-    partial: tab === "partial" ? rows.length : undefined,
-    slow: tab === "slow" ? rows.length : undefined,
-    rag: tab === "rag" ? rows.length : undefined,
-  };
+  const activeCount = rows.length;
 
   const tabBase = `/o/${org}/p/${project}/traces`;
   const baseParams = new URLSearchParams();
@@ -115,19 +109,19 @@ export default async function TracesListPage({ params, searchParams }: Props) {
       <nav className="tabs" aria-label="Segmentos de traces">
         <Link href={tabHref("all")} className={`tab${tab === "all" ? " is-active" : ""}`}>
           Todos
-          <span className="tab__count">{counts.all}</span>
+          {tab === "all" ? <span className="tab__count">{activeCount}</span> : null}
         </Link>
         <Link href={tabHref("errors")} className={`tab${tab === "errors" ? " is-active" : ""}`}>
           <AlertCircle size={11} /> Erros
-          <span className="tab__count">{counts.errors}</span>
+          {tab === "errors" ? <span className="tab__count">{activeCount}</span> : null}
         </Link>
         <Link href={tabHref("partial")} className={`tab${tab === "partial" ? " is-active" : ""}`}>
           <Flag size={11} /> Parciais
-          <span className="tab__count">{counts.partial}</span>
+          {tab === "partial" ? <span className="tab__count">{activeCount}</span> : null}
         </Link>
         <Link href={tabHref("slow")} className={`tab${tab === "slow" ? " is-active" : ""}`}>
           <Clock size={11} /> Lentos
-          <span className="tab__count">{counts.slow}</span>
+          {tab === "slow" ? <span className="tab__count">{activeCount}</span> : null}
         </Link>
         <Link
           href={tabHref("rag")}
@@ -135,7 +129,7 @@ export default async function TracesListPage({ params, searchParams }: Props) {
           data-testid="trace-list-rag-tab"
         >
           <Layers size={11} /> RAG
-          <span className="tab__count">{counts.rag}</span>
+          {tab === "rag" ? <span className="tab__count">{activeCount}</span> : null}
         </Link>
       </nav>
 
