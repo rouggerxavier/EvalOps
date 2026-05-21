@@ -422,3 +422,54 @@ class ExportJobOut(BaseModel):
     created_by: str | None = None
     created_at: datetime
     completed_at: datetime | None = None
+
+
+class AttentionItemOut(BaseModel):
+    trace_id: str
+    cause: str
+    service: str | None = None
+    at: datetime
+
+
+class AttentionResponse(BaseModel):
+    count: int
+    items: list[AttentionItemOut]
+
+
+class CoverageItemOut(BaseModel):
+    rubric_id: str
+    rubric_slug: str
+    coverage: float
+    runs_7d: int
+
+
+class CoverageResponse(BaseModel):
+    data: list[CoverageItemOut]
+
+
+class SdkStatusOut(BaseModel):
+    p95_ingestion_ms: int
+    spans_per_minute: float
+    last_event_at: datetime | None = None
+    services_seen: list[str]
+
+
+class NotificationOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    project_id: str
+    kind: str
+    title: str
+    meta: dict
+    created_at: datetime
+    read_at: datetime | None = None
+
+
+class NotificationListResponse(BaseModel):
+    data: list[NotificationOut]
+    unread_count: int
+
+
+class NotificationMarkReadIn(BaseModel):
+    ids: list[str] = Field(default_factory=list)

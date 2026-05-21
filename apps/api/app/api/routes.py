@@ -1,5 +1,5 @@
 import base64
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
@@ -11,15 +11,20 @@ from app.deps import ensure_org_membership, get_current_user, get_project_from_a
 from app.domain.services import api_key_service
 from app.domain.services.audit_service import record_audit
 from app.domain.services.trace_ingest_service import ingest_trace_batch
-from app.models import Event, HumanFeedback, Membership, Organization, Project, Span, Trace, User, utcnow
+from app.models import Event, HumanFeedback, Membership, Notification, Organization, Project, Span, Trace, User, utcnow
 from app.ownership import get_owned_project, get_owned_trace
 from app.schemas import (
+    AttentionResponse,
     ApiKeyCreate,
     ApiKeyCreateOut,
+    NotificationListResponse,
+    NotificationMarkReadIn,
+    NotificationOut,
     OrganizationCreate,
     OrganizationOut,
     ProjectCreate,
     ProjectOut,
+    SdkStatusOut,
     TraceBatchIn,
     TraceOut,
 )
@@ -178,6 +183,154 @@ def revoke_api_key(
     key = api_key_service.revoke_key(db, project, key_id, user.id)
     if key is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="not_found")
+
+
+def _problem_cause(trace: Trace, spans: list[Span]) -> str:
+    meta = trace.metadata_json or {}
+    for key in ("cause", "error_type", "flagged_reason", "reason"):
+        value = meta.get(key)
+        if isinstance(value, str) and value:
+            return value
+    for span in spans:
+        err = span.error or {}
+        for key in ("type", "code", "error", "reason"):
+            value = err.get(key)
+            if isinstance(value, str) and value:
+                return value
+        message = str(err.get("message") or "").lower()
+        if "timeout" in message:
+            return "vector_db_timeout" if "vector" in message else "timeout"
+        if "schema" in message:
+            return "schema_mismatch"
+    if trace.status == "partial":
+        return "low_confidence"
+    if trace.total_cost_usd and float(trace.total_cost_usd) > 1:
+        return "cost_spike"
+    return "trace_error"
+
+
+def _delta_ms(later: datetime, earlier: datetime) -> int:
+    if later.tzinfo is None and earlier.tzinfo is not None:
+        earlier = earlier.replace(tzinfo=None)
+    elif later.tzinfo is not None and earlier.tzinfo is None:
+        later = later.replace(tzinfo=None)
+    return max(0, int((later - earlier).total_seconds() * 1000))
+
+
+@router.get("/projects/{project_id}/attention", response_model=AttentionResponse)
+def get_project_attention(
+    project: Project = Depends(get_owned_project),
+    db: Session = Depends(get_db),
+) -> dict:
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+    traces = (
+        db.query(Trace)
+        .filter(
+            Trace.project_id == project.id,
+            Trace.deleted_at.is_(None),
+            Trace.status != "ok",
+            Trace.created_at >= cutoff,
+        )
+        .order_by(Trace.created_at.desc())
+        .limit(25)
+        .all()
+    )
+    trace_ids = [trace.id for trace in traces]
+    spans = db.query(Span).filter(Span.trace_id.in_(trace_ids)).all() if trace_ids else []
+    spans_by_trace: dict[str, list[Span]] = {}
+    for span in spans:
+        spans_by_trace.setdefault(span.trace_id, []).append(span)
+    items = [
+        {
+            "trace_id": trace.id,
+            "cause": _problem_cause(trace, spans_by_trace.get(trace.id, [])),
+            "service": trace.service,
+            "at": trace.created_at,
+        }
+        for trace in traces
+    ]
+    return {"count": len(items), "items": items}
+
+
+@router.get("/projects/{project_id}/sdk-status", response_model=SdkStatusOut)
+def get_project_sdk_status(
+    project: Project = Depends(get_owned_project),
+    db: Session = Depends(get_db),
+) -> dict:
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=60)
+    traces = (
+        db.query(Trace)
+        .filter(Trace.project_id == project.id, Trace.deleted_at.is_(None), Trace.created_at >= cutoff)
+        .all()
+    )
+    trace_ids = [trace.id for trace in traces]
+    spans = db.query(Span).filter(Span.trace_id.in_(trace_ids)).all() if trace_ids else []
+    span_ids = [span.id for span in spans]
+    events = db.query(Event).filter(Event.span_id.in_(span_ids)).all() if span_ids else []
+
+    ingestion_latencies = []
+    for trace in traces:
+        if trace.created_at and trace.ended_at:
+            ingestion_latencies.append(_delta_ms(trace.created_at, trace.ended_at))
+    ingestion_latencies.sort()
+    if ingestion_latencies:
+        p95_index = max(0, min(len(ingestion_latencies) - 1, int(0.95 * (len(ingestion_latencies) - 1))))
+        p95 = ingestion_latencies[p95_index]
+    else:
+        p95 = 0
+    last_trace_at = max((trace.created_at for trace in traces), default=None)
+    last_event_at = max((event.occurred_at for event in events), default=None)
+    candidates = [value for value in [last_trace_at, last_event_at] if value is not None]
+    services = sorted({trace.service for trace in traces if trace.service})
+    return {
+        "p95_ingestion_ms": p95,
+        "spans_per_minute": round(len(spans) / 60, 3),
+        "last_event_at": max(candidates) if candidates else None,
+        "services_seen": services,
+    }
+
+
+@router.get("/projects/{project_id}/notifications", response_model=NotificationListResponse)
+def list_project_notifications(
+    limit: int = Query(20, ge=1, le=100),
+    project: Project = Depends(get_owned_project),
+    db: Session = Depends(get_db),
+) -> dict:
+    rows = (
+        db.query(Notification)
+        .filter(Notification.project_id == project.id)
+        .order_by(Notification.created_at.desc())
+        .limit(limit)
+        .all()
+    )
+    unread_count = (
+        db.query(func.count(Notification.id))
+        .filter(Notification.project_id == project.id, Notification.read_at.is_(None))
+        .scalar()
+        or 0
+    )
+    return {
+        "data": [NotificationOut.model_validate(row).model_dump() for row in rows],
+        "unread_count": int(unread_count),
+    }
+
+
+@router.post("/projects/{project_id}/notifications/mark-read")
+def mark_project_notifications_read(
+    payload: NotificationMarkReadIn,
+    project: Project = Depends(get_owned_project),
+    db: Session = Depends(get_db),
+) -> dict:
+    now = utcnow()
+    query = db.query(Notification).filter(Notification.project_id == project.id, Notification.read_at.is_(None))
+    if payload.ids:
+        query = query.filter(Notification.id.in_(payload.ids))
+    rows = query.all()
+    for row in rows:
+        row.read_at = now
+        db.add(row)
+    db.commit()
+    return {"updated": len(rows)}
 
 
 @router.post("/traces", status_code=status.HTTP_202_ACCEPTED)
