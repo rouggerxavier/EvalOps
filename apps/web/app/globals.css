@@ -8,17 +8,17 @@
    ===================================================================== */
 :root {
   /* Surfaces */
-  --surface-0:        #060a18;
-  --surface-1:        #0a1024;
-  --surface-2:        #0f1730;
-  --surface-3:        #131c3a;
-  --surface-4:        #1a2547;
-  --surface-overlay:  rgba(10, 16, 36, 0.72);
+  --surface-0:        #03050d;
+  --surface-1:        #060814;
+  --surface-2:        #090c1c;
+  --surface-3:        #0e1228;
+  --surface-4:        #131830;
+  --surface-overlay:  rgba(6, 8, 20, 0.78);
 
   /* Borders */
-  --border-subtle:    #1c2748;
-  --border-default:   #243057;
-  --border-strong:    #324073;
+  --border-subtle:    #161d36;
+  --border-default:   #1f2748;
+  --border-strong:    #2a345e;
   --border-focus:     #3b82f6;
 
   /* Foreground / text */
@@ -190,7 +190,7 @@ body::before {
   position: fixed;
   inset: 0;
   pointer-events: none;
-  background: radial-gradient(900px 380px at 50% -120px, rgba(59,141,245,0.08), transparent 70%);
+  background: radial-gradient(900px 380px at 50% -120px, rgba(59,141,245,0.04), transparent 70%);
   z-index: 0;
 }
 
