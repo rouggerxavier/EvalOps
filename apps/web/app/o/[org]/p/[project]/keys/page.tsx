@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Plus, RefreshCw, ShieldCheck } from "lucide-react";
+import { KeyRound, Plus, RefreshCw, ShieldCheck } from "lucide-react";
 
 import { AuthRequiredPanel } from "@/components/AuthRequiredPanel";
 import { CopyTextButton } from "@/components/CopyTextButton";
@@ -8,16 +8,6 @@ import { getApiKeys, hasAuthToken, resolveProject } from "@/lib/api";
 import { consumeApiKeyFlash } from "@/lib/flash";
 import { formatDateTime } from "@/lib/format";
 import { safeErrorMessage } from "@/lib/safe-error";
-
-function relTime(iso: string): string {
-  const diff = Date.now() - Date.parse(iso);
-  const mins = Math.floor(diff / 60_000);
-  if (mins < 1) return "agora";
-  if (mins < 60) return `${mins}m atrás`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h atrás`;
-  return `${Math.floor(hrs / 24)}d atrás`;
-}
 
 type Props = {
   params: Promise<{ org: string; project: string }>;
@@ -137,7 +127,7 @@ export default async function KeysPage({ params, searchParams }: Props) {
       <div className="evo-page">
         <div className="evo-page-header">
           <div>
-            <p className="evo-page-header__eyebrow">Acesso · Chaves API</p>
+            <p className="evo-page-header__eyebrow">Operação · Chaves API</p>
             <h1 className="evo-page-header__title">Chaves API</h1>
             <p className="evo-page-header__subtitle">Gerencie credenciais para SDKs e integracoes.</p>
           </div>
@@ -155,20 +145,6 @@ export default async function KeysPage({ params, searchParams }: Props) {
 
   const activeCount = keys.filter((key) => !key.revoked_at).length;
   const revokedCount = keys.length - activeCount;
-  const latestActivity = (() => {
-    let mostRecent: string | null = null;
-    for (const key of keys) {
-      const candidates = [key.created_at, key.revoked_at].filter(
-        (value): value is string => Boolean(value),
-      );
-      for (const value of candidates) {
-        if (!mostRecent || Date.parse(value) > Date.parse(mostRecent)) {
-          mostRecent = value;
-        }
-      }
-    }
-    return mostRecent;
-  })();
   const filteredKeys = keys.filter((key) => {
     if (tab === "active") return !key.revoked_at;
     if (tab === "revoked") return Boolean(key.revoked_at);
@@ -182,7 +158,7 @@ export default async function KeysPage({ params, searchParams }: Props) {
     <div className="evo-page">
       <div className="evo-page-header">
         <div>
-          <p className="evo-page-header__eyebrow">Acesso · Chaves API</p>
+          <p className="evo-page-header__eyebrow">Operação · Chaves API</p>
           <h1 className="evo-page-header__title">Chaves API</h1>
           <p className="evo-page-header__subtitle">
             Credenciais para conectar SDKs e integracoes com seguranca.
@@ -198,31 +174,6 @@ export default async function KeysPage({ params, searchParams }: Props) {
             Nova key
           </Link>
         </div>
-      </div>
-
-      <div
-        role="note"
-        style={{
-          display: "flex",
-          gap: 10,
-          alignItems: "flex-start",
-          padding: "10px 14px",
-          marginBottom: 12,
-          background: "var(--bg-2)",
-          border: "1px solid var(--border-subtle)",
-          borderRadius: 8,
-          fontSize: 12,
-          color: "var(--text-muted)",
-          lineHeight: 1.5,
-        }}
-      >
-        <ShieldCheck size={14} style={{ color: "var(--accent)", flexShrink: 0, marginTop: 1 }} />
-        <span>
-          <strong style={{ color: "var(--text)" }}>Política de chaves:</strong>{" "}
-          rotacione a cada 90 dias, use o escopo mínimo necessário e revogue
-          imediatamente em caso de vazamento. Nunca comite segredos em
-          repositórios, logs ou tickets.
-        </span>
       </div>
 
       {qp.error && <div style={alertStyle("err")}>{qp.error}</div>}
@@ -270,28 +221,31 @@ export default async function KeysPage({ params, searchParams }: Props) {
         </section>
       )}
 
-      <section className="evo-summary-row" aria-label="Resumo de chaves API">
-        <div className="evo-summary-card">
-          <p className="evo-summary-card__label">Chaves</p>
-          <div className="evo-summary-card__value">{keys.length.toLocaleString("pt-BR")}</div>
-          <div className="evo-summary-card__hint">total no projeto</div>
-        </div>
-        <div className="evo-summary-card">
-          <p className="evo-summary-card__label">Ativas</p>
-          <div className="evo-summary-card__value">{activeCount.toLocaleString("pt-BR")}</div>
-          <div className="evo-summary-card__hint">uso permitido</div>
-        </div>
-        <div className="evo-summary-card">
-          <p className="evo-summary-card__label">Revogadas</p>
-          <div className="evo-summary-card__value">{revokedCount.toLocaleString("pt-BR")}</div>
-          <div className="evo-summary-card__hint">sem acesso</div>
-        </div>
-        <div className="evo-summary-card">
-          <p className="evo-summary-card__label">Última atividade</p>
-          <div className="evo-summary-card__value">
-            {latestActivity ? relTime(latestActivity) : "—"}
+      <section className="evo-kpi-grid" style={{ marginBottom: 16 }}>
+        <div className="evo-metric" style={{ minHeight: 112 }}>
+          <div className="evo-metric__label">
+            <KeyRound size={12} />
+            Chaves
           </div>
-          <div className="evo-summary-card__hint">criação ou revogação</div>
+          <div className="evo-metric__value">{keys.length.toLocaleString("pt-BR")}</div>
+          <div className="evo-metric__delta evo-metric__delta--neutral">total no projeto</div>
+        </div>
+        <div className="evo-metric" style={{ minHeight: 112 }}>
+          <div className="evo-metric__label">Ativas</div>
+          <div className="evo-metric__value">{activeCount.toLocaleString("pt-BR")}</div>
+          <div className="evo-metric__delta evo-metric__delta--neutral">uso permitido</div>
+        </div>
+        <div className="evo-metric" style={{ minHeight: 112 }}>
+          <div className="evo-metric__label">Revogadas</div>
+          <div className="evo-metric__value">{revokedCount.toLocaleString("pt-BR")}</div>
+          <div className="evo-metric__delta evo-metric__delta--neutral">sem acesso</div>
+        </div>
+        <div className="evo-metric" style={{ minHeight: 112 }}>
+          <div className="evo-metric__label">Scopes</div>
+          <div className="evo-metric__value">
+            {Array.from(new Set(keys.flatMap((key) => key.scopes))).length.toLocaleString("pt-BR")}
+          </div>
+          <div className="evo-metric__delta evo-metric__delta--neutral">tipos de permissao</div>
         </div>
       </section>
 
@@ -468,42 +422,7 @@ export default async function KeysPage({ params, searchParams }: Props) {
           </div>
         </section>
       </div>
-
-      <section className="evo-card" style={{ marginTop: 12 }}>
-        <div className="evo-card__header">
-          <div>
-            <h3 className="evo-card__title">Endpoints ativos</h3>
-            <div className="evo-card__subtitle">Rotas reais do backend que servem este módulo.</div>
-          </div>
-        </div>
-        <div className="evo-card__body">
-          <div className="evo-endpoint-list" aria-label="Endpoints do módulo Chaves API">
-            <div className="evo-endpoint-row">
-              <span className="evo-endpoint-row__method evo-endpoint-row__method--get">GET</span>
-              <span className="evo-endpoint-row__path" title="/v1/projects/{project_id}/api-keys">
-                /projects/{"{project_id}"}/api-keys
-              </span>
-              <span className="evo-endpoint-row__note">ativo</span>
-            </div>
-            <div className="evo-endpoint-row">
-              <span className="evo-endpoint-row__method evo-endpoint-row__method--post">POST</span>
-              <span className="evo-endpoint-row__path" title="/v1/projects/{project_id}/api-keys">
-                /projects/{"{project_id}"}/api-keys
-              </span>
-              <span className="evo-endpoint-row__note">ativo · cria chave</span>
-            </div>
-            <div className="evo-endpoint-row">
-              <span className="evo-endpoint-row__method evo-endpoint-row__method--post">POST</span>
-              <span className="evo-endpoint-row__path" title="/v1/projects/{project_id}/api-keys/{key_id}/revoke">
-                /projects/{"{project_id}"}/api-keys/{"{key_id}"}/revoke
-              </span>
-              <span className="evo-endpoint-row__note">ativo · revoga chave</span>
-            </div>
-          </div>
-        </div>
-      </section>
     </div>
   );
 }
-
 

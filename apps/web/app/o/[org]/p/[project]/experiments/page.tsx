@@ -206,19 +206,12 @@ export default async function ExperimentosPage({ params, searchParams }: Props) 
 
   const experiments = experimentsRes.data;
 
-  const totalVariants = experiments.reduce((acc, exp) => acc + exp.variants.length, 0);
-  const withBaseline = experiments.filter((exp) => exp.baseline_variant !== null).length;
-  const latestActivity = experiments.reduce<string | null>((acc, exp) => {
-    if (!acc || Date.parse(exp.created_at) > Date.parse(acc)) return exp.created_at;
-    return acc;
-  }, null);
-
   return (
     <div className="evo-page">
       {/* Header */}
       <div className="evo-page-header">
         <div>
-          <p className="evo-page-header__eyebrow">Operação · Experimentos</p>
+          <p className="evo-page-header__eyebrow">Recursos · Experimentos</p>
           <h1 className="evo-page-header__title">Experimentos</h1>
           <p className="evo-page-header__subtitle">
             Comparações controladas de modelos, prompts e parâmetros sobre datasets com critérios de aprovação por rubrica.
@@ -272,32 +265,6 @@ export default async function ExperimentosPage({ params, searchParams }: Props) 
           {qp.created ? "Experimento criado com sucesso." : "Run executada com sucesso."}
         </div>
       )}
-
-      {/* Summary row — só dados reais do payload */}
-      <section className="evo-summary-row" aria-label="Resumo de experimentos">
-        <div className="evo-summary-card">
-          <p className="evo-summary-card__label">Experimentos</p>
-          <div className="evo-summary-card__value">{experiments.length.toLocaleString("pt-BR")}</div>
-          <div className="evo-summary-card__hint">total no projeto</div>
-        </div>
-        <div className="evo-summary-card">
-          <p className="evo-summary-card__label">Variantes</p>
-          <div className="evo-summary-card__value">{totalVariants.toLocaleString("pt-BR")}</div>
-          <div className="evo-summary-card__hint">soma das variantes</div>
-        </div>
-        <div className="evo-summary-card">
-          <p className="evo-summary-card__label">Com baseline</p>
-          <div className="evo-summary-card__value">{withBaseline.toLocaleString("pt-BR")}</div>
-          <div className="evo-summary-card__hint">baseline configurado</div>
-        </div>
-        <div className="evo-summary-card">
-          <p className="evo-summary-card__label">Última atividade</p>
-          <div className="evo-summary-card__value">
-            {latestActivity ? relTime(latestActivity) : "—"}
-          </div>
-          <div className="evo-summary-card__hint">experimento criado</div>
-        </div>
-      </section>
 
       {/* Run result */}
       {runDetail?.run && <RunResultCard run={runDetail.run} />}
@@ -609,48 +576,6 @@ export default async function ExperimentosPage({ params, searchParams }: Props) 
             : "Crie ao menos uma rubrica antes de criar um experimento."}
         </div>
       )}
-
-      {/* Endpoints reais — referência somente leitura */}
-      <section className="evo-card" style={{ marginTop: 12 }}>
-        <div className="evo-card__header">
-          <div>
-            <h3 className="evo-card__title">Endpoints ativos</h3>
-            <div className="evo-card__subtitle">Rotas reais do backend que servem este módulo.</div>
-          </div>
-        </div>
-        <div className="evo-card__body">
-          <div className="evo-endpoint-list" aria-label="Endpoints do módulo Experiments">
-            <div className="evo-endpoint-row">
-              <span className="evo-endpoint-row__method evo-endpoint-row__method--get">GET</span>
-              <span className="evo-endpoint-row__path" title="/v1/projects/{project_id}/experiments">
-                /projects/{"{project_id}"}/experiments
-              </span>
-              <span className="evo-endpoint-row__note">ativo</span>
-            </div>
-            <div className="evo-endpoint-row">
-              <span className="evo-endpoint-row__method evo-endpoint-row__method--post">POST</span>
-              <span className="evo-endpoint-row__path" title="/v1/projects/{project_id}/experiments">
-                /projects/{"{project_id}"}/experiments
-              </span>
-              <span className="evo-endpoint-row__note">ativo · cria experimento</span>
-            </div>
-            <div className="evo-endpoint-row">
-              <span className="evo-endpoint-row__method evo-endpoint-row__method--post">POST</span>
-              <span className="evo-endpoint-row__path" title="/v1/experiments/{experiment_id}/run">
-                /experiments/{"{experiment_id}"}/run
-              </span>
-              <span className="evo-endpoint-row__note">ativo · dispara run</span>
-            </div>
-            <div className="evo-endpoint-row">
-              <span className="evo-endpoint-row__method evo-endpoint-row__method--get">GET</span>
-              <span className="evo-endpoint-row__path" title="/v1/experiments/{experiment_id}/runs/{run_id}">
-                /experiments/{"{experiment_id}"}/runs/{"{run_id}"}
-              </span>
-              <span className="evo-endpoint-row__note">ativo · detalhe da run</span>
-            </div>
-          </div>
-        </div>
-      </section>
     </div>
   );
 }

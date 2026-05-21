@@ -69,15 +69,19 @@ def get_db() -> Generator[Session, None, None]:
 def ensure_schema_compatibility() -> None:
     """
     Lightweight compatibility fix for local/dev databases created before
-    password auth was introduced.
+    later schema migrations were introduced.
     """
     inspector = inspect(engine)
-    if "users" not in inspector.get_table_names():
-        return
+    tables = set(inspector.get_table_names())
 
-    columns = {col["name"] for col in inspector.get_columns("users")}
-    if "password_hash" in columns:
-        return
+    if "users" in tables:
+        user_cols = {col["name"] for col in inspector.get_columns("users")}
+        if "password_hash" not in user_cols:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE users ADD COLUMN password_hash VARCHAR(512)"))
 
-    with engine.begin() as conn:
-        conn.execute(text("ALTER TABLE users ADD COLUMN password_hash VARCHAR(512)"))
+    if "api_keys" in tables:
+        key_cols = {col["name"] for col in inspector.get_columns("api_keys")}
+        if "expires_at" not in key_cols:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE api_keys ADD COLUMN expires_at DATETIME"))
