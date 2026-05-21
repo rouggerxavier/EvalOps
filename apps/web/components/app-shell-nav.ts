@@ -33,6 +33,7 @@ export const APP_SHELL_NAV_SECTIONS: AppShellNavSection[] = [
     items: [
       { id: "keys", label: "Chaves API", path: "/keys", shortcut: "G K" },
       { id: "exports", label: "Exports", path: "/exports" },
+      { id: "settings", label: "Settings", path: "/settings", shortcut: "G S" },
     ],
   },
 ];

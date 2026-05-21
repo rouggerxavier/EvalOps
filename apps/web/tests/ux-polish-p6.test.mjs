@@ -37,7 +37,7 @@ test("P6 UX polish: every shell route exposes a unique G + letter shortcut", () 
   const shortcutMatches = [...nav.matchAll(/shortcut: "([^"]+)"/g)].map((match) => match[1]).sort();
   assert.deepEqual(shortcutMatches, ["G D", "G E", "G K", "G O", "G P", "G R", "G S", "G T", "G X"]);
   assert.equal(new Set(shortcutMatches).size, shortcutMatches.length);
-  assert.match(nav, /\{ id: "exports", label: "Exports", path: "\/exports", shortcut: "G S" \}/);
+  assert.match(nav, /\{ id: "settings", label: "Settings", path: "\/settings", shortcut: "G S" \}/);
 });
 
 test("P6 UX polish: global shortcuts ignore editable focus and stale sequences", () => {
