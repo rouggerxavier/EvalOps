@@ -483,7 +483,7 @@ Status atualizado em 2026-05-21:
 | 9 | ✅ feito | `3083e31 feat(api): add project admin endpoints` | `feat(api): add members + project patch + last_score in trace listing` |
 | 10 | ✅ feito | `5db1f22 feat(lib): add endpoint actions` | `feat(lib): add api wrappers + server actions for new endpoints` |
 | 11 | ✅ feito | `feat(overview): rewrite to match preview cockpit` | `feat(overview): rewrite to match preview cockpit (attention strip, 5 KPIs, suggestions, coverage)` |
-| 12 | ⏳ próximo | — | `feat(traces): rewrite list + detail (tabs, filters, bulk flag, RAG panel)` |
+| 12 | ✅ feito | `032eeae feat(traces): rewrite list + detail (tabs, filters, bulk flag, RAG panel)` | `feat(traces): rewrite list + detail (tabs, filters, bulk flag, RAG panel)` |
 | 13 | ⏳ pendente | — | `feat(evaluations): rewrite summary + tabs + drawer` |
 | 14 | ⏳ pendente | — | `feat(modules): rewrite prompts/rubrics/datasets/experiments/keys/exports with real backend` |
 | 15 | ⏳ pendente | — | `feat(traces): add compare page` |
@@ -498,7 +498,8 @@ Observações:
 - Os commits 6 a 9 foram agrupados por contratos de backend reais, mantendo os endpoints planejados e testes correspondentes.
 - O commit 10 também adicionou tipos em `apps/web/lib/types.ts`, além de wrappers e Server Actions.
 - Commit 11 entregou a Overview alinhada ao preview (header c/ janela 24h/7d/30d, attention strip via `GET /v1/projects/{id}/attention`, 5 KPIs com sparkline, custo+volume area chart, custo por modelo, traces flagged, SDK status, sugestões com modais ligadas a Server Actions e cobertura por avaliação via `GET /v1/projects/{id}/coverage`).
-- Próximo commit funcional do plano: **12 — Traces list + detail**.
+- Commit 12 entregou Traces list (5 tabs, GET filters, bulk-flag client island via `bulkFlagTracesAction`, tabela 12 colunas com `last_score`) e Trace detail (4 ações funcionais via modais — flag/rerun/compare/evaluate — 5 KPIs, tabs RAG/Waterfall/Metadata/Feedback via `?tab=`, painel RAG via `GET /v1/traces/{id}/rag`).
+- Próximo commit funcional do plano: **13 — Evaluations rewrite**.
 
 ---
 
