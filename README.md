@@ -1,119 +1,94 @@
 # EvalOps Studio
 
-EvalOps Studio is a portfolio-first LLMOps platform for:
+LLMOps cockpit for trace observability, rubric-based evaluations, prompt & experiment
+workflows, and human feedback — opinionated, dark, dense.
 
-- trace ingestion and observability
-- rubric-based evaluations
-- prompt/dataset/experiment workflows
-- human feedback and JSONL export
+## Stack
 
-The project is spec-driven (`docs/`) and implemented in this monorepo.
+- **API**: FastAPI + SQLAlchemy + Alembic (`apps/api/`)
+- **Web**: Next.js 14 App Router + Server Components + Server Actions + CSS puro (`apps/web/`)
+- **SDK**: `evalops-python` (`packages/sdk-python/`)
+- Sem Tailwind, sem shadcn, sem CSS-in-JS. Apenas `lucide-react` no frontend.
 
-## Phase status
+## Fases entregues
 
 - Phase 1: identity, orgs, projects, API keys
 - Phase 2: trace ingestion + SDK Python
 - Phase 3: trace dashboard (overview/list/detail)
 - Phase 4: rubrics + sync evaluations
 - Phase 5: prompts, datasets, experiments
-- Phase 6: feedback, exports, usage/quota mocks
-- Phase 7: MVP hardening and release prep (current)
+- Phase 6: feedback, exports, usage/quota
+- Phase 7: MVP hardening + release prep
+- **Phase 8 (atual)**: refatoração interna idêntica ao preview cockpit (branch `tentativa_refactor`) — novos endpoints (attention, coverage, sdk-status, trace flags, rerun, compare, notifications, rag consolidado, evaluation summary, prompt usage, exports listing, members, project patch) e UI reescrita 1:1.
 
-## Repository layout
+## Layout
 
 ```text
 apps/
-  api/               # FastAPI backend
-  web/               # Next.js dashboard
+  api/                FastAPI backend
+  web/                Next.js dashboard
 packages/
-  sdk-python/        # evalops-python SDK
-docs/                # product, architecture, roadmap, ADRs
+  sdk-python/         evalops-python SDK
+docs/
+  plans/              planos de execução (este arquivo: refatoração_identica.md)
+evalops-preview/      fonte visual do redesign (referência, não buildado)
 ```
 
-## Local quickstart
+## Quickstart local
 
 ### 1) API
-
 ```bash
 cd apps/api
-python -m venv .venv
-.venv\Scripts\activate
+python -m venv .venv && source .venv/bin/activate
 pip install -e .[dev]
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+alembic upgrade head
+uvicorn app.main:app --reload --port 8000
 ```
 
-### 2) Seed dev workspace
-
+### 2) Seed
 ```bash
 python scripts/seed_dev.py
 ```
 
 ### 3) Web
-
 ```bash
 cd apps/web
 npm install
 npm run dev
 ```
 
-Open:
+Abrir `http://localhost:3000`. Login com a conta seed (`dev@local`/`devpassword`).
 
-- Dashboard: `http://localhost:3000/o/my-org/p/my-project`
-- API docs: `http://localhost:8000/docs`
-
-## Validation commands
-
-### Backend tests
+## Testes
 
 ```bash
-pytest apps/api/tests -q
+# Backend
+cd apps/api && pytest
+
+# Web
+cd apps/web && npm run test
 ```
 
-### SDK tests
+## Docs
 
-```bash
-pytest packages/sdk-python/tests -q
-```
+- `docs/04-system-architecture.md`
+- `docs/07-api-spec.md`
+- `docs/11-dashboard-and-analytics.md`
+- `docs/plans/refatoração_identica.md` (plano da refatoração atual)
+- `evalops-preview/DESIGN_NOTES.md` (direção visual e decisões de UX)
 
-### Web build
+## Atalhos do app
 
-```bash
-cd apps/web && npm run build
-```
-
-### Hosted smoke (phase 7)
-
-```bash
-python apps/api/scripts/smoke_hosted.py --base-url http://localhost:8000
-```
-
-## Production deploy notes
-
-`docker-compose.prod.yml` targets PostgreSQL and runs Alembic before the API
-serves traffic:
-
-```bash
-POSTGRES_PASSWORD=... JWT_SECRET=... docker compose -f docker-compose.prod.yml up
-```
-
-For a brand-new database, the `migrate` service runs `alembic upgrade head`.
-For an existing database created before Alembic, stamp the baseline once before
-starting the production stack:
-
-```bash
-cd apps/api
-DATABASE_URL=postgresql+psycopg://evalops:...@postgres:5432/evalops alembic stamp 0001_baseline
-```
-
-See [docs/ops/database-migrations.md](docs/ops/database-migrations.md) for the
-full migration runbook.
-
-## Documentation map
-
-- Product overview: [docs/00-project-overview.md](docs/00-project-overview.md)
-- MVP scope: [docs/03-mvp-scope.md](docs/03-mvp-scope.md)
-- API spec: [docs/07-api-spec.md](docs/07-api-spec.md)
-- Roadmap: [docs/14-implementation-roadmap.md](docs/14-implementation-roadmap.md)
-- Acceptance checklist: [docs/21-mvp-acceptance-checklist.md](docs/21-mvp-acceptance-checklist.md)
-- Phase gates: [docs/22-phase-gates-and-validation.md](docs/22-phase-gates-and-validation.md)
-- Codebase audit: [docs/24-codebase-audit.md](docs/24-codebase-audit.md)
+| Combo | Tela |
+|---|---|
+| `G O` | Visão geral |
+| `G T` | Traces |
+| `G E` | Avaliações |
+| `G X` | Experimentos |
+| `G P` | Prompts |
+| `G R` | Rubricas |
+| `G D` | Datasets |
+| `G K` | Chaves API |
+| `G S` | Settings |
+| `⌘K` / `/` | Focar busca |
+| `?` | Lista de atalhos |
