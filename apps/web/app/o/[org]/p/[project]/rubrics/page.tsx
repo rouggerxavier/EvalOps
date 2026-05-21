@@ -80,7 +80,7 @@ function VersionsList({ versions, currentVersion }: { versions: RubricVersion[];
     new Date(s).toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric" });
 
   return (
-    <div className="evo-card__body" style={{ padding: "4px 0" }}>
+    <div className="card__body" style={{ padding: "4px 0" }}>
       {versions.length === 0 ? (
         <div style={{ padding: "12px 20px", color: "var(--text-faint)", fontSize: 13 }}>Nenhuma versão.</div>
       ) : (
@@ -125,7 +125,7 @@ function VersionsList({ versions, currentVersion }: { versions: RubricVersion[];
               </div>
               {isLatest && (
                 <span
-                  className="evo-badge evo-badge--ok"
+                  className="badge badge--ok"
                   style={{ fontSize: 10, padding: "2px 7px" }}
                 >
                   ativa
@@ -201,11 +201,11 @@ export default async function RubricsPage({ params, searchParams }: Props) {
     new Date(s).toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric" });
 
   return (
-    <div className="evo-page">
+    <div className="page">
       {/* Page Header */}
-      <div className="evo-page-header">
+      <div className="page-header">
         <div style={{ flex: 1, minWidth: 0 }}>
-          <p className="evo-page-header__eyebrow">Operação · Rubrics</p>
+          <p className="page-header__eyebrow">Operação · Rubrics</p>
           <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>
             {selected && (
               <Link
@@ -221,30 +221,20 @@ export default async function RubricsPage({ params, searchParams }: Props) {
                 <ChevronLeft size={15} />
               </Link>
             )}
-            <h1 className="evo-page-header__title">{selected ? selected.slug : "Rubrics"}</h1>
+            <h1 className="page-header__title">{selected ? selected.slug : "Rubrics"}</h1>
           </div>
-          <p className="evo-page-header__subtitle">
+          <p className="page-header__subtitle">
             {selected
               ? `Rubric · versão ${selected.current_version} · ${evaluators.length} avaliador${evaluators.length !== 1 ? "es" : ""}`
               : `${rubrics.length} rubric${rubrics.length !== 1 ? "s" : ""} · critérios de avaliação versionados em YAML`}
           </p>
         </div>
-        <div className="evo-page-header__actions">
+        <div className="page-header__actions">
           {!selected && rubrics.length > 0 && (
             <span style={{ fontSize: 12, color: "var(--text-faint)" }}>
               Clique em uma rubrica para ver detalhes
             </span>
           )}
-          <button
-            type="button"
-            className="evo-btn evo-btn--sm"
-            disabled
-            data-status="planned"
-            title="Importar rubricas — em breve"
-            style={{ opacity: 0.5, cursor: "not-allowed" }}
-          >
-            Importar
-          </button>
         </div>
       </div>
 
@@ -281,23 +271,23 @@ export default async function RubricsPage({ params, searchParams }: Props) {
       )}
 
       {/* Summary row — só dados reais do payload */}
-      <section className="evo-summary-row" aria-label="Resumo de rubricas">
-        <div className="evo-summary-card">
-          <p className="evo-summary-card__label">Rubricas</p>
-          <div className="evo-summary-card__value">{totalRubrics.toLocaleString("pt-BR")}</div>
-          <div className="evo-summary-card__hint">critérios versionados em YAML</div>
+      <section className="module-summary" aria-label="Resumo de rubricas">
+        <div className="summary-card">
+          <p className="summary-card__label">Rubricas</p>
+          <div className="summary-card__value">{totalRubrics.toLocaleString("pt-BR")}</div>
+          <div className="summary-card__hint">critérios versionados em YAML</div>
         </div>
-        <div className="evo-summary-card">
-          <p className="evo-summary-card__label">Versões</p>
-          <div className="evo-summary-card__value">{totalVersions.toLocaleString("pt-BR")}</div>
-          <div className="evo-summary-card__hint">soma das current_version</div>
+        <div className="summary-card">
+          <p className="summary-card__label">Versões</p>
+          <div className="summary-card__value">{totalVersions.toLocaleString("pt-BR")}</div>
+          <div className="summary-card__hint">soma das current_version</div>
         </div>
-        <div className="evo-summary-card">
-          <p className="evo-summary-card__label">Última atividade</p>
-          <div className="evo-summary-card__value">
+        <div className="summary-card">
+          <p className="summary-card__label">Última atividade</p>
+          <div className="summary-card__value">
             {latestActivity ? relTime(latestActivity) : "—"}
           </div>
-          <div className="evo-summary-card__hint">rubrica ou versão</div>
+          <div className="summary-card__hint">rubrica ou versão</div>
         </div>
       </section>
 
@@ -305,18 +295,18 @@ export default async function RubricsPage({ params, searchParams }: Props) {
         /* ---- DETAIL VIEW ---- */
         <div style={{ display: "grid", gridTemplateColumns: "1fr 360px", gap: 12 }}>
           {/* Left: YAML code block */}
-          <div className="evo-card">
-            <div className="evo-card__header">
-              <h3 className="evo-card__title">Definição</h3>
+          <div className="card">
+            <div className="card__header">
+              <h3 className="card__title">Definição</h3>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <span className="evo-badge evo-badge--info">YAML</span>
+                <span className="badge badge--info">YAML</span>
                 <span style={{ fontSize: 11, color: "var(--text-faint)" }}>
                   versão {latestVersion?.version ?? "—"}
                 </span>
               </div>
             </div>
             <div
-              className="evo-card__body"
+              className="card__body"
               style={{ padding: 0, maxHeight: 520, overflowY: "auto" }}
             >
               {latestVersion ? (
@@ -331,9 +321,9 @@ export default async function RubricsPage({ params, searchParams }: Props) {
 
           {/* Right: Versions + Evaluators + New version form */}
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            <div className="evo-card">
-              <div className="evo-card__header">
-                <h3 className="evo-card__title">Versões</h3>
+            <div className="card">
+              <div className="card__header">
+                <h3 className="card__title">Versões</h3>
                 <span style={{ fontSize: 11, color: "var(--text-faint)" }}>
                   {versions.length} versão{versions.length !== 1 ? "ões" : ""}
                 </span>
@@ -342,14 +332,14 @@ export default async function RubricsPage({ params, searchParams }: Props) {
             </div>
 
             {evaluators.length > 0 && (
-              <div className="evo-card">
-                <div className="evo-card__header">
-                  <h3 className="evo-card__title">Avaliadores</h3>
+              <div className="card">
+                <div className="card__header">
+                  <h3 className="card__title">Avaliadores</h3>
                   <span style={{ fontSize: 11, color: "var(--text-faint)" }}>
                     {evaluators.length} ativo{evaluators.length !== 1 ? "s" : ""}
                   </span>
                 </div>
-                <div className="evo-card__body" style={{ padding: "4px 0" }}>
+                <div className="card__body" style={{ padding: "4px 0" }}>
                   {evaluators.map((ev, i) => (
                     <div
                       key={ev.id}
@@ -441,7 +431,7 @@ export default async function RubricsPage({ params, searchParams }: Props) {
                     />
                   </label>
                   <div style={{ display: "flex", justifyContent: "flex-end" }}>
-                    <button type="submit" className="evo-btn evo-btn--sm evo-btn--primary">
+                    <button type="submit" className="btn btn--sm btn--primary">
                       Criar versão
                     </button>
                   </div>
@@ -453,11 +443,11 @@ export default async function RubricsPage({ params, searchParams }: Props) {
       ) : rubrics.length === 0 ? (
         /* ---- EMPTY STATE ---- */
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-          <div className="evo-card">
-            <div className="evo-card__header">
-              <h3 className="evo-card__title">Criar primeira rubrica</h3>
+          <div className="card">
+            <div className="card__header">
+              <h3 className="card__title">Criar primeira rubrica</h3>
             </div>
-            <div className="evo-card__body">
+            <div className="card__body">
               <p
                 style={{
                   fontSize: 13,
@@ -522,21 +512,21 @@ export default async function RubricsPage({ params, searchParams }: Props) {
                     }}
                   />
                 </label>
-                <button type="submit" className="evo-btn evo-btn--sm evo-btn--primary">
+                <button type="submit" className="btn btn--sm btn--primary">
                   Criar rubrica
                 </button>
               </form>
             </div>
           </div>
 
-          <div className="evo-card" style={{ background: "var(--bg-2)" }}>
-            <div className="evo-card__header">
-              <h3 className="evo-card__title" style={{ color: "var(--text-muted)" }}>
+          <div className="card" style={{ background: "var(--bg-2)" }}>
+            <div className="card__header">
+              <h3 className="card__title" style={{ color: "var(--text-muted)" }}>
                 Exemplo de rubrica
               </h3>
-              <span className="evo-badge evo-badge--info">YAML</span>
+              <span className="badge badge--info">YAML</span>
             </div>
-            <div className="evo-card__body" style={{ padding: 0 }}>
+            <div className="card__body" style={{ padding: 0 }}>
               <YamlBlock code={DEFAULT_YAML} />
             </div>
           </div>
@@ -544,8 +534,8 @@ export default async function RubricsPage({ params, searchParams }: Props) {
       ) : (
         /* ---- LIST VIEW ---- */
         <>
-          <div className="evo-table-wrap">
-            <table className="evo-table">
+          <div className="table-wrap">
+            <table className="t">
               <thead>
                 <tr>
                   <th>Rubrica</th>
@@ -563,7 +553,7 @@ export default async function RubricsPage({ params, searchParams }: Props) {
                       <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
                         <Link
                           href={`${baseUrl}?rubric=${r.id}`}
-                          className="evo-table__name"
+                          className="t__name"
                           style={{ color: "var(--text)", textDecoration: "none" }}
                         >
                           {r.slug}
@@ -612,7 +602,7 @@ export default async function RubricsPage({ params, searchParams }: Props) {
                         {r.threshold.toFixed(2)}
                       </span>
                     </td>
-                    <td className="evo-muted">{formatDate(r.created_at)}</td>
+                    <td className="t__muted">{formatDate(r.created_at)}</td>
                     <td>
                       <Link
                         href={`${baseUrl}?rubric=${r.id}`}
@@ -684,7 +674,7 @@ export default async function RubricsPage({ params, searchParams }: Props) {
                   />
                 </label>
                 <div style={{ display: "flex", justifyContent: "flex-end" }}>
-                  <button type="submit" className="evo-btn evo-btn--sm evo-btn--primary">
+                  <button type="submit" className="btn btn--sm btn--primary">
                     Criar rubrica
                   </button>
                 </div>
@@ -695,42 +685,42 @@ export default async function RubricsPage({ params, searchParams }: Props) {
       )}
 
       {/* Endpoints reais — referência somente leitura */}
-      <section className="evo-card" style={{ marginTop: 12 }}>
-        <div className="evo-card__header">
+      <section className="card" style={{ marginTop: 12 }}>
+        <div className="card__header">
           <div>
-            <h3 className="evo-card__title">Endpoints ativos</h3>
-            <div className="evo-card__subtitle">Rotas reais do backend que servem este módulo.</div>
+            <h3 className="card__title">Endpoints ativos</h3>
+            <div className="card__subtitle">Rotas reais do backend que servem este módulo.</div>
           </div>
         </div>
-        <div className="evo-card__body">
-          <div className="evo-endpoint-list" aria-label="Endpoints do módulo Rubrics">
-            <div className="evo-endpoint-row">
-              <span className="evo-endpoint-row__method evo-endpoint-row__method--get">GET</span>
-              <span className="evo-endpoint-row__path" title="/v1/projects/{project_id}/rubrics">
+        <div className="card__body">
+          <div className="endpoint-list" aria-label="Endpoints do módulo Rubrics">
+            <div className="endpoint-row">
+              <span className="endpoint-snippet__method method-GET">GET</span>
+              <span className="endpoint-row__path" title="/v1/projects/{project_id}/rubrics">
                 /projects/{"{project_id}"}/rubrics
               </span>
-              <span className="evo-endpoint-row__note">ativo</span>
+              <span className="endpoint-row__note">ativo</span>
             </div>
-            <div className="evo-endpoint-row">
-              <span className="evo-endpoint-row__method evo-endpoint-row__method--post">POST</span>
-              <span className="evo-endpoint-row__path" title="/v1/projects/{project_id}/rubrics">
+            <div className="endpoint-row">
+              <span className="endpoint-snippet__method method-POST">POST</span>
+              <span className="endpoint-row__path" title="/v1/projects/{project_id}/rubrics">
                 /projects/{"{project_id}"}/rubrics
               </span>
-              <span className="evo-endpoint-row__note">ativo · cria rubrica</span>
+              <span className="endpoint-row__note">ativo · cria rubrica</span>
             </div>
-            <div className="evo-endpoint-row">
-              <span className="evo-endpoint-row__method evo-endpoint-row__method--get">GET</span>
-              <span className="evo-endpoint-row__path" title="/v1/rubrics/{rubric_id}/versions">
+            <div className="endpoint-row">
+              <span className="endpoint-snippet__method method-GET">GET</span>
+              <span className="endpoint-row__path" title="/v1/rubrics/{rubric_id}/versions">
                 /rubrics/{"{rubric_id}"}/versions
               </span>
-              <span className="evo-endpoint-row__note">ativo</span>
+              <span className="endpoint-row__note">ativo</span>
             </div>
-            <div className="evo-endpoint-row">
-              <span className="evo-endpoint-row__method evo-endpoint-row__method--post">POST</span>
-              <span className="evo-endpoint-row__path" title="/v1/rubrics/{rubric_id}/versions">
+            <div className="endpoint-row">
+              <span className="endpoint-snippet__method method-POST">POST</span>
+              <span className="endpoint-row__path" title="/v1/rubrics/{rubric_id}/versions">
                 /rubrics/{"{rubric_id}"}/versions
               </span>
-              <span className="evo-endpoint-row__note">ativo · nova versão</span>
+              <span className="endpoint-row__note">ativo · nova versão</span>
             </div>
           </div>
         </div>
