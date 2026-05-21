@@ -1,91 +1,74 @@
 import Link from "next/link";
-import { AlertCircle, ChevronRight, Clock, Download, Flag, Layers } from "lucide-react";
+import { AlertCircle, Clock, Download, Flag, Layers, Search } from "lucide-react";
 
 import { AuthRequiredPanel } from "@/components/AuthRequiredPanel";
-import { TracesFilterBar } from "@/components/TracesFilterBar";
 import { getTraces, hasAuthToken, resolveProject } from "@/lib/api";
-import { formatCost, formatDateTime, formatLatency } from "@/lib/format";
-import {
-  formatTraceScore,
-  getTraceCauseLabel,
-  getTraceModelLabel,
-  getTraceQualityScore,
-  isTraceRagCandidate,
-  percentile,
-} from "@/lib/trace-display";
+import { isTraceRagCandidate } from "@/lib/trace-display";
+
 import { TracesAutoRefresh } from "./traces-auto-refresh";
+import { TracesEmpty, TracesTable } from "./traces-table";
+
+type Tab = "all" | "errors" | "partial" | "slow" | "rag";
 
 type Props = {
   params: Promise<{ org: string; project: string }>;
-  searchParams: Promise<{ status?: string; environment?: string; name?: string; tab?: string; cursor?: string }>;
+  searchParams: Promise<{
+    status?: string;
+    environment?: string;
+    name?: string;
+    tab?: string;
+    cursor?: string;
+  }>;
 };
 
-function StatusBadge({ status }: { status: string }) {
-  const cls =
-    status === "ok" ? "evo-badge--ok" : status === "error" ? "evo-badge--err" : "evo-badge--warn";
-  const label = status === "ok" ? "OK" : status === "error" ? "Erro" : "Partial";
-  return (
-    <span className={`evo-badge ${cls}`}>
-      <span className="evo-badge__dot" />
-      {label}
-    </span>
-  );
-}
-
-function TraceMetricCard({ label, value, hint }: { label: string; value: string; hint: string }) {
-  return (
-    <div className="evo-trace-kpi">
-      <span className="evo-trace-kpi__label">{label}</span>
-      <strong className="evo-trace-kpi__value">{value}</strong>
-      <span className="evo-trace-kpi__hint">{hint}</span>
-    </div>
-  );
+function parseTab(value: string | undefined): Tab {
+  if (value === "errors" || value === "partial" || value === "slow" || value === "rag") return value;
+  return "all";
 }
 
 export default async function TracesListPage({ params, searchParams }: Props) {
   const { org, project } = await params;
   const qp = await searchParams;
-  const tab = qp.tab ?? "all";
+  const tab = parseTab(qp.tab);
 
   if (!(await hasAuthToken())) return <AuthRequiredPanel layout="main" />;
 
   const resolved = await resolveProject(org, project);
 
-  const statusFilter = tab === "errors" ? "error" : qp.status;
+  const tabStatus = tab === "errors" ? "error" : tab === "partial" ? "partial" : qp.status;
   const traces = await getTraces({
     projectId: resolved.project_id,
-    status: statusFilter,
+    status: tabStatus,
     environment: qp.environment,
-    name: qp.name,
+    name: tab === "rag" ? "rag." : qp.name,
     limit: 50,
     cursor: qp.cursor,
   });
 
   const rows = traces.data;
-  const slowRows = rows.filter((t) => t.duration_ms > 2000);
-  const errorRows = rows.filter((t) => t.status === "error");
-  const flaggedRows = rows.filter((t) => t.status === "partial");
-  const ragRows = rows.filter(isTraceRagCandidate);
-  const totalCost = rows.reduce((sum, t) => sum + t.total_cost_usd, 0);
-  const p95DurationMs = percentile(rows.map((t) => t.duration_ms), 95);
-  const latestTrace = rows
-    .map((t) => t.created_at)
-    .sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0];
-
   const displayRows =
-    tab === "slow" ? slowRows :
-    tab === "flagged" ? flaggedRows :
-    tab === "rag" ? ragRows :
-    rows;
+    tab === "slow"
+      ? rows.filter((t) => t.duration_ms > 2000)
+      : tab === "rag"
+      ? rows.filter(isTraceRagCandidate)
+      : rows;
+
+  const counts = {
+    all: rows.length,
+    errors: rows.filter((t) => t.status === "error").length,
+    partial: rows.filter((t) => t.status === "partial").length,
+    slow: rows.filter((t) => t.duration_ms > 2000).length,
+    rag: rows.filter(isTraceRagCandidate).length,
+  };
 
   const tabBase = `/o/${org}/p/${project}/traces`;
-  const currentParams = new URLSearchParams();
-  if (qp.status) currentParams.set("status", qp.status);
-  if (qp.environment) currentParams.set("environment", qp.environment);
-  if (qp.name) currentParams.set("name", qp.name);
+  const baseParams = new URLSearchParams();
+  if (qp.environment) baseParams.set("environment", qp.environment);
+  if (qp.name && tab !== "rag") baseParams.set("name", qp.name);
+  if (qp.status && tab !== "errors" && tab !== "partial") baseParams.set("status", qp.status);
 
-  const tabHref = (t: string) => {
-    const p = new URLSearchParams(currentParams);
+  const tabHref = (t: Tab) => {
+    const p = new URLSearchParams(baseParams);
     if (t !== "all") p.set("tab", t);
     const s = p.toString();
     return s ? `${tabBase}?${s}` : tabBase;
@@ -93,7 +76,7 @@ export default async function TracesListPage({ params, searchParams }: Props) {
 
   const nextPageHref = traces.next_cursor
     ? (() => {
-        const p = new URLSearchParams(currentParams);
+        const p = new URLSearchParams(baseParams);
         if (tab !== "all") p.set("tab", tab);
         p.set("cursor", traces.next_cursor);
         return `${tabBase}?${p.toString()}`;
@@ -102,32 +85,28 @@ export default async function TracesListPage({ params, searchParams }: Props) {
 
   const exportsHref = `/o/${org}/p/${project}/exports`;
   const hasCursor = Boolean(qp.cursor);
-  const autoRefreshDisabledReason = hasCursor ? "Pausado em página paginada" : undefined;
   const autoRefreshEnabled = !hasCursor && rows.length > 0;
+  const autoRefreshDisabledReason = hasCursor ? "Pausado em página paginada" : undefined;
 
   return (
-    <div className="evo-page evo-traces-page">
-      <div className="evo-page-header">
+    <div className="page">
+      <header className="page-header">
         <div>
-          <p className="evo-page-header__eyebrow">Observabilidade · Traces</p>
-          <h1 className="evo-page-header__title">Traces</h1>
-          <p className="evo-page-header__subtitle">
-            {rows.length.toLocaleString("pt-BR")} trace{rows.length === 1 ? "" : "s"} na página atual ·
-            {" "}auto-refresh a cada 30s · sinal por execução, erro, custo e contexto RAG detectável.
-          </p>
+          <div className="page-header__eyebrow">Observabilidade</div>
+          <h1 className="page-header__title">Traces</h1>
+          <div className="page-header__subtitle">
+            {rows.length.toLocaleString("pt-BR")} trace{rows.length === 1 ? "" : "s"} na página atual · auto-refresh 30s
+          </div>
         </div>
-        <div className="evo-page-header__actions">
+        <div className="page-header__actions">
           {autoRefreshEnabled ? (
-            <span
-              className="evo-tag evo-traces-live"
-              data-testid="trace-list-live-pill"
-              title="Auto-refresh ativo · 30s"
-            >
-              <span className="evo-badge__dot" /> ao vivo
+            <span className="env-chip" title="Auto-refresh ativo">
+              <span className="env-chip__dot" />
+              ao vivo
             </span>
           ) : null}
-          <Link href={exportsHref} className="evo-btn evo-btn--sm">
-            <Download size={13} /> Exportar JSONL
+          <Link href={exportsHref} className="btn btn--sm">
+            <Download size={12} /> Exportar JSONL
           </Link>
           <TracesAutoRefresh
             enabledByDefault={autoRefreshEnabled}
@@ -135,224 +114,101 @@ export default async function TracesListPage({ params, searchParams }: Props) {
             disabledReason={autoRefreshDisabledReason}
           />
         </div>
-      </div>
+      </header>
 
-      <div className="evo-trace-summary" aria-label="Resumo da lista de traces">
-        <TraceMetricCard
-          label="Traces carregados"
-          value={rows.length.toLocaleString("pt-BR")}
-          hint={traces.next_cursor ? "há próxima página" : "página atual"}
-        />
-        <TraceMetricCard
-          label="Erros"
-          value={errorRows.length.toLocaleString("pt-BR")}
-          hint={errorRows.length > 0 ? "requer atenção" : "sem erros carregados"}
-        />
-        <TraceMetricCard
-          label="Lentos"
-          value={slowRows.length.toLocaleString("pt-BR")}
-          hint={p95DurationMs === null ? "sem duração" : `p95 ${formatLatency(p95DurationMs)}`}
-        />
-        <TraceMetricCard
-          label="RAG detectável"
-          value={ragRows.length.toLocaleString("pt-BR")}
-          hint="via tags/metadata"
-        />
-        <TraceMetricCard
-          label="Custo"
-          value={formatCost(totalCost)}
-          hint={latestTrace ? `último ${formatDateTime(latestTrace)}` : "sem traces"}
-        />
-      </div>
-
-      <nav className="evo-tabs evo-traces-tabs" aria-label="Segmentos de traces">
-        <Link href={tabHref("all")} className={`evo-tab${tab === "all" ? " is-active" : ""}`}>
+      <nav className="tabs" aria-label="Segmentos de traces">
+        <Link href={tabHref("all")} className={`tab${tab === "all" ? " is-active" : ""}`}>
           Todos
-          <span className="evo-tab__count">{rows.length.toLocaleString("pt-BR")}</span>
+          <span className="tab__count">{counts.all}</span>
         </Link>
-        <Link href={tabHref("errors")} className={`evo-tab${tab === "errors" ? " is-active" : ""}`}>
-          <AlertCircle size={12} /> Erros
-          <span className="evo-tab__count">{errorRows.length}</span>
+        <Link href={tabHref("errors")} className={`tab${tab === "errors" ? " is-active" : ""}`}>
+          <AlertCircle size={11} /> Erros
+          <span className="tab__count">{counts.errors}</span>
         </Link>
-        <Link href={tabHref("flagged")} className={`evo-tab${tab === "flagged" ? " is-active" : ""}`}>
-          <Flag size={12} /> Parciais
-          <span className="evo-tab__count">{flaggedRows.length}</span>
+        <Link href={tabHref("partial")} className={`tab${tab === "partial" ? " is-active" : ""}`}>
+          <Flag size={11} /> Parciais
+          <span className="tab__count">{counts.partial}</span>
         </Link>
-        <Link href={tabHref("slow")} className={`evo-tab${tab === "slow" ? " is-active" : ""}`}>
-          <Clock size={12} /> Lentos
-          <span className="evo-tab__count">{slowRows.length}</span>
+        <Link href={tabHref("slow")} className={`tab${tab === "slow" ? " is-active" : ""}`}>
+          <Clock size={11} /> Lentos
+          <span className="tab__count">{counts.slow}</span>
         </Link>
         <Link
           href={tabHref("rag")}
-          className={`evo-tab${tab === "rag" ? " is-active" : ""}`}
+          className={`tab${tab === "rag" ? " is-active" : ""}`}
           data-testid="trace-list-rag-tab"
         >
-          <Layers size={12} /> RAG
-          <span className="evo-tab__count">{ragRows.length}</span>
+          <Layers size={11} /> RAG
+          <span className="tab__count">{counts.rag}</span>
         </Link>
       </nav>
 
-      <TracesFilterBar
-        initialName={qp.name}
-        initialStatus={qp.status}
-        initialEnv={qp.environment}
-        count={displayRows.length}
-        total={rows.length}
-      />
+      <form method="get" className="filters" action={tabBase}>
+        {tab !== "all" ? <input type="hidden" name="tab" value={tab} /> : null}
+        <label className="filter-group">
+          <Search size={12} />
+          <input
+            className="filter-input"
+            name="name"
+            defaultValue={qp.name ?? ""}
+            placeholder="buscar por nome (ex: refund, chat.answer)"
+          />
+        </label>
+        <select className="filter-select" name="status" defaultValue={qp.status ?? ""}>
+          <option value="">qualquer status</option>
+          <option value="ok">ok</option>
+          <option value="partial">parcial</option>
+          <option value="error">erro</option>
+        </select>
+        <select className="filter-select" name="environment" defaultValue={qp.environment ?? ""}>
+          <option value="">qualquer env</option>
+          <option value="prod">prod</option>
+          <option value="staging">staging</option>
+          <option value="dev">dev</option>
+        </select>
+        <button type="submit" className="btn btn--sm">
+          Aplicar
+        </button>
+        <span className="spacer" />
+        <span className="faint mono" style={{ fontSize: 11 }}>
+          {displayRows.length} de {rows.length}
+        </span>
+      </form>
 
       {displayRows.length === 0 ? (
-        <div className="evo-card evo-traces-empty">
-          <p>
-            Nenhum trace encontrado
-          </p>
-          <p>
-            Conecte o SDK Python ou ajuste os filtros para ver traces neste projeto.
-          </p>
-          <pre>
-            {`import evalops\nevalops.init(api_key="evk_prod_...", project="${project}", environment="prod")\n\n@evalops.trace("chat.answer")\ndef answer(msg: str): ...`}
-          </pre>
-        </div>
+        <TracesEmpty project={project} />
       ) : (
-        <>
-          <div className="evo-card evo-traces-table-card">
-            <table className="evo-table">
-              <thead>
-                <tr>
-                  <th style={{ width: 32 }}>
-                    <input
-                      type="checkbox"
-                      disabled
-                      data-status="planned"
-                      title="Seleção em lote — em breve"
-                      style={{ accentColor: "var(--accent)", opacity: 0.4, cursor: "not-allowed" }}
-                    />
-                  </th>
-                  <th>Nome</th>
-                  <th>Trace ID</th>
-                  <th>Status</th>
-                  <th>Env</th>
-                  <th>Modelo</th>
-                  <th>Causa</th>
-                  <th>Duração</th>
-                  <th>Tokens</th>
-                  <th>Custo</th>
-                  <th>Score</th>
-                  <th>Quando</th>
-                  <th style={{ width: 32 }} />
-                </tr>
-              </thead>
-              <tbody>
-                {displayRows.map((trace) => {
-                  const model = getTraceModelLabel(trace);
-                  const cause = getTraceCauseLabel(trace);
-                  const qualityScore = getTraceQualityScore(trace);
-                  const isRag = isTraceRagCandidate(trace);
-
-                  return (
-                  <tr key={trace.id} className={`evo-trace-row${trace.status !== "ok" ? " evo-trace-row--attention" : ""}`}>
-                    <td className="evo-trace-row__select">
-                      <input
-                        type="checkbox"
-                        disabled
-                        data-status="planned"
-                        title="Seleção em lote — em breve"
-                        style={{ accentColor: "var(--accent)", opacity: 0.4, cursor: "not-allowed" }}
-                      />
-                    </td>
-                    <td>
-                      <Link
-                        href={`/o/${org}/p/${project}/traces/${trace.id}`}
-                        className="evo-trace-row__link"
-                      >
-                        <span className="evo-table__name">{trace.name}</span>
-                        <span className="evo-trace-row__meta">
-                          {trace.service ?? "serviço não informado"}
-                        </span>
-                      </Link>
-                    </td>
-                    <td>
-                      <span className="evo-copyable">
-                        <span title={trace.id}>{trace.id.slice(0, 14)}…</span>
-                      </span>
-                    </td>
-                    <td>
-                      <div className="evo-row" style={{ gap: 6 }}>
-                        <StatusBadge status={trace.status} />
-                        {trace.redacted ? <span className="evo-tag">redigido</span> : null}
-                        {isRag ? <span className="evo-badge evo-badge--eval">RAG</span> : null}
-                      </div>
-                    </td>
-                    <td>
-                      <span className="evo-tag">{trace.environment}</span>
-                    </td>
-                    <td className="evo-mono evo-muted" style={{ fontSize: 12 }}>{model ?? "—"}</td>
-                    <td>
-                      {cause ? <span className="evo-tag">{cause}</span> : <span className="evo-faint">—</span>}
-                    </td>
-                    <td className="evo-table__num">
-                      <span
-                        style={{
-                          color:
-                            trace.duration_ms > 4000
-                              ? "var(--err)"
-                              : trace.duration_ms > 2000
-                              ? "var(--warn)"
-                              : "var(--text-dim)",
-                        }}
-                      >
-                        {formatLatency(trace.duration_ms)}
-                      </span>
-                    </td>
-                    <td className="evo-table__num evo-muted">
-                      {trace.total_tokens_in.toLocaleString("pt-BR")}
-                      <span className="evo-faint">/{trace.total_tokens_out.toLocaleString("pt-BR")}</span>
-                    </td>
-                    <td className="evo-table__num">{formatCost(trace.total_cost_usd)}</td>
-                    <td>
-                      {qualityScore === null ? (
-                        <span className="evo-faint">—</span>
-                      ) : (
-                        <span className="evo-trace-score">{formatTraceScore(qualityScore)}</span>
-                      )}
-                    </td>
-                    <td className="evo-muted" style={{ fontSize: 12 }}>
-                      {formatDateTime(trace.created_at)}
-                    </td>
-                    <td>
-                      <Link href={`/o/${org}/p/${project}/traces/${trace.id}`}>
-                        <ChevronRight size={14} style={{ color: "var(--text-faint)" }} />
-                      </Link>
-                    </td>
-                  </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-
-          <div className="evo-pagination">
-            <span>
-              Mostrando {displayRows.length.toLocaleString("pt-BR")} trace
-              {displayRows.length !== 1 ? "s" : ""}
-              {qp.cursor ? " (próxima página)" : ""}
-            </span>
-            <div className="evo-row">
-              <button type="button" className="evo-btn evo-btn--sm" disabled title="Voltar página — em breve" data-status="planned">
-                ‹
-              </button>
-              {nextPageHref ? (
-                <Link href={nextPageHref} className="evo-btn evo-btn--sm">
-                  ›
-                </Link>
-              ) : (
-                <button type="button" className="evo-btn evo-btn--sm" disabled>
-                  ›
-                </button>
-              )}
-            </div>
-          </div>
-        </>
+        <TracesTable org={org} project={project} rows={displayRows} />
       )}
+
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          marginTop: 12,
+          fontSize: 11.5,
+          color: "var(--fg-3)",
+        }}
+      >
+        <span>
+          Mostrando {displayRows.length.toLocaleString("pt-BR")} trace{displayRows.length === 1 ? "" : "s"}
+          {hasCursor ? " (próxima página)" : ""}
+        </span>
+        <div className="row" style={{ gap: 6 }}>
+          <button type="button" className="btn btn--sm btn--ghost" disabled>
+            ‹
+          </button>
+          {nextPageHref ? (
+            <Link href={nextPageHref} className="btn btn--sm btn--ghost">
+              ›
+            </Link>
+          ) : (
+            <button type="button" className="btn btn--sm btn--ghost" disabled>
+              ›
+            </button>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
