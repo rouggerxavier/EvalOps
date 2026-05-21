@@ -61,3 +61,19 @@ export function formatRelativeTime(value: string): string {
 export function formatPercent(value: number, digits = 1): string {
   return `${(value * 100).toFixed(digits)}%`;
 }
+
+export function ms(value: number): string {
+  return formatLatency(value);
+}
+
+export function pct(value: number, digits = 1): string {
+  return formatPercent(value, digits);
+}
+
+export const fmt = {
+  int: formatCount,
+  money: formatCurrency,
+  cost: formatCost,
+  ms,
+  pct,
+};
