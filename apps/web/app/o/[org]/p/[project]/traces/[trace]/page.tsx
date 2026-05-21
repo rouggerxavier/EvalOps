@@ -334,25 +334,6 @@ export default async function TraceDetailPage({ params, searchParams }: Props) {
           >
             <JsonBlock value={t.metadata} />
           </Card>
-          <Card title="Ações reais" subtitle="endpoints que esta tela usa">
-            <div className="endpoint-list">
-              {[
-                { method: "GET", path: "/traces/{id}", note: "ativo" },
-                { method: "GET", path: "/traces/{id}/rag", note: ragEnabled ? "ativo" : "não-RAG" },
-                { method: "POST", path: "/traces/{id}/flags", note: "ativo" },
-                { method: "POST", path: "/traces/{id}/rerun", note: "ativo" },
-                { method: "POST", path: "/traces/compare", note: "ativo" },
-                { method: "POST", path: "/evaluations/run", note: "ativo" },
-                { method: "POST", path: "/traces/{id}/feedback", note: "ativo" },
-              ].map((ep) => (
-                <div className="endpoint-row" key={ep.path}>
-                  <span className={`endpoint-snippet__method method-${ep.method}`}>{ep.method}</span>
-                  <span className="endpoint-row__path">{ep.path}</span>
-                  <span className="endpoint-row__note">{ep.note}</span>
-                </div>
-              ))}
-            </div>
-          </Card>
         </div>
       ) : null}
 

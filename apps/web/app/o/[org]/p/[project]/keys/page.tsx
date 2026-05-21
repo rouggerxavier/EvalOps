@@ -469,39 +469,6 @@ export default async function KeysPage({ params, searchParams }: Props) {
         </section>
       </div>
 
-      <section className="card" style={{ marginTop: 12 }}>
-        <div className="card__header">
-          <div>
-            <h3 className="card__title">Endpoints ativos</h3>
-            <div className="card__subtitle">Rotas reais do backend que servem este módulo.</div>
-          </div>
-        </div>
-        <div className="card__body">
-          <div className="endpoint-list" aria-label="Endpoints do módulo Chaves API">
-            <div className="endpoint-row">
-              <span className="endpoint-snippet__method method-GET">GET</span>
-              <span className="endpoint-row__path" title="/v1/projects/{project_id}/api-keys">
-                /projects/{"{project_id}"}/api-keys
-              </span>
-              <span className="endpoint-row__note">ativo</span>
-            </div>
-            <div className="endpoint-row">
-              <span className="endpoint-snippet__method method-POST">POST</span>
-              <span className="endpoint-row__path" title="/v1/projects/{project_id}/api-keys">
-                /projects/{"{project_id}"}/api-keys
-              </span>
-              <span className="endpoint-row__note">ativo · cria chave</span>
-            </div>
-            <div className="endpoint-row">
-              <span className="endpoint-snippet__method method-POST">POST</span>
-              <span className="endpoint-row__path" title="/v1/projects/{project_id}/api-keys/{key_id}/revoke">
-                /projects/{"{project_id}"}/api-keys/{"{key_id}"}/revoke
-              </span>
-              <span className="endpoint-row__note">ativo · revoga chave</span>
-            </div>
-          </div>
-        </div>
-      </section>
     </div>
   );
 }

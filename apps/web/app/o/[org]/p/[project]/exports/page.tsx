@@ -593,40 +593,6 @@ export default async function ExportsPage({ params, searchParams }: Props) {
           </section>
         </div>
       </div>
-
-      <section className="card" style={{ marginTop: 12 }}>
-        <div className="card__header">
-          <div>
-            <h3 className="card__title">Endpoints ativos</h3>
-            <div className="card__subtitle">Rotas reais do backend que servem este módulo.</div>
-          </div>
-        </div>
-        <div className="card__body">
-          <div className="endpoint-list" aria-label="Endpoints do módulo Exports">
-            <div className="endpoint-row">
-              <span className="endpoint-snippet__method method-POST">POST</span>
-              <span className="endpoint-row__path" title="/v1/exports">
-                /exports
-              </span>
-              <span className="endpoint-row__note">ativo · cria job</span>
-            </div>
-            <div className="endpoint-row">
-              <span className="endpoint-snippet__method method-GET">GET</span>
-              <span className="endpoint-row__path" title="/v1/exports/{export_id}">
-                /exports/{"{export_id}"}
-              </span>
-              <span className="endpoint-row__note">ativo · status do job</span>
-            </div>
-            <div className="endpoint-row">
-              <span className="endpoint-snippet__method method-GET">GET</span>
-              <span className="endpoint-row__path" title="/api/exports/{export_id}/download (Next proxy autenticado)">
-                /api/exports/{"{export_id}"}/download
-              </span>
-              <span className="endpoint-row__note">ativo · proxy autenticado</span>
-            </div>
-          </div>
-        </div>
-      </section>
     </div>
   );
 }

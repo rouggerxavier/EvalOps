@@ -49,12 +49,10 @@ test("P7.1 prompts: DiffView keeps both branches (first version + diff)", () => 
   assert.match(page, /const lines: Array<\{ text: string; kind: "add" \| "del" \| "same" \}>/);
 });
 
-test("P7.1 prompts: endpoints reference card is read-only (no modal preview)", () => {
-  assert.match(page, /<h3 className="evo-card__title">Endpoints ativos<\/h3>/);
-  assert.match(page, /aria-label="Endpoints do módulo Prompts"/);
-  assert.match(page, /evo-endpoint-row__method--get/);
-  assert.match(page, /evo-endpoint-row__method--post/);
-  // No preview-modal pattern, no placeholder banner from ZIP
+test("P7.1 prompts: internal endpoints card removed from UI", () => {
+  assert.doesNotMatch(page, /Endpoints ativos/);
+  assert.doesNotMatch(page, /endpoint-list/);
+  assert.doesNotMatch(page, /endpoint-row/);
   assert.doesNotMatch(page, /Funcionalidade preservada/);
   assert.doesNotMatch(page, /módulo preservado/);
   assert.doesNotMatch(page, /PreviewActionModal/);

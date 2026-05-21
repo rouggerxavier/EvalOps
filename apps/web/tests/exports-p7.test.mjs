@@ -66,14 +66,10 @@ test("P7.6 exports: authenticated download route preserved + sanitization", () =
   assert.match(page, /sanitizedQueryError/);
 });
 
-test("P7.6 exports: endpoints reference card is read-only (no modal preview)", () => {
-  assert.match(page, /<h3 className="evo-card__title">Endpoints ativos<\/h3>/);
-  assert.match(page, /aria-label="Endpoints do módulo Exports"/);
-  assert.match(page, /evo-endpoint-row__method--get/);
-  assert.match(page, /evo-endpoint-row__method--post/);
-  assert.match(page, /\/exports\/\{"\{export_id\}"\}/);
-  assert.match(page, /\/api\/exports\/\{"\{export_id\}"\}\/download/);
-  // No preview-modal pattern, no placeholder banner from ZIP
+test("P7.6 exports: internal endpoints card removed from UI", () => {
+  assert.doesNotMatch(page, /Endpoints ativos/);
+  assert.doesNotMatch(page, /endpoint-list/);
+  assert.doesNotMatch(page, /endpoint-row/);
   assert.doesNotMatch(page, /Funcionalidade preservada/);
   assert.doesNotMatch(page, /módulo preservado/);
   assert.doesNotMatch(page, /PreviewActionModal/);
