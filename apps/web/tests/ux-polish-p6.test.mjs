@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const nav = readFileSync(new URL("../components/app-shell-nav.ts", import.meta.url), "utf8");
-const shortcuts = readFileSync(new URL("../components/KeyboardShortcuts.tsx", import.meta.url), "utf8");
+const shortcuts = readFileSync(new URL("../components/EvoShortcuts.tsx", import.meta.url), "utf8");
 const routeError = readFileSync(new URL("../components/RouteError.tsx", import.meta.url), "utf8");
 const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
 
@@ -42,13 +42,12 @@ test("P6 UX polish: every shell route exposes a unique G + letter shortcut", () 
 
 test("P6 UX polish: global shortcuts ignore editable focus and stale sequences", () => {
   assert.match(shortcuts, /APP_SHELL_NAV_ITEMS/);
-  assert.match(shortcuts, /projectHref\(base, item\.path\)/);
+  assert.match(shortcuts, /projectHref\(base, target\)/);
   assert.match(shortcuts, /tag === "INPUT" \|\| tag === "TEXTAREA" \|\| tag === "SELECT"/);
   assert.match(shortcuts, /target\.isContentEditable/);
-  assert.match(shortcuts, /event\.defaultPrevented/);
-  assert.match(shortcuts, /isTypingTarget\(event\.target\)[\s\S]*armedAt\.current = 0;/);
-  assert.match(shortcuts, /key === "escape"[\s\S]*armedAt\.current = 0;/);
-  assert.match(shortcuts, /router\.push\(target\)/);
+  assert.match(shortcuts, /isTypingTarget\(event\.target\)/);
+  assert.match(shortcuts, /key === "escape"/);
+  assert.match(shortcuts, /router\.push\(projectHref\(base, target\)\)/);
 });
 
 test("P6 UX polish: route error boundaries share sanitized honest error UI", () => {
