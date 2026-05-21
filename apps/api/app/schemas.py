@@ -145,6 +145,55 @@ class TraceOut(BaseModel):
     created_at: datetime
 
 
+class TraceFlagIn(BaseModel):
+    reason: str = Field(
+        pattern=r"^(manual|schema_mismatch|low_quality|low_confidence|timeout|cost_spike|other)$"
+    )
+    note: str | None = Field(default=None, max_length=2000)
+
+
+class TraceFlagOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    trace_id: str
+    org_id: str
+    user_id: str
+    reason: str
+    note: str | None = None
+    created_at: datetime
+
+
+class BulkTraceFlagIn(TraceFlagIn):
+    trace_ids: list[str] = Field(min_length=1, max_length=100)
+
+
+class BulkTraceFlagOut(BaseModel):
+    data: list[TraceFlagOut]
+    created: int
+
+
+class TraceRerunIn(BaseModel):
+    model: str | None = Field(default=None, max_length=128)
+    variables: dict = Field(default_factory=dict)
+
+
+class TraceRerunOut(BaseModel):
+    new_trace_id: str
+    status: str
+
+
+class TraceCompareIn(BaseModel):
+    left_trace_id: str
+    right_trace_id: str
+
+
+class TraceCompareOut(BaseModel):
+    left: TraceOut
+    right: TraceOut
+    diff: dict
+
+
 # ── Phase 4: Rubrics & Evaluations ──────────────────────────────────────────
 
 class RubricCreate(BaseModel):
