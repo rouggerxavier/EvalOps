@@ -491,7 +491,7 @@ Status atualizado em 2026-05-21:
 | 17 | ✅ feito | `c267780 feat(shortcuts): extend G+letter shortcuts (G S settings)` | `feat(shortcuts): extend G+letter shortcuts (G S settings)` |
 | 18 | ✅ feito | `f88f032 chore(cleanup): remove deprecated components superseded by cockpit refactor` | `chore(cleanup): remove deprecated components (AnswerPreviewCard, CitationRefsTable, etc.)` |
 | 19 | ✅ feito | `cceb908 docs(readme): replace root README per spec §10` | `docs(readme): replace root README per spec §10` |
-| 20 | ⏳ pendente | — | `test: add backend unit tests for new endpoints` |
+| 20 | ✅ feito | `d1fc6d0 test(api): add edge-case unit tests for refactor endpoints` | `test: add backend unit tests for new endpoints` |
 | 21 | ⏳ pendente | — | `test(e2e): add Playwright smoke for each refactored route` |
 
 Observações:
@@ -506,7 +506,8 @@ Observações:
 - Commit 16 entregou `/o/[org]/p/[project]/settings`: General card (form ligado a `patchProjectAction` → `PATCH /v1/projects/{id}` com name/description/default_environment), Members card (tabela via `GET /v1/organizations/{id}/members`), Billing card (link para `/o/{org}/usage`) e card "Ações reais". Adicionado wrapper `getProjects(orgId)` em `apps/web/lib/api.ts` (usa `GET /v1/projects?organization_id=`) para popular dados do projeto atual. Banners de success/error via query string (`?updated=1` / `?error=`). `tsc --noEmit` limpo, rota responde HTTP 200.
 - Commit 17 adicionou item `settings` a `APP_SHELL_NAV_SECTIONS` (seção Operacao, path `/settings`, shortcut `G S`). `EvoShortcuts` consome `APP_SHELL_NAV_ITEMS`, então o atalho aciona `router.push` para `/o/{org}/p/{project}/settings` sem mudanças adicionais; Sidebar renderiza o link automaticamente. Teste `ux-polish-p6` ajustado: assert do par `id: "settings", shortcut: "G S"` (preview não atribui letra a exports). Conjunto de letras inalterado.
 - Commit 18 removeu 8 componentes legados (`AnswerPreviewCard`, `CitationRefsTable`, `GroundingQualityCard`, `RAGSummaryHeader`, `RetrievalSummaryCard`, `SpanWaterfall`, `TracesFilterBar`, `KeyboardShortcuts`) — todos absorvidos por `components/ui/RagPanel`, `components/ui/Waterfall`, `components/ui/FiltersBar` e `components/EvoShortcuts`. Excluídos `tests/traces-p7.test.mjs` e `tests/traces-premium.test.mjs` (asserções do layout flat pré-refactor, obsoletas após commits 11–12). `tests/rag.test.mjs` (RAG-18) reduzido a `lib/rag.ts` + `components/ui/RagPanel.tsx`. `tests/ux-polish-p6.test.mjs` subteste de atalhos repointado para `EvoShortcuts.tsx` (contrato `prefixArmed`/`projectHref(base, target)`). `tsc --noEmit` limpo; testes RAG-* e shortcut verdes. Pendências CSS legadas (`.evo-shell` em ux-polish-p6 #5 e route-error #3) deixadas para o commit 20 (testes) por já serem pré-existentes.
-- Próximo commit funcional do plano: **20 — backend unit tests para os novos endpoints**.
+- Commit 20 adicionou `apps/api/tests/test_refactor_endpoints_edge_cases.py` (15 testes) cobrindo bordas dos endpoints da Phase 8: estado vazio (`attention`, `coverage`, `sdk-status`, `exports`, `evaluation summary`), idempotência (`notifications/mark-read`), auth ausente (`attention 401`), 404 para IDs desconhecidos (`flags`, `rerun`, `prompts/{id}/usage`, `projects/{id} PATCH`, `organizations/{id}/members`), compare com mesmo trace (left==right, bloco `diff` presente), RAG endpoint em trace sem spans RAG (citations/claims vazios) e bulk-flag criando por id. Complementa `test_refactor_attention_coverage_notifications`, `test_refactor_read_model_endpoints`, `test_refactor_project_admin_endpoints` e `test_trace_actions`. Suíte completa do backend: **294 passed**.
+- Próximo commit funcional do plano: **21 — Playwright smoke E2E para cada rota refatorada**.
 
 ---
 
