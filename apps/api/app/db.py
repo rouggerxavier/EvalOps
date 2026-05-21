@@ -85,3 +85,9 @@ def ensure_schema_compatibility() -> None:
         if "expires_at" not in key_cols:
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE api_keys ADD COLUMN expires_at DATETIME"))
+
+    if "projects" in tables:
+        project_cols = {col["name"] for col in inspector.get_columns("projects")}
+        if "default_environment" not in project_cols:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE projects ADD COLUMN default_environment VARCHAR(16) NOT NULL DEFAULT 'prod'"))

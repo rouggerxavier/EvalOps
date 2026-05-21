@@ -50,6 +50,7 @@ class Project(Base):
     name: Mapped[str] = mapped_column(String(255))
     slug: Mapped[str] = mapped_column(String(255))
     description: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    default_environment: Mapped[str] = mapped_column(String(16), default="prod", server_default="prod")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
@@ -99,6 +100,18 @@ class Trace(Base):
     # G-21: soft delete — set instead of hard DELETE; NULL means active.
     # Migration for existing DBs: ALTER TABLE traces ADD COLUMN deleted_at DATETIME;
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+
+
+class TraceFlag(Base):
+    __tablename__ = "trace_flags"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    trace_id: Mapped[str] = mapped_column(ForeignKey("traces.id", ondelete="CASCADE"), index=True)
+    org_id: Mapped[str] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    reason: Mapped[str] = mapped_column(String(64))
+    note: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
 class Span(Base):
@@ -361,6 +374,18 @@ class ExportJob(Base):
     created_by: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class Notification(Base):
+    __tablename__ = "notifications"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
+    kind: Mapped[str] = mapped_column(String(32), index=True)
+    title: Mapped[str] = mapped_column(String(255))
+    meta: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
 
 
 class Plan(Base):

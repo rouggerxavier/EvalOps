@@ -82,15 +82,15 @@ const KEY_SECRET_WARNING_STYLE: React.CSSProperties = {
 function statusBadge(revokedAt: string | null) {
   if (revokedAt) {
     return (
-      <span className="evo-badge evo-badge--err">
-        <span className="evo-badge__dot" />
+      <span className="badge badge--err">
+        <span className="badge__dot" />
         revogada
       </span>
     );
   }
   return (
-    <span className="evo-badge evo-badge--ok">
-      <span className="evo-badge__dot" />
+    <span className="badge badge--ok">
+      <span className="badge__dot" />
       ativa
     </span>
   );
@@ -134,15 +134,15 @@ export default async function KeysPage({ params, searchParams }: Props) {
 
   if (loadError) {
     return (
-      <div className="evo-page">
-        <div className="evo-page-header">
+      <div className="page">
+        <div className="page-header">
           <div>
-            <p className="evo-page-header__eyebrow">Acesso · Chaves API</p>
-            <h1 className="evo-page-header__title">Chaves API</h1>
-            <p className="evo-page-header__subtitle">Gerencie credenciais para SDKs e integracoes.</p>
+            <p className="page-header__eyebrow">Acesso · Chaves API</p>
+            <h1 className="page-header__title">Chaves API</h1>
+            <p className="page-header__subtitle">Gerencie credenciais para SDKs e integracoes.</p>
           </div>
-          <div className="evo-page-header__actions">
-            <Link href={basePath} className="evo-btn evo-btn--sm">
+          <div className="page-header__actions">
+            <Link href={basePath} className="btn btn--sm">
               <RefreshCw size={13} />
               Tentar novamente
             </Link>
@@ -179,21 +179,21 @@ export default async function KeysPage({ params, searchParams }: Props) {
     `${basePath}${queryString({ tab: nextTab === "all" ? undefined : nextTab })}`;
 
   return (
-    <div className="evo-page">
-      <div className="evo-page-header">
+    <div className="page">
+      <div className="page-header">
         <div>
-          <p className="evo-page-header__eyebrow">Acesso · Chaves API</p>
-          <h1 className="evo-page-header__title">Chaves API</h1>
-          <p className="evo-page-header__subtitle">
+          <p className="page-header__eyebrow">Acesso · Chaves API</p>
+          <h1 className="page-header__title">Chaves API</h1>
+          <p className="page-header__subtitle">
             Credenciais para conectar SDKs e integracoes com seguranca.
           </p>
         </div>
-        <div className="evo-page-header__actions">
-          <Link href="/docs" className="evo-btn evo-btn--sm">
+        <div className="page-header__actions">
+          <Link href="/docs" className="btn btn--sm">
             <ShieldCheck size={13} />
             Docs SDK
           </Link>
-          <Link href="#create-key" className="evo-btn evo-btn--sm evo-btn--primary">
+          <Link href="#create-key" className="btn btn--sm btn--primary">
             <Plus size={13} />
             Nova key
           </Link>
@@ -232,15 +232,15 @@ export default async function KeysPage({ params, searchParams }: Props) {
       {qp.revoked && <div style={alertStyle("ok")}>Chave API revogada com sucesso.</div>}
 
       {flash && (
-        <section className="evo-card" style={{ marginBottom: 12 }}>
-          <div className="evo-card__header">
+        <section className="card" style={{ marginBottom: 12 }}>
+          <div className="card__header">
             <div>
-              <h3 className="evo-card__title">Nova chave criada</h3>
-              <div className="evo-card__subtitle">Segredo exibido apenas nesta resposta de criacao.</div>
+              <h3 className="card__title">Nova chave criada</h3>
+              <div className="card__subtitle">Segredo exibido apenas nesta resposta de criacao.</div>
             </div>
-            <span className="evo-badge evo-badge--info"><span className="evo-badge__dot" />{flash.prefix}</span>
+            <span className="badge badge--info"><span className="badge__dot" />{flash.prefix}</span>
           </div>
-          <div className="evo-card__body" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          <div className="card__body" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             <div style={KEY_SECRET_WARNING_STYLE}>
               <strong style={{ color: "#fde68a" }}>Atenção:</strong> guarde esta chave agora. Por segurança, o segredo
               completo não pode ser recuperado depois.
@@ -260,9 +260,9 @@ export default async function KeysPage({ params, searchParams }: Props) {
             >
               {flash.key}
             </pre>
-            <div className="evo-row">
+            <div className="row">
               <CopyTextButton text={flash.key} label="Copiar segredo" copiedLabel="Segredo copiado" />
-              <span className="evo-faint" style={{ fontSize: 12 }}>
+              <span className="t__faint" style={{ fontSize: 12 }}>
                 Nao compartilhe este valor em logs, tickets ou commits.
               </span>
             </div>
@@ -270,59 +270,59 @@ export default async function KeysPage({ params, searchParams }: Props) {
         </section>
       )}
 
-      <section className="evo-summary-row" aria-label="Resumo de chaves API">
-        <div className="evo-summary-card">
-          <p className="evo-summary-card__label">Chaves</p>
-          <div className="evo-summary-card__value">{keys.length.toLocaleString("pt-BR")}</div>
-          <div className="evo-summary-card__hint">total no projeto</div>
+      <section className="module-summary" aria-label="Resumo de chaves API">
+        <div className="summary-card">
+          <p className="summary-card__label">Chaves</p>
+          <div className="summary-card__value">{keys.length.toLocaleString("pt-BR")}</div>
+          <div className="summary-card__hint">total no projeto</div>
         </div>
-        <div className="evo-summary-card">
-          <p className="evo-summary-card__label">Ativas</p>
-          <div className="evo-summary-card__value">{activeCount.toLocaleString("pt-BR")}</div>
-          <div className="evo-summary-card__hint">uso permitido</div>
+        <div className="summary-card">
+          <p className="summary-card__label">Ativas</p>
+          <div className="summary-card__value">{activeCount.toLocaleString("pt-BR")}</div>
+          <div className="summary-card__hint">uso permitido</div>
         </div>
-        <div className="evo-summary-card">
-          <p className="evo-summary-card__label">Revogadas</p>
-          <div className="evo-summary-card__value">{revokedCount.toLocaleString("pt-BR")}</div>
-          <div className="evo-summary-card__hint">sem acesso</div>
+        <div className="summary-card">
+          <p className="summary-card__label">Revogadas</p>
+          <div className="summary-card__value">{revokedCount.toLocaleString("pt-BR")}</div>
+          <div className="summary-card__hint">sem acesso</div>
         </div>
-        <div className="evo-summary-card">
-          <p className="evo-summary-card__label">Última atividade</p>
-          <div className="evo-summary-card__value">
+        <div className="summary-card">
+          <p className="summary-card__label">Última atividade</p>
+          <div className="summary-card__value">
             {latestActivity ? relTime(latestActivity) : "—"}
           </div>
-          <div className="evo-summary-card__hint">criação ou revogação</div>
+          <div className="summary-card__hint">criação ou revogação</div>
         </div>
       </section>
 
-      <nav className="evo-tabs">
-        <Link href={tabHref("all")} className={`evo-tab${tab === "all" ? " is-active" : ""}`}>
+      <nav className="tabs">
+        <Link href={tabHref("all")} className={`tab${tab === "all" ? " is-active" : ""}`}>
           Todas
-          <span className="evo-tab__count">{keys.length}</span>
+          <span className="tab__count">{keys.length}</span>
         </Link>
-        <Link href={tabHref("active")} className={`evo-tab${tab === "active" ? " is-active" : ""}`}>
+        <Link href={tabHref("active")} className={`tab${tab === "active" ? " is-active" : ""}`}>
           Ativas
-          <span className="evo-tab__count">{activeCount}</span>
+          <span className="tab__count">{activeCount}</span>
         </Link>
-        <Link href={tabHref("revoked")} className={`evo-tab${tab === "revoked" ? " is-active" : ""}`}>
+        <Link href={tabHref("revoked")} className={`tab${tab === "revoked" ? " is-active" : ""}`}>
           Revogadas
-          <span className="evo-tab__count">{revokedCount}</span>
+          <span className="tab__count">{revokedCount}</span>
         </Link>
       </nav>
 
-      <div className="evo-grid-2col">
-        <section className="evo-card" style={{ minWidth: 0 }}>
-          <div className="evo-card__header">
-            <h3 className="evo-card__title">Keys do projeto</h3>
-            <Link href={basePath + queryString({ tab: tab === "all" ? undefined : tab })} className="evo-btn evo-btn--sm">
+      <div className="grid-detail">
+        <section className="card" style={{ minWidth: 0 }}>
+          <div className="card__header">
+            <h3 className="card__title">Keys do projeto</h3>
+            <Link href={basePath + queryString({ tab: tab === "all" ? undefined : tab })} className="btn btn--sm">
               <RefreshCw size={13} />
               Atualizar
             </Link>
           </div>
 
-          <div className="evo-card__body evo-card__body--flush">
+          <div className="card__body card__body--flush">
             <div style={{ overflowX: "auto" }}>
-              <table className="evo-table">
+              <table className="t">
                 <thead>
                   <tr>
                     <th>Nome</th>
@@ -338,7 +338,7 @@ export default async function KeysPage({ params, searchParams }: Props) {
                 <tbody>
                   {filteredKeys.length === 0 ? (
                     <tr>
-                      <td className="evo-empty-row" colSpan={8}>
+                      <td className="empty-row" colSpan={8}>
                         Nenhuma chave encontrada para este filtro.
                       </td>
                     </tr>
@@ -347,34 +347,34 @@ export default async function KeysPage({ params, searchParams }: Props) {
                       <tr key={key.id} style={key.revoked_at ? { opacity: 0.68 } : undefined}>
                         <td>
                           <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                            <span className="evo-table__name">{key.name}</span>
+                            <span className="t__name">{key.name}</span>
                             <span style={{ fontSize: 11, color: "var(--text-faint)", fontFamily: "var(--font-mono)" }}>
                               {key.id}
                             </span>
                           </div>
                         </td>
                         <td>
-                          <div className="evo-row" style={{ gap: 6 }}>
-                            <span className="evo-mono evo-muted" style={{ fontSize: 12 }}>{maskPrefix(key.prefix)}</span>
+                          <div className="row" style={{ gap: 6 }}>
+                            <span className="mono t__muted" style={{ fontSize: 12 }}>{maskPrefix(key.prefix)}</span>
                             <CopyTextButton
                               text={key.prefix}
                               label="Prefixo"
                               copiedLabel="Copiado"
-                              className="evo-btn evo-btn--ghost evo-btn--sm"
+                              className="btn btn--ghost btn--sm"
                             />
                           </div>
                         </td>
-                        <td><span className="evo-tag">{key.environment}</span></td>
+                        <td><span className="tag">{key.environment}</span></td>
                         <td>
                           <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
                             {key.scopes.map((scope) => (
-                              <span key={`${key.id}-${scope}`} className="evo-tag">{scope}</span>
+                              <span key={`${key.id}-${scope}`} className="tag">{scope}</span>
                             ))}
                           </div>
                         </td>
                         <td>{statusBadge(key.revoked_at)}</td>
-                        <td className="evo-muted" style={{ fontSize: 12 }}>{formatDateTime(key.created_at)}</td>
-                        <td className="evo-muted" style={{ fontSize: 12 }}>nao disponivel</td>
+                        <td className="t__muted" style={{ fontSize: 12 }}>{formatDateTime(key.created_at)}</td>
+                        <td className="t__muted" style={{ fontSize: 12 }}>nao disponivel</td>
                         <td>
                           {!key.revoked_at ? (
                             <form action={revokeApiKeyAction} style={{ display: "flex", justifyContent: "flex-end" }}>
@@ -382,10 +382,10 @@ export default async function KeysPage({ params, searchParams }: Props) {
                               <input type="hidden" name="project" value={project} />
                               <input type="hidden" name="project_id" value={resolved.project_id} />
                               <input type="hidden" name="key_id" value={key.id} />
-                              <button type="submit" className="evo-btn evo-btn--sm">Revogar</button>
+                              <button type="submit" className="btn btn--sm">Revogar</button>
                             </form>
                           ) : (
-                            <span className="evo-faint" style={{ fontSize: 12 }}>-</span>
+                            <span className="t__faint" style={{ fontSize: 12 }}>-</span>
                           )}
                         </td>
                       </tr>
@@ -397,7 +397,7 @@ export default async function KeysPage({ params, searchParams }: Props) {
           </div>
 
           {keys.length === 0 && (
-            <div className="evo-card__body" style={{ borderTop: "1px solid var(--border-subtle)" }}>
+            <div className="card__body" style={{ borderTop: "1px solid var(--border-subtle)" }}>
               <p style={{ marginTop: 0, marginBottom: 8, color: "var(--text)", fontWeight: 600 }}>
                 API Keys conectam SDKs e integracoes ao EvalOps.
               </p>
@@ -408,12 +408,12 @@ export default async function KeysPage({ params, searchParams }: Props) {
           )}
         </section>
 
-        <section id="create-key" className="evo-card">
-          <div className="evo-card__header">
-            <h3 className="evo-card__title">Criar chave</h3>
-            <span className="evo-faint" style={{ fontSize: 11 }}>acao real</span>
+        <section id="create-key" className="card">
+          <div className="card__header">
+            <h3 className="card__title">Criar chave</h3>
+            <span className="t__faint" style={{ fontSize: 11 }}>acao real</span>
           </div>
-          <div className="evo-card__body">
+          <div className="card__body">
             <div style={{ ...KEY_SECRET_WARNING_STYLE, marginBottom: 12 }}>
               <strong style={{ color: "#fde68a" }}>Importante:</strong> após criar, o segredo completo aparece só uma
               vez. Salve a chave em local seguro antes de sair desta tela.
@@ -460,7 +460,7 @@ export default async function KeysPage({ params, searchParams }: Props) {
                 </label>
               </fieldset>
 
-              <button type="submit" className="evo-btn evo-btn--primary" style={{ alignSelf: "flex-start" }}>
+              <button type="submit" className="btn btn--primary" style={{ alignSelf: "flex-start" }}>
                 <Plus size={13} />
                 Criar chave
               </button>
@@ -469,35 +469,35 @@ export default async function KeysPage({ params, searchParams }: Props) {
         </section>
       </div>
 
-      <section className="evo-card" style={{ marginTop: 12 }}>
-        <div className="evo-card__header">
+      <section className="card" style={{ marginTop: 12 }}>
+        <div className="card__header">
           <div>
-            <h3 className="evo-card__title">Endpoints ativos</h3>
-            <div className="evo-card__subtitle">Rotas reais do backend que servem este módulo.</div>
+            <h3 className="card__title">Endpoints ativos</h3>
+            <div className="card__subtitle">Rotas reais do backend que servem este módulo.</div>
           </div>
         </div>
-        <div className="evo-card__body">
-          <div className="evo-endpoint-list" aria-label="Endpoints do módulo Chaves API">
-            <div className="evo-endpoint-row">
-              <span className="evo-endpoint-row__method evo-endpoint-row__method--get">GET</span>
-              <span className="evo-endpoint-row__path" title="/v1/projects/{project_id}/api-keys">
+        <div className="card__body">
+          <div className="endpoint-list" aria-label="Endpoints do módulo Chaves API">
+            <div className="endpoint-row">
+              <span className="endpoint-snippet__method method-GET">GET</span>
+              <span className="endpoint-row__path" title="/v1/projects/{project_id}/api-keys">
                 /projects/{"{project_id}"}/api-keys
               </span>
-              <span className="evo-endpoint-row__note">ativo</span>
+              <span className="endpoint-row__note">ativo</span>
             </div>
-            <div className="evo-endpoint-row">
-              <span className="evo-endpoint-row__method evo-endpoint-row__method--post">POST</span>
-              <span className="evo-endpoint-row__path" title="/v1/projects/{project_id}/api-keys">
+            <div className="endpoint-row">
+              <span className="endpoint-snippet__method method-POST">POST</span>
+              <span className="endpoint-row__path" title="/v1/projects/{project_id}/api-keys">
                 /projects/{"{project_id}"}/api-keys
               </span>
-              <span className="evo-endpoint-row__note">ativo · cria chave</span>
+              <span className="endpoint-row__note">ativo · cria chave</span>
             </div>
-            <div className="evo-endpoint-row">
-              <span className="evo-endpoint-row__method evo-endpoint-row__method--post">POST</span>
-              <span className="evo-endpoint-row__path" title="/v1/projects/{project_id}/api-keys/{key_id}/revoke">
+            <div className="endpoint-row">
+              <span className="endpoint-snippet__method method-POST">POST</span>
+              <span className="endpoint-row__path" title="/v1/projects/{project_id}/api-keys/{key_id}/revoke">
                 /projects/{"{project_id}"}/api-keys/{"{key_id}"}/revoke
               </span>
-              <span className="evo-endpoint-row__note">ativo · revoga chave</span>
+              <span className="endpoint-row__note">ativo · revoga chave</span>
             </div>
           </div>
         </div>

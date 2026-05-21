@@ -86,9 +86,9 @@ function sourceLabel(source: string): string {
 
 function statusForDataset(dataset: Dataset, items: DatasetItem[]): { cls: string; label: string } {
   if (items.length === 0) return { cls: "", label: "vazio" };
-  if (dataset.source === "traces") return { cls: "evo-badge--ok", label: "pronto" };
-  if (dataset.source === "manual") return { cls: "evo-badge--info", label: "curado" };
-  return { cls: "evo-badge--warn", label: "ativo" };
+  if (dataset.source === "traces") return { cls: "badge--ok", label: "pronto" };
+  if (dataset.source === "manual") return { cls: "badge--info", label: "curado" };
+  return { cls: "badge--warn", label: "ativo" };
 }
 
 function queryString(values: Record<string, string | undefined>): string {
@@ -137,17 +137,17 @@ export default async function DatasetsPage({ params, searchParams }: Props) {
 
   if (loadError) {
     return (
-      <div className="evo-page">
-        <div className="evo-page-header">
+      <div className="page">
+        <div className="page-header">
           <div>
-            <p className="evo-page-header__eyebrow">Dados · Datasets</p>
-            <h1 className="evo-page-header__title">Datasets</h1>
-            <p className="evo-page-header__subtitle">
+            <p className="page-header__eyebrow">Dados · Datasets</p>
+            <h1 className="page-header__title">Datasets</h1>
+            <p className="page-header__subtitle">
               Conjuntos para avaliacoes, regressao e fine-tuning.
             </p>
           </div>
-          <div className="evo-page-header__actions">
-            <Link href={basePath} className="evo-btn evo-btn--sm">
+          <div className="page-header__actions">
+            <Link href={basePath} className="btn btn--sm">
               <RefreshCw size={13} />
               Tentar novamente
             </Link>
@@ -197,31 +197,21 @@ export default async function DatasetsPage({ params, searchParams }: Props) {
     })}`;
 
   return (
-    <div className="evo-page">
-      <div className="evo-page-header">
+    <div className="page">
+      <div className="page-header">
         <div>
-          <p className="evo-page-header__eyebrow">Dados · Datasets</p>
-          <h1 className="evo-page-header__title">Datasets</h1>
-          <p className="evo-page-header__subtitle">
+          <p className="page-header__eyebrow">Dados · Datasets</p>
+          <h1 className="page-header__title">Datasets</h1>
+          <p className="page-header__subtitle">
             Curadoria de conjuntos para avaliacoes, regressoes e fine-tuning.
           </p>
         </div>
-        <div className="evo-page-header__actions">
-          <button
-            type="button"
-            className="evo-btn evo-btn--sm"
-            disabled
-            data-status="planned"
-            title="Importar datasets — em breve"
-            style={{ opacity: 0.5, cursor: "not-allowed" }}
-          >
-            Importar
-          </button>
-          <Link href="#dataset-create" className="evo-btn evo-btn--sm">
+        <div className="page-header__actions">
+          <Link href="#dataset-create" className="btn btn--sm">
             <Plus size={13} />
             Novo dataset
           </Link>
-          <Link href={basePath + queryString({ source: qp.source, dataset: selectedDatasetId ?? undefined })} className="evo-btn evo-btn--sm">
+          <Link href={basePath + queryString({ source: qp.source, dataset: selectedDatasetId ?? undefined })} className="btn btn--sm">
             <RefreshCw size={13} />
             Atualizar
           </Link>
@@ -234,62 +224,62 @@ export default async function DatasetsPage({ params, searchParams }: Props) {
       {qp.built && <div style={alertStyle("ok")}>Dataset atualizado com traces do backend.</div>}
 
       {/* Summary row — só dados reais do payload */}
-      <section className="evo-summary-row" aria-label="Resumo de datasets">
-        <div className="evo-summary-card">
-          <p className="evo-summary-card__label">Datasets</p>
-          <div className="evo-summary-card__value">{rows.length.toLocaleString("pt-BR")}</div>
-          <div className="evo-summary-card__hint">total no projeto</div>
+      <section className="module-summary" aria-label="Resumo de datasets">
+        <div className="summary-card">
+          <p className="summary-card__label">Datasets</p>
+          <div className="summary-card__value">{rows.length.toLocaleString("pt-BR")}</div>
+          <div className="summary-card__hint">total no projeto</div>
         </div>
-        <div className="evo-summary-card">
-          <p className="evo-summary-card__label">Itens</p>
-          <div className="evo-summary-card__value">{totalItems.toLocaleString("pt-BR")}</div>
-          <div className="evo-summary-card__hint">exemplos registrados</div>
+        <div className="summary-card">
+          <p className="summary-card__label">Itens</p>
+          <div className="summary-card__value">{totalItems.toLocaleString("pt-BR")}</div>
+          <div className="summary-card__hint">exemplos registrados</div>
         </div>
-        <div className="evo-summary-card">
-          <p className="evo-summary-card__label">Fonte traces</p>
-          <div className="evo-summary-card__value">{traceDatasets.toLocaleString("pt-BR")}</div>
-          <div className="evo-summary-card__hint">datasets de traces · {readyDatasets} prontos</div>
+        <div className="summary-card">
+          <p className="summary-card__label">Fonte traces</p>
+          <div className="summary-card__value">{traceDatasets.toLocaleString("pt-BR")}</div>
+          <div className="summary-card__hint">datasets de traces · {readyDatasets} prontos</div>
         </div>
-        <div className="evo-summary-card">
-          <p className="evo-summary-card__label">Última atividade</p>
-          <div className="evo-summary-card__value">
+        <div className="summary-card">
+          <p className="summary-card__label">Última atividade</p>
+          <div className="summary-card__value">
             {latestActivity ? relTime(latestActivity) : "—"}
           </div>
-          <div className="evo-summary-card__hint">dataset ou item</div>
+          <div className="summary-card__hint">dataset ou item</div>
         </div>
       </section>
 
-      <nav className="evo-tabs">
-        <Link href={tabHref("all")} className={`evo-tab${sourceFilter === "all" ? " is-active" : ""}`}>
+      <nav className="tabs">
+        <Link href={tabHref("all")} className={`tab${sourceFilter === "all" ? " is-active" : ""}`}>
           Todos
-          <span className="evo-tab__count">{rows.length}</span>
+          <span className="tab__count">{rows.length}</span>
         </Link>
-        <Link href={tabHref("manual")} className={`evo-tab${sourceFilter === "manual" ? " is-active" : ""}`}>
+        <Link href={tabHref("manual")} className={`tab${sourceFilter === "manual" ? " is-active" : ""}`}>
           Manual
-          <span className="evo-tab__count">
+          <span className="tab__count">
             {rows.filter((row) => row.dataset.source === "manual").length}
           </span>
         </Link>
-        <Link href={tabHref("traces")} className={`evo-tab${sourceFilter === "traces" ? " is-active" : ""}`}>
+        <Link href={tabHref("traces")} className={`tab${sourceFilter === "traces" ? " is-active" : ""}`}>
           Traces
-          <span className="evo-tab__count">
+          <span className="tab__count">
             {rows.filter((row) => row.dataset.source === "traces").length}
           </span>
         </Link>
       </nav>
 
-      <div className="evo-grid-2col">
+      <div className="grid-detail">
         <div style={{ minWidth: 0 }}>
-          <section className="evo-card">
-            <div className="evo-card__header">
-              <h3 className="evo-card__title">Lista de datasets</h3>
-              <span className="evo-faint" style={{ fontSize: 11 }}>
+          <section className="card">
+            <div className="card__header">
+              <h3 className="card__title">Lista de datasets</h3>
+              <span className="t__faint" style={{ fontSize: 11 }}>
                 {filteredRows.length} visivel(is)
               </span>
             </div>
-            <div className="evo-card__body evo-card__body--flush">
+            <div className="card__body card__body--flush">
               <div style={{ overflowX: "auto" }}>
-                <table className="evo-table">
+                <table className="t">
                   <thead>
                     <tr>
                       <th>Nome</th>
@@ -303,7 +293,7 @@ export default async function DatasetsPage({ params, searchParams }: Props) {
                   <tbody>
                     {filteredRows.length === 0 ? (
                       <tr>
-                        <td className="evo-empty-row" colSpan={6}>
+                        <td className="empty-row" colSpan={6}>
                           Nenhum dataset com esse filtro.
                         </td>
                       </tr>
@@ -315,23 +305,23 @@ export default async function DatasetsPage({ params, searchParams }: Props) {
                           <tr key={dataset.id} style={isSelected ? { background: "var(--accent-bg)" } : undefined}>
                             <td>
                               <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                                <span className="evo-table__name">{dataset.slug}</span>
+                                <span className="t__name">{dataset.slug}</span>
                                 <span style={{ fontSize: 11, color: "var(--text-faint)" }}>
                                   {dataset.description ?? "Sem descricao"}
                                 </span>
                               </div>
                             </td>
                             <td>
-                              <span className="evo-tag">{sourceLabel(dataset.source)}</span>
+                              <span className="tag">{sourceLabel(dataset.source)}</span>
                             </td>
-                            <td className="evo-table__num">{items.length.toLocaleString("pt-BR")}</td>
+                            <td className="t__num">{items.length.toLocaleString("pt-BR")}</td>
                             <td>
-                              <span className={`evo-badge ${status.cls}`}>
-                                <span className="evo-badge__dot" />
+                              <span className={`badge ${status.cls}`}>
+                                <span className="badge__dot" />
                                 {status.label}
                               </span>
                             </td>
-                            <td className="evo-muted" style={{ fontSize: 12 }}>
+                            <td className="t__muted" style={{ fontSize: 12 }}>
                               {formatDateTime(dataset.created_at)}
                             </td>
                             <td>
@@ -359,8 +349,8 @@ export default async function DatasetsPage({ params, searchParams }: Props) {
           </section>
 
           {filteredRows.length === 0 && (
-            <section className="evo-card" style={{ marginTop: 12 }}>
-              <div className="evo-card__body">
+            <section className="card" style={{ marginTop: 12 }}>
+              <div className="card__body">
                 <p style={{ marginTop: 0, marginBottom: 8, color: "var(--text)", fontWeight: 600 }}>
                   Datasets alimentam avaliacoes, regressao e fine-tuning.
                 </p>
@@ -377,16 +367,16 @@ export default async function DatasetsPage({ params, searchParams }: Props) {
           )}
 
           {selectedRow && selectedItems.length > 0 && (
-            <section className="evo-card" style={{ marginTop: 12 }}>
-              <div className="evo-card__header">
-                <h3 className="evo-card__title">Previa de itens - {selectedRow.dataset.slug}</h3>
-                <span className="evo-faint" style={{ fontSize: 11 }}>
+            <section className="card" style={{ marginTop: 12 }}>
+              <div className="card__header">
+                <h3 className="card__title">Previa de itens - {selectedRow.dataset.slug}</h3>
+                <span className="t__faint" style={{ fontSize: 11 }}>
                   {selectedItems.length.toLocaleString("pt-BR")} item(ns)
                 </span>
               </div>
-              <div className="evo-card__body evo-card__body--flush">
+              <div className="card__body card__body--flush">
                 <div style={{ overflowX: "auto" }}>
-                  <table className="evo-table">
+                  <table className="t">
                     <thead>
                       <tr>
                         <th>#</th>
@@ -398,14 +388,14 @@ export default async function DatasetsPage({ params, searchParams }: Props) {
                     <tbody>
                       {selectedItems.slice(0, 6).map((item) => (
                         <tr key={item.id}>
-                          <td className="evo-table__num">{item.ord}</td>
-                          <td className="evo-mono evo-muted" style={{ maxWidth: 280 }}>
+                          <td className="t__num">{item.ord}</td>
+                          <td className="mono t__muted" style={{ maxWidth: 280 }}>
                             <span title={JSON.stringify(item.input)}>{shortJson(item.input)}</span>
                           </td>
-                          <td className="evo-mono evo-muted" style={{ maxWidth: 280 }}>
+                          <td className="mono t__muted" style={{ maxWidth: 280 }}>
                             <span title={JSON.stringify(item.expected_output)}>{shortJson(item.expected_output)}</span>
                           </td>
-                          <td className="evo-muted" style={{ fontSize: 12 }}>{formatDateTime(item.created_at)}</td>
+                          <td className="t__muted" style={{ fontSize: 12 }}>{formatDateTime(item.created_at)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -417,12 +407,12 @@ export default async function DatasetsPage({ params, searchParams }: Props) {
         </div>
 
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          <section id="dataset-create" className="evo-card">
-            <div className="evo-card__header">
-              <h3 className="evo-card__title">Criar dataset</h3>
-              <span className="evo-faint" style={{ fontSize: 11 }}>acao real</span>
+          <section id="dataset-create" className="card">
+            <div className="card__header">
+              <h3 className="card__title">Criar dataset</h3>
+              <span className="t__faint" style={{ fontSize: 11 }}>acao real</span>
             </div>
-            <div className="evo-card__body">
+            <div className="card__body">
               <form action={createDatasetAction} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                 <input type="hidden" name="org" value={org} />
                 <input type="hidden" name="project" value={project} />
@@ -443,7 +433,7 @@ export default async function DatasetsPage({ params, searchParams }: Props) {
                     <option value="traces">traces</option>
                   </select>
                 </label>
-                <button type="submit" className="evo-btn evo-btn--primary" style={{ alignSelf: "flex-start" }}>
+                <button type="submit" className="btn btn--primary" style={{ alignSelf: "flex-start" }}>
                   <Plus size={13} />
                   Criar dataset
                 </button>
@@ -453,14 +443,14 @@ export default async function DatasetsPage({ params, searchParams }: Props) {
 
           {selectedRow ? (
             <>
-              <section className="evo-card">
-                <div className="evo-card__header">
-                  <h3 className="evo-card__title">Adicionar item - {selectedRow.dataset.slug}</h3>
-                  <span className="evo-faint" style={{ fontSize: 11 }}>
+              <section className="card">
+                <div className="card__header">
+                  <h3 className="card__title">Adicionar item - {selectedRow.dataset.slug}</h3>
+                  <span className="t__faint" style={{ fontSize: 11 }}>
                     backend: /datasets/{selectedRow.dataset.id}/items
                   </span>
                 </div>
-                <div className="evo-card__body">
+                <div className="card__body">
                   <form action={addDatasetItemAction} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                     <input type="hidden" name="org" value={org} />
                     <input type="hidden" name="project" value={project} />
@@ -485,19 +475,19 @@ export default async function DatasetsPage({ params, searchParams }: Props) {
                       <span style={{ color: "var(--text-muted)" }}>Metadata JSON</span>
                       <textarea name="metadata_json" defaultValue={"{}"} style={TEXTAREA_STYLE} />
                     </label>
-                    <button type="submit" className="evo-btn evo-btn--primary" style={{ alignSelf: "flex-start" }}>
+                    <button type="submit" className="btn btn--primary" style={{ alignSelf: "flex-start" }}>
                       Adicionar item
                     </button>
                   </form>
                 </div>
               </section>
 
-              <section id="dataset-build" className="evo-card">
-                <div className="evo-card__header">
-                  <h3 className="evo-card__title">Construir a partir de traces</h3>
-                  <span className="evo-faint" style={{ fontSize: 11 }}>acao real</span>
+              <section id="dataset-build" className="card">
+                <div className="card__header">
+                  <h3 className="card__title">Construir a partir de traces</h3>
+                  <span className="t__faint" style={{ fontSize: 11 }}>acao real</span>
                 </div>
-                <div className="evo-card__body">
+                <div className="card__body">
                   <form action={buildDatasetFromTracesAction} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                     <input type="hidden" name="org" value={org} />
                     <input type="hidden" name="project" value={project} />
@@ -524,7 +514,7 @@ export default async function DatasetsPage({ params, searchParams }: Props) {
                       <span style={{ color: "var(--text-muted)" }}>Limite</span>
                       <input name="limit" type="number" min={1} max={500} defaultValue={50} style={INPUT_STYLE} />
                     </label>
-                    <button type="submit" className="evo-btn evo-btn--primary" style={{ alignSelf: "flex-start" }}>
+                    <button type="submit" className="btn btn--primary" style={{ alignSelf: "flex-start" }}>
                       <Upload size={13} />
                       Ingerir traces
                     </button>
@@ -532,12 +522,12 @@ export default async function DatasetsPage({ params, searchParams }: Props) {
                 </div>
               </section>
 
-              <section className="evo-card">
-                <div className="evo-card__header">
-                  <h3 className="evo-card__title">Acoes nao disponiveis no contrato atual</h3>
+              <section className="card">
+                <div className="card__header">
+                  <h3 className="card__title">Acoes nao disponiveis no contrato atual</h3>
                 </div>
-                <div className="evo-card__body" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                  <button type="button" className="evo-btn evo-btn--sm" disabled style={{ justifyContent: "flex-start", opacity: 0.55 }}>
+                <div className="card__body" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  <button type="button" className="btn btn--sm" disabled style={{ justifyContent: "flex-start", opacity: 0.55 }}>
                     Exportar dataset
                   </button>
                   <p style={{ margin: 0, color: "var(--text-faint)", fontSize: 12 }}>
@@ -547,8 +537,8 @@ export default async function DatasetsPage({ params, searchParams }: Props) {
               </section>
             </>
           ) : (
-            <section className="evo-card">
-              <div className="evo-card__body">
+            <section className="card">
+              <div className="card__body">
                 <p style={{ margin: 0, color: "var(--text-faint)", fontSize: 13 }}>
                   Selecione um dataset para ver detalhes e acoes operacionais.
                 </p>
@@ -559,49 +549,49 @@ export default async function DatasetsPage({ params, searchParams }: Props) {
       </div>
 
       {/* Endpoints reais — referência somente leitura */}
-      <section className="evo-card" style={{ marginTop: 12 }}>
-        <div className="evo-card__header">
+      <section className="card" style={{ marginTop: 12 }}>
+        <div className="card__header">
           <div>
-            <h3 className="evo-card__title">Endpoints ativos</h3>
-            <div className="evo-card__subtitle">Rotas reais do backend que servem este módulo.</div>
+            <h3 className="card__title">Endpoints ativos</h3>
+            <div className="card__subtitle">Rotas reais do backend que servem este módulo.</div>
           </div>
         </div>
-        <div className="evo-card__body">
-          <div className="evo-endpoint-list" aria-label="Endpoints do módulo Datasets">
-            <div className="evo-endpoint-row">
-              <span className="evo-endpoint-row__method evo-endpoint-row__method--get">GET</span>
-              <span className="evo-endpoint-row__path" title="/v1/projects/{project_id}/datasets">
+        <div className="card__body">
+          <div className="endpoint-list" aria-label="Endpoints do módulo Datasets">
+            <div className="endpoint-row">
+              <span className="endpoint-snippet__method method-GET">GET</span>
+              <span className="endpoint-row__path" title="/v1/projects/{project_id}/datasets">
                 /projects/{"{project_id}"}/datasets
               </span>
-              <span className="evo-endpoint-row__note">ativo</span>
+              <span className="endpoint-row__note">ativo</span>
             </div>
-            <div className="evo-endpoint-row">
-              <span className="evo-endpoint-row__method evo-endpoint-row__method--post">POST</span>
-              <span className="evo-endpoint-row__path" title="/v1/projects/{project_id}/datasets">
+            <div className="endpoint-row">
+              <span className="endpoint-snippet__method method-POST">POST</span>
+              <span className="endpoint-row__path" title="/v1/projects/{project_id}/datasets">
                 /projects/{"{project_id}"}/datasets
               </span>
-              <span className="evo-endpoint-row__note">ativo · cria dataset</span>
+              <span className="endpoint-row__note">ativo · cria dataset</span>
             </div>
-            <div className="evo-endpoint-row">
-              <span className="evo-endpoint-row__method evo-endpoint-row__method--get">GET</span>
-              <span className="evo-endpoint-row__path" title="/v1/datasets/{dataset_id}/items">
+            <div className="endpoint-row">
+              <span className="endpoint-snippet__method method-GET">GET</span>
+              <span className="endpoint-row__path" title="/v1/datasets/{dataset_id}/items">
                 /datasets/{"{dataset_id}"}/items
               </span>
-              <span className="evo-endpoint-row__note">ativo</span>
+              <span className="endpoint-row__note">ativo</span>
             </div>
-            <div className="evo-endpoint-row">
-              <span className="evo-endpoint-row__method evo-endpoint-row__method--post">POST</span>
-              <span className="evo-endpoint-row__path" title="/v1/datasets/{dataset_id}/items">
+            <div className="endpoint-row">
+              <span className="endpoint-snippet__method method-POST">POST</span>
+              <span className="endpoint-row__path" title="/v1/datasets/{dataset_id}/items">
                 /datasets/{"{dataset_id}"}/items
               </span>
-              <span className="evo-endpoint-row__note">ativo · adiciona item</span>
+              <span className="endpoint-row__note">ativo · adiciona item</span>
             </div>
-            <div className="evo-endpoint-row">
-              <span className="evo-endpoint-row__method evo-endpoint-row__method--post">POST</span>
-              <span className="evo-endpoint-row__path" title="/v1/datasets/{dataset_id}/build-from-traces">
+            <div className="endpoint-row">
+              <span className="endpoint-snippet__method method-POST">POST</span>
+              <span className="endpoint-row__path" title="/v1/datasets/{dataset_id}/build-from-traces">
                 /datasets/{"{dataset_id}"}/build-from-traces
               </span>
-              <span className="evo-endpoint-row__note">ativo · ingere traces</span>
+              <span className="endpoint-row__note">ativo · ingere traces</span>
             </div>
           </div>
         </div>

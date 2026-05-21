@@ -86,23 +86,23 @@ function jobStatusBadge(status: string) {
   const normalized = status.toLowerCase();
   if (normalized === "completed" || normalized === "ready") {
     return (
-      <span className="evo-badge evo-badge--ok">
-        <span className="evo-badge__dot" />
+      <span className="badge badge--ok">
+        <span className="badge__dot" />
         concluido
       </span>
     );
   }
   if (normalized === "running" || normalized === "queued") {
     return (
-      <span className="evo-badge evo-badge--info">
-        <span className="evo-badge__dot" />
+      <span className="badge badge--info">
+        <span className="badge__dot" />
         em andamento
       </span>
     );
   }
   return (
-    <span className="evo-badge evo-badge--err">
-      <span className="evo-badge__dot" />
+    <span className="badge badge--err">
+      <span className="badge__dot" />
       erro
     </span>
   );
@@ -141,7 +141,7 @@ function UsageBar({ label, value, limit }: { label: string; value: number; limit
     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
       <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "var(--text-muted)" }}>
         <span>{label}</span>
-        <span className="evo-mono">{formatCount(value)} / {formatCount(limit)}</span>
+        <span className="mono">{formatCount(value)} / {formatCount(limit)}</span>
       </div>
       <div style={{ height: 6, background: "var(--bg-2)", borderRadius: 999, overflow: "hidden" }}>
         <div style={{ width: `${pct}%`, height: "100%", background: pct > 90 ? "var(--warn)" : "var(--accent)" }} />
@@ -168,15 +168,15 @@ export default async function ExportsPage({ params, searchParams }: Props) {
   } catch (error) {
     const message = safeErrorMessage(error, "Falha ao resolver projeto.");
     return (
-      <div className="evo-page">
-        <div className="evo-page-header">
+      <div className="page">
+        <div className="page-header">
           <div>
-            <p className="evo-page-header__eyebrow">Dados · Exports</p>
-            <h1 className="evo-page-header__title">Exports</h1>
-            <p className="evo-page-header__subtitle">Jobs de exportacao para JSONL e auditoria.</p>
+            <p className="page-header__eyebrow">Dados · Exports</p>
+            <h1 className="page-header__title">Exports</h1>
+            <p className="page-header__subtitle">Jobs de exportacao para JSONL e auditoria.</p>
           </div>
-          <div className="evo-page-header__actions">
-            <Link href={basePath} className="evo-btn evo-btn--sm">
+          <div className="page-header__actions">
+            <Link href={basePath} className="btn btn--sm">
               <RefreshCw size={13} />
               Tentar novamente
             </Link>
@@ -242,21 +242,21 @@ export default async function ExportsPage({ params, searchParams }: Props) {
     })}`;
 
   return (
-    <div className="evo-page">
-      <div className="evo-page-header">
+    <div className="page">
+      <div className="page-header">
         <div>
-          <p className="evo-page-header__eyebrow">Dados · Exports</p>
-          <h1 className="evo-page-header__title">Exports</h1>
-          <p className="evo-page-header__subtitle">
+          <p className="page-header__eyebrow">Dados · Exports</p>
+          <h1 className="page-header__title">Exports</h1>
+          <p className="page-header__subtitle">
             Exports para JSONL, auditoria e analise offline com dados reais de traces.
           </p>
         </div>
-        <div className="evo-page-header__actions">
-          <Link href={tabHref(tab)} className="evo-btn evo-btn--sm">
+        <div className="page-header__actions">
+          <Link href={tabHref(tab)} className="btn btn--sm">
             <RefreshCw size={13} />
             Atualizar
           </Link>
-          <Link href="#create-export" className="evo-btn evo-btn--sm evo-btn--primary">
+          <Link href="#create-export" className="btn btn--sm btn--primary">
             <Plus size={13} />
             Novo export
           </Link>
@@ -266,61 +266,61 @@ export default async function ExportsPage({ params, searchParams }: Props) {
       {qp.created === "1" && <div style={alertStyle("ok")}>Export criado e adicionado na lista de jobs conhecidos.</div>}
       {sanitizedQueryError && <div style={alertStyle("err")}>{sanitizedQueryError}</div>}
 
-      <section className="evo-summary-row" aria-label="Resumo de exports">
-        <div className="evo-summary-card">
-          <p className="evo-summary-card__label">Jobs conhecidos</p>
-          <div className="evo-summary-card__value">{exportRows.length.toLocaleString("pt-BR")}</div>
-          <div className="evo-summary-card__hint">consultados por ID</div>
+      <section className="module-summary" aria-label="Resumo de exports">
+        <div className="summary-card">
+          <p className="summary-card__label">Jobs conhecidos</p>
+          <div className="summary-card__value">{exportRows.length.toLocaleString("pt-BR")}</div>
+          <div className="summary-card__hint">consultados por ID</div>
         </div>
-        <div className="evo-summary-card">
-          <p className="evo-summary-card__label">Em andamento</p>
-          <div className="evo-summary-card__value">{runningCount.toLocaleString("pt-BR")}</div>
-          <div className="evo-summary-card__hint">running/queued</div>
+        <div className="summary-card">
+          <p className="summary-card__label">Em andamento</p>
+          <div className="summary-card__value">{runningCount.toLocaleString("pt-BR")}</div>
+          <div className="summary-card__hint">running/queued</div>
         </div>
-        <div className="evo-summary-card">
-          <p className="evo-summary-card__label">Concluídos</p>
-          <div className="evo-summary-card__value">{completedCount.toLocaleString("pt-BR")}</div>
-          <div className="evo-summary-card__hint">prontos para download</div>
+        <div className="summary-card">
+          <p className="summary-card__label">Concluídos</p>
+          <div className="summary-card__value">{completedCount.toLocaleString("pt-BR")}</div>
+          <div className="summary-card__hint">prontos para download</div>
         </div>
-        <div className="evo-summary-card">
-          <p className="evo-summary-card__label">Última atividade</p>
-          <div className="evo-summary-card__value">
+        <div className="summary-card">
+          <p className="summary-card__label">Última atividade</p>
+          <div className="summary-card__value">
             {latestActivity ? relTime(latestActivity) : "—"}
           </div>
-          <div className="evo-summary-card__hint">job mais recente consultado</div>
+          <div className="summary-card__hint">job mais recente consultado</div>
         </div>
       </section>
 
-      <nav className="evo-tabs">
-        <Link href={tabHref("all")} className={`evo-tab${tab === "all" ? " is-active" : ""}`}>
+      <nav className="tabs">
+        <Link href={tabHref("all")} className={`tab${tab === "all" ? " is-active" : ""}`}>
           Todos
-          <span className="evo-tab__count">{exportRows.length}</span>
+          <span className="tab__count">{exportRows.length}</span>
         </Link>
-        <Link href={tabHref("running")} className={`evo-tab${tab === "running" ? " is-active" : ""}`}>
+        <Link href={tabHref("running")} className={`tab${tab === "running" ? " is-active" : ""}`}>
           Em andamento
-          <span className="evo-tab__count">{runningCount}</span>
+          <span className="tab__count">{runningCount}</span>
         </Link>
-        <Link href={tabHref("completed")} className={`evo-tab${tab === "completed" ? " is-active" : ""}`}>
+        <Link href={tabHref("completed")} className={`tab${tab === "completed" ? " is-active" : ""}`}>
           Concluidos
-          <span className="evo-tab__count">{completedCount}</span>
+          <span className="tab__count">{completedCount}</span>
         </Link>
-        <Link href={tabHref("failed")} className={`evo-tab${tab === "failed" ? " is-active" : ""}`}>
+        <Link href={tabHref("failed")} className={`tab${tab === "failed" ? " is-active" : ""}`}>
           Falhas
-          <span className="evo-tab__count">{failedCount}</span>
+          <span className="tab__count">{failedCount}</span>
         </Link>
       </nav>
 
-      <div className="evo-grid-2col">
-        <section className="evo-card" style={{ minWidth: 0 }}>
-          <div className="evo-card__header">
-            <h3 className="evo-card__title">Jobs de export</h3>
-            <span className="evo-faint" style={{ fontSize: 11 }}>
+      <div className="grid-detail">
+        <section className="card" style={{ minWidth: 0 }}>
+          <div className="card__header">
+            <h3 className="card__title">Jobs de export</h3>
+            <span className="t__faint" style={{ fontSize: 11 }}>
               {filteredRows.length} visivel(is)
             </span>
           </div>
-          <div className="evo-card__body evo-card__body--flush">
+          <div className="card__body card__body--flush">
             <div style={{ overflowX: "auto" }}>
-              <table className="evo-table">
+              <table className="t">
                 <thead>
                   <tr>
                     <th>Job</th>
@@ -336,7 +336,7 @@ export default async function ExportsPage({ params, searchParams }: Props) {
                 <tbody>
                   {filteredRows.length === 0 ? (
                     <tr>
-                      <td className="evo-empty-row" colSpan={8}>Nenhum export para esse filtro.</td>
+                      <td className="empty-row" colSpan={8}>Nenhum export para esse filtro.</td>
                     </tr>
                   ) : (
                     filteredRows.map((row) => {
@@ -345,23 +345,23 @@ export default async function ExportsPage({ params, searchParams }: Props) {
                           <tr key={row.id}>
                             <td>
                               <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                                <span className="evo-table__name">{row.id}</span>
+                                <span className="t__name">{row.id}</span>
                                 <span style={{ fontSize: 11, color: "var(--err)" }}>Falha ao consultar job</span>
                               </div>
                             </td>
-                            <td className="evo-faint">-</td>
-                            <td className="evo-faint">-</td>
-                            <td className="evo-faint">-</td>
+                            <td className="t__faint">-</td>
+                            <td className="t__faint">-</td>
+                            <td className="t__faint">-</td>
                             <td>
-                              <span className="evo-badge evo-badge--err">
-                                <span className="evo-badge__dot" />
+                              <span className="badge badge--err">
+                                <span className="badge__dot" />
                                 erro
                               </span>
                             </td>
-                            <td className="evo-faint">-</td>
-                            <td className="evo-faint">-</td>
+                            <td className="t__faint">-</td>
+                            <td className="t__faint">-</td>
                             <td>
-                              <Link href={basePath + queryString({ export_id: row.id, ids: idsValue || undefined })} className="evo-btn evo-btn--sm">
+                              <Link href={basePath + queryString({ export_id: row.id, ids: idsValue || undefined })} className="btn btn--sm">
                                 <RefreshCw size={13} />
                                 Retry
                               </Link>
@@ -380,28 +380,28 @@ export default async function ExportsPage({ params, searchParams }: Props) {
                         <tr key={row.id}>
                           <td>
                             <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                              <span className="evo-table__name">{exportName(row.job)}</span>
+                              <span className="t__name">{exportName(row.job)}</span>
                               <span style={{ fontSize: 11, color: "var(--text-faint)", fontFamily: "var(--font-mono)" }}>
                                 {row.job.id}
                               </span>
                             </div>
                           </td>
                           <td>
-                            <span className="evo-mono evo-muted" style={{ fontSize: 12 }}>{row.job.format}</span>
+                            <span className="mono t__muted" style={{ fontSize: 12 }}>{row.job.format}</span>
                           </td>
-                          <td className="evo-table__num">{formatCount(row.job.row_count)}</td>
+                          <td className="t__num">{formatCount(row.job.row_count)}</td>
                           <td>
-                            <span className="evo-tag">{exportSource(row.job)}</span>
+                            <span className="tag">{exportSource(row.job)}</span>
                           </td>
                           <td>{jobStatusBadge(row.job.status)}</td>
-                          <td className="evo-muted" style={{ fontSize: 12 }}>{formatDateTime(row.job.created_at)}</td>
-                          <td className="evo-mono evo-muted" style={{ fontSize: 12 }}>nao disponivel</td>
+                          <td className="t__muted" style={{ fontSize: 12 }}>{formatDateTime(row.job.created_at)}</td>
+                          <td className="mono t__muted" style={{ fontSize: 12 }}>nao disponivel</td>
                           <td>
-                            <div className="evo-row" style={{ justifyContent: "flex-end" }}>
+                            <div className="row" style={{ justifyContent: "flex-end" }}>
                               {isDownloadReady ? (
                                 <Link
                                   href={getExportDownloadPath(row.job.id, currentViewHref)}
-                                  className="evo-btn evo-btn--sm"
+                                  className="btn btn--sm"
                                   download
                                 >
                                   <Download size={13} />
@@ -410,7 +410,7 @@ export default async function ExportsPage({ params, searchParams }: Props) {
                               ) : (
                                 <button
                                   type="button"
-                                  className="evo-btn evo-btn--sm"
+                                  className="btn btn--sm"
                                   disabled
                                   style={{ opacity: 0.6 }}
                                   title={
@@ -439,7 +439,7 @@ export default async function ExportsPage({ params, searchParams }: Props) {
           </div>
 
           {exportRows.length === 0 && (
-            <div className="evo-card__body" style={{ borderTop: "1px solid var(--border-subtle)" }}>
+            <div className="card__body" style={{ borderTop: "1px solid var(--border-subtle)" }}>
               <p style={{ marginTop: 0, marginBottom: 8, color: "var(--text)", fontWeight: 600 }}>
                 Exports ajudam em JSONL/CSV, auditoria e pipelines externos.
               </p>
@@ -456,12 +456,12 @@ export default async function ExportsPage({ params, searchParams }: Props) {
         </section>
 
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          <section id="create-export" className="evo-card">
-            <div className="evo-card__header">
-              <h3 className="evo-card__title">Criar export</h3>
-              <span className="evo-faint" style={{ fontSize: 11 }}>acao real</span>
+          <section id="create-export" className="card">
+            <div className="card__header">
+              <h3 className="card__title">Criar export</h3>
+              <span className="t__faint" style={{ fontSize: 11 }}>acao real</span>
             </div>
-            <div className="evo-card__body">
+            <div className="card__body">
               <form action={createExportAction} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                 <input type="hidden" name="org" value={org} />
                 <input type="hidden" name="project" value={project} />
@@ -493,7 +493,7 @@ export default async function ExportsPage({ params, searchParams }: Props) {
                   <input name="name_contains" placeholder="checkout" style={INPUT_STYLE} />
                 </label>
 
-                <button type="submit" className="evo-btn evo-btn--primary" style={{ alignSelf: "flex-start" }}>
+                <button type="submit" className="btn btn--primary" style={{ alignSelf: "flex-start" }}>
                   <Plus size={13} />
                   Gerar export
                 </button>
@@ -501,11 +501,11 @@ export default async function ExportsPage({ params, searchParams }: Props) {
             </div>
           </section>
 
-          <section className="evo-card">
-            <div className="evo-card__header">
-              <h3 className="evo-card__title">Plano e uso</h3>
+          <section className="card">
+            <div className="card__header">
+              <h3 className="card__title">Plano e uso</h3>
             </div>
-            <div className="evo-card__body" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            <div className="card__body" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
               {subResult.subscription ? (
                 <>
                   <div>
@@ -518,7 +518,7 @@ export default async function ExportsPage({ params, searchParams }: Props) {
                   </div>
                   {usageResult.usage ? (
                     <>
-                      <div className="evo-mono" style={{ color: "var(--text)", fontSize: 18 }}>
+                      <div className="mono" style={{ color: "var(--text)", fontSize: 18 }}>
                         {formatCost(usageResult.usage.cost_usd)}
                       </div>
                       <div style={{ color: "var(--text-faint)", fontSize: 12 }}>
@@ -559,7 +559,7 @@ export default async function ExportsPage({ params, searchParams }: Props) {
                         }}
                       >
                         <span style={{ color: "var(--text-muted)", fontSize: 12 }}>Budget mensal de judge</span>
-                        <span className="evo-mono" style={{ color: "var(--text)", fontSize: 13 }}>
+                        <span className="mono" style={{ color: "var(--text)", fontSize: 13 }}>
                           {formatCost(subResult.subscription.plan.monthly_judge_budget_usd)}
                         </span>
                       </div>
@@ -578,11 +578,11 @@ export default async function ExportsPage({ params, searchParams }: Props) {
             </div>
           </section>
 
-          <section className="evo-card">
-            <div className="evo-card__header">
-              <h3 className="evo-card__title">Contrato atual</h3>
+          <section className="card">
+            <div className="card__header">
+              <h3 className="card__title">Contrato atual</h3>
             </div>
-            <div className="evo-card__body" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <div className="card__body" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               <p style={{ margin: 0, color: "var(--text-faint)", fontSize: 12 }}>
                 O backend atual nao expoe endpoint para listar historico global nem cancelar jobs.
               </p>
@@ -594,35 +594,35 @@ export default async function ExportsPage({ params, searchParams }: Props) {
         </div>
       </div>
 
-      <section className="evo-card" style={{ marginTop: 12 }}>
-        <div className="evo-card__header">
+      <section className="card" style={{ marginTop: 12 }}>
+        <div className="card__header">
           <div>
-            <h3 className="evo-card__title">Endpoints ativos</h3>
-            <div className="evo-card__subtitle">Rotas reais do backend que servem este módulo.</div>
+            <h3 className="card__title">Endpoints ativos</h3>
+            <div className="card__subtitle">Rotas reais do backend que servem este módulo.</div>
           </div>
         </div>
-        <div className="evo-card__body">
-          <div className="evo-endpoint-list" aria-label="Endpoints do módulo Exports">
-            <div className="evo-endpoint-row">
-              <span className="evo-endpoint-row__method evo-endpoint-row__method--post">POST</span>
-              <span className="evo-endpoint-row__path" title="/v1/exports">
+        <div className="card__body">
+          <div className="endpoint-list" aria-label="Endpoints do módulo Exports">
+            <div className="endpoint-row">
+              <span className="endpoint-snippet__method method-POST">POST</span>
+              <span className="endpoint-row__path" title="/v1/exports">
                 /exports
               </span>
-              <span className="evo-endpoint-row__note">ativo · cria job</span>
+              <span className="endpoint-row__note">ativo · cria job</span>
             </div>
-            <div className="evo-endpoint-row">
-              <span className="evo-endpoint-row__method evo-endpoint-row__method--get">GET</span>
-              <span className="evo-endpoint-row__path" title="/v1/exports/{export_id}">
+            <div className="endpoint-row">
+              <span className="endpoint-snippet__method method-GET">GET</span>
+              <span className="endpoint-row__path" title="/v1/exports/{export_id}">
                 /exports/{"{export_id}"}
               </span>
-              <span className="evo-endpoint-row__note">ativo · status do job</span>
+              <span className="endpoint-row__note">ativo · status do job</span>
             </div>
-            <div className="evo-endpoint-row">
-              <span className="evo-endpoint-row__method evo-endpoint-row__method--get">GET</span>
-              <span className="evo-endpoint-row__path" title="/api/exports/{export_id}/download (Next proxy autenticado)">
+            <div className="endpoint-row">
+              <span className="endpoint-snippet__method method-GET">GET</span>
+              <span className="endpoint-row__path" title="/api/exports/{export_id}/download (Next proxy autenticado)">
                 /api/exports/{"{export_id}"}/download
               </span>
-              <span className="evo-endpoint-row__note">ativo · proxy autenticado</span>
+              <span className="endpoint-row__note">ativo · proxy autenticado</span>
             </div>
           </div>
         </div>

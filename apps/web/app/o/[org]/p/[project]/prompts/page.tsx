@@ -3,7 +3,7 @@ import { GitBranch, Plus } from "lucide-react";
 
 import { AuthRequiredPanel } from "@/components/AuthRequiredPanel";
 import { createPromptAction, createPromptVersionAction } from "@/lib/actions";
-import { getPromptVersions, getPrompts, hasAuthToken, resolveProject } from "@/lib/api";
+import { getPromptUsage, getPromptVersions, getPrompts, hasAuthToken, resolveProject } from "@/lib/api";
 import type { PromptVersion } from "@/lib/types";
 
 type Props = {
@@ -148,6 +148,18 @@ export default async function PromptsPage({ params, searchParams }: Props) {
       prompts.map(async (p) => [p.id, (await getPromptVersions(p.id)).data] as const),
     ),
   );
+  const usageByPrompt = new Map<string, number>(
+    await Promise.all(
+      prompts.map(async (p) => {
+        try {
+          const usage = await getPromptUsage(p.id, 1);
+          return [p.id, usage.usage_count] as const;
+        } catch {
+          return [p.id, 0] as const;
+        }
+      }),
+    ),
+  );
 
   const selectedId = qp.prompt ?? prompts[0]?.id;
   const selected = prompts.find((p) => p.id === selectedId) ?? prompts[0];
@@ -179,28 +191,18 @@ export default async function PromptsPage({ params, searchParams }: Props) {
   })();
 
   return (
-    <div className="evo-page">
+    <div className="page">
       {/* Header */}
-      <div className="evo-page-header">
+      <div className="page-header">
         <div>
-          <p className="evo-page-header__eyebrow">Operação · Prompts</p>
-          <h1 className="evo-page-header__title">Prompts</h1>
-          <p className="evo-page-header__subtitle">
+          <p className="page-header__eyebrow">Operação · Prompts</p>
+          <h1 className="page-header__title">Prompts</h1>
+          <p className="page-header__subtitle">
             Templates versionados. Cada versão é referenciada por traces e experimentos.
           </p>
         </div>
-        <div className="evo-row">
-          <button
-            type="button"
-            className="evo-btn evo-btn--sm"
-            disabled
-            data-status="planned"
-            title="Importar prompts — em breve"
-            style={{ opacity: 0.5, cursor: "not-allowed" }}
-          >
-            Importar
-          </button>
-          <Link href="#prompt-create" className="evo-btn evo-btn--sm evo-btn--primary">
+        <div className="row">
+          <Link href="#prompt-create" className="btn btn--sm btn--primary">
             <Plus size={13} /> Novo prompt
           </Link>
         </div>
@@ -219,30 +221,30 @@ export default async function PromptsPage({ params, searchParams }: Props) {
       )}
 
       {/* Summary row — só dados reais do payload */}
-      <section className="evo-summary-row" aria-label="Resumo de prompts">
-        <div className="evo-summary-card">
-          <p className="evo-summary-card__label">Prompts</p>
-          <div className="evo-summary-card__value">{totalPrompts.toLocaleString("pt-BR")}</div>
-          <div className="evo-summary-card__hint">slugs versionados ativos</div>
+      <section className="module-summary" aria-label="Resumo de prompts">
+        <div className="summary-card">
+          <p className="summary-card__label">Prompts</p>
+          <div className="summary-card__value">{totalPrompts.toLocaleString("pt-BR")}</div>
+          <div className="summary-card__hint">slugs versionados ativos</div>
         </div>
-        <div className="evo-summary-card">
-          <p className="evo-summary-card__label">Versões</p>
-          <div className="evo-summary-card__value">{totalVersions.toLocaleString("pt-BR")}</div>
-          <div className="evo-summary-card__hint">total publicado</div>
+        <div className="summary-card">
+          <p className="summary-card__label">Versões</p>
+          <div className="summary-card__value">{totalVersions.toLocaleString("pt-BR")}</div>
+          <div className="summary-card__hint">total publicado</div>
         </div>
-        <div className="evo-summary-card">
-          <p className="evo-summary-card__label">Última atividade</p>
-          <div className="evo-summary-card__value">
+        <div className="summary-card">
+          <p className="summary-card__label">Última atividade</p>
+          <div className="summary-card__value">
             {latestActivity ? relTime(latestActivity) : "—"}
           </div>
-          <div className="evo-summary-card__hint">prompt ou versão</div>
+          <div className="summary-card__hint">prompt ou versão</div>
         </div>
       </section>
 
       {prompts.length === 0 ? (
         /* ── Empty state + create form ── */
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-          <div className="evo-card" style={{ padding: "40px 24px", textAlign: "center" }}>
+          <div className="card" style={{ padding: "40px 24px", textAlign: "center" }}>
             <p style={{ color: "var(--text-muted)", fontWeight: 600, marginBottom: 6 }}>Nenhum prompt ainda</p>
             <p style={{ color: "var(--text-faint)", fontSize: 13, maxWidth: 320, margin: "0 auto 16px" }}>
               Crie um prompt versionado antes de rodar experimentos controlados.
@@ -254,11 +256,11 @@ export default async function PromptsPage({ params, searchParams }: Props) {
             </ol>
           </div>
 
-          <div className="evo-card">
-            <div className="evo-card__header">
-              <h3 className="evo-card__title">Criar prompt</h3>
+          <div className="card">
+            <div className="card__header">
+              <h3 className="card__title">Criar prompt</h3>
             </div>
-            <div className="evo-card__body">
+            <div className="card__body">
               <form action={createPromptAction} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                 <input type="hidden" name="org" value={org} />
                 <input type="hidden" name="project" value={project} />
@@ -283,7 +285,7 @@ export default async function PromptsPage({ params, searchParams }: Props) {
                   <span style={{ color: "var(--text-muted)" }}>Metadata JSON</span>
                   <textarea name="metadata_json" rows={2} defaultValue={'{"model_default":"openai/gpt-4o-mini","temperature_default":0.2}'} style={TEXTAREA_STYLE} />
                 </label>
-                <button type="submit" className="evo-btn evo-btn--primary" style={{ alignSelf: "flex-start" }}>
+                <button type="submit" className="btn btn--primary" style={{ alignSelf: "flex-start" }}>
                   Criar prompt
                 </button>
               </form>
@@ -294,20 +296,20 @@ export default async function PromptsPage({ params, searchParams }: Props) {
         /* ── Main layout: table + detail panel ── */
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
           {/* Left: prompts table */}
-          <div className="evo-card">
-            <div className="evo-card__header">
-              <h3 className="evo-card__title">Prompts</h3>
-              <span className="evo-faint" style={{ fontSize: 11 }}>
+          <div className="card">
+            <div className="card__header">
+              <h3 className="card__title">Prompts</h3>
+              <span className="t__faint" style={{ fontSize: 11 }}>
                 {prompts.length} prompt{prompts.length !== 1 ? "s" : ""}
               </span>
             </div>
-            <div className="evo-card__body" style={{ padding: 0 }}>
-              <table className="evo-table">
+            <div className="card__body" style={{ padding: 0 }}>
+              <table className="t">
                 <thead>
                   <tr>
                     <th>Nome</th>
                     <th>Versões</th>
-                    <th>Score</th>
+                    <th>Usado por</th>
                     <th>Atualizado</th>
                   </tr>
                 </thead>
@@ -324,7 +326,7 @@ export default async function PromptsPage({ params, searchParams }: Props) {
                             href={`${base}?prompt=${p.id}`}
                             style={{ textDecoration: "none", display: "flex", flexDirection: "column", gap: 2 }}
                           >
-                            <span className="evo-table__name">{p.slug}</span>
+                            <span className="t__name">{p.slug}</span>
                             {p.description && (
                               <span style={{ fontSize: 11, color: "var(--text-faint)" }}>
                                 {p.description}
@@ -334,7 +336,7 @@ export default async function PromptsPage({ params, searchParams }: Props) {
                         </td>
                         <td>
                           <span
-                            className="evo-mono"
+                            className="mono"
                             style={{
                               fontSize: 12,
                               color: isActive ? "var(--accent)" : "var(--text-dim)",
@@ -345,9 +347,11 @@ export default async function PromptsPage({ params, searchParams }: Props) {
                           </span>
                         </td>
                         <td>
-                          <span className="evo-faint" style={{ fontSize: 12 }}>—</span>
+                          <span className="mono t__muted" style={{ fontSize: 12 }}>
+                            {(usageByPrompt.get(p.id) ?? 0).toLocaleString("pt-BR")} traces
+                          </span>
                         </td>
-                        <td className="evo-muted" style={{ fontSize: 12 }}>
+                        <td className="t__muted" style={{ fontSize: 12 }}>
                           {relTime(p.created_at)}
                         </td>
                       </tr>
@@ -360,28 +364,28 @@ export default async function PromptsPage({ params, searchParams }: Props) {
 
           {/* Right: diff / version detail */}
           {selected && (
-            <div className="evo-card">
-              <div className="evo-card__header">
+            <div className="card">
+              <div className="card__header">
                 <div>
-                  <h3 className="evo-card__title">{selected.slug}</h3>
-                  <div className="evo-card__subtitle">
+                  <h3 className="card__title">{selected.slug}</h3>
+                  <div className="card__subtitle">
                     v{selected.current_version}
                     {previous ? ` vs v${previous.version}` : " · versão inicial"}
                   </div>
                 </div>
-                <div className="evo-row" style={{ gap: 6 }}>
+                <div className="row" style={{ gap: 6 }}>
                   {previous && (
-                    <span className="evo-badge evo-badge--ok">
-                      <span className="evo-badge__dot" />
+                    <span className="badge badge--ok">
+                      <span className="badge__dot" />
                       atual
                     </span>
                   )}
-                  <Link href="#prompt-version" className="evo-btn evo-btn--sm">
+                  <Link href="#prompt-version" className="btn btn--sm">
                     <GitBranch size={13} /> Nova versão
                   </Link>
                 </div>
               </div>
-              <div className="evo-card__body" style={{ padding: 0, maxHeight: 400, overflow: "auto" }}>
+              <div className="card__body" style={{ padding: 0, maxHeight: 400, overflow: "auto" }}>
                 {latest ? (
                   <DiffView current={latest} previous={previous} />
                 ) : (
@@ -408,7 +412,7 @@ export default async function PromptsPage({ params, searchParams }: Props) {
                     }}
                   >
                     <span
-                      className="evo-mono"
+                      className="mono"
                       style={{
                         fontSize: 12,
                         color: v.version === selected.current_version ? "var(--accent)" : "var(--text-dim)",
@@ -427,8 +431,8 @@ export default async function PromptsPage({ params, searchParams }: Props) {
                       </div>
                     </div>
                     {v.version === selected.current_version && (
-                      <span className="evo-badge evo-badge--ok">
-                        <span className="evo-badge__dot" /> ativa
+                      <span className="badge badge--ok">
+                        <span className="badge__dot" /> ativa
                       </span>
                     )}
                   </div>
@@ -440,42 +444,42 @@ export default async function PromptsPage({ params, searchParams }: Props) {
       )}
 
       {/* Endpoints reais — referência somente leitura */}
-      <section className="evo-card" style={{ marginTop: 12 }}>
-        <div className="evo-card__header">
+      <section className="card" style={{ marginTop: 12 }}>
+        <div className="card__header">
           <div>
-            <h3 className="evo-card__title">Endpoints ativos</h3>
-            <div className="evo-card__subtitle">Rotas reais do backend que servem este módulo.</div>
+            <h3 className="card__title">Endpoints ativos</h3>
+            <div className="card__subtitle">Rotas reais do backend que servem este módulo.</div>
           </div>
         </div>
-        <div className="evo-card__body">
-          <div className="evo-endpoint-list" aria-label="Endpoints do módulo Prompts">
-            <div className="evo-endpoint-row">
-              <span className="evo-endpoint-row__method evo-endpoint-row__method--get">GET</span>
-              <span className="evo-endpoint-row__path" title="/v1/projects/{project_id}/prompts">
+        <div className="card__body">
+          <div className="endpoint-list" aria-label="Endpoints do módulo Prompts">
+            <div className="endpoint-row">
+              <span className="endpoint-snippet__method method-GET">GET</span>
+              <span className="endpoint-row__path" title="/v1/projects/{project_id}/prompts">
                 /projects/{"{project_id}"}/prompts
               </span>
-              <span className="evo-endpoint-row__note">ativo</span>
+              <span className="endpoint-row__note">ativo</span>
             </div>
-            <div className="evo-endpoint-row">
-              <span className="evo-endpoint-row__method evo-endpoint-row__method--post">POST</span>
-              <span className="evo-endpoint-row__path" title="/v1/projects/{project_id}/prompts">
+            <div className="endpoint-row">
+              <span className="endpoint-snippet__method method-POST">POST</span>
+              <span className="endpoint-row__path" title="/v1/projects/{project_id}/prompts">
                 /projects/{"{project_id}"}/prompts
               </span>
-              <span className="evo-endpoint-row__note">ativo · cria prompt</span>
+              <span className="endpoint-row__note">ativo · cria prompt</span>
             </div>
-            <div className="evo-endpoint-row">
-              <span className="evo-endpoint-row__method evo-endpoint-row__method--get">GET</span>
-              <span className="evo-endpoint-row__path" title="/v1/prompts/{prompt_id}/versions">
+            <div className="endpoint-row">
+              <span className="endpoint-snippet__method method-GET">GET</span>
+              <span className="endpoint-row__path" title="/v1/prompts/{prompt_id}/versions">
                 /prompts/{"{prompt_id}"}/versions
               </span>
-              <span className="evo-endpoint-row__note">ativo</span>
+              <span className="endpoint-row__note">ativo</span>
             </div>
-            <div className="evo-endpoint-row">
-              <span className="evo-endpoint-row__method evo-endpoint-row__method--post">POST</span>
-              <span className="evo-endpoint-row__path" title="/v1/prompts/{prompt_id}/versions">
+            <div className="endpoint-row">
+              <span className="endpoint-snippet__method method-POST">POST</span>
+              <span className="endpoint-row__path" title="/v1/prompts/{prompt_id}/versions">
                 /prompts/{"{prompt_id}"}/versions
               </span>
-              <span className="evo-endpoint-row__note">ativo · nova versão</span>
+              <span className="endpoint-row__note">ativo · nova versão</span>
             </div>
           </div>
         </div>
@@ -523,7 +527,7 @@ export default async function PromptsPage({ params, searchParams }: Props) {
                 <span style={{ color: "var(--text-muted)" }}>Metadata JSON</span>
                 <textarea name="metadata_json" rows={2} defaultValue={'{"model_default":"openai/gpt-4o-mini","temperature_default":0.2}'} style={TEXTAREA_STYLE} />
               </label>
-              <button type="submit" className="evo-btn evo-btn--primary" style={{ alignSelf: "flex-start" }}>
+              <button type="submit" className="btn btn--primary" style={{ alignSelf: "flex-start" }}>
                 Criar prompt
               </button>
             </form>
@@ -563,7 +567,7 @@ export default async function PromptsPage({ params, searchParams }: Props) {
                 <span style={{ color: "var(--text-muted)" }}>Metadata JSON</span>
                 <textarea name="metadata_json" rows={3} defaultValue={JSON.stringify(latest?.metadata ?? {}, null, 2)} style={TEXTAREA_STYLE} />
               </label>
-              <button type="submit" className="evo-btn evo-btn--primary" style={{ alignSelf: "flex-start" }}>
+              <button type="submit" className="btn btn--primary" style={{ alignSelf: "flex-start" }}>
                 Publicar versão
               </button>
             </form>

@@ -14,9 +14,9 @@ from app.domain.services.usage_service import (
     ensure_subscription,
     get_or_create_counter,
 )
-from app.models import AuditLog, HumanFeedback, Plan, Trace, User, utcnow
+from app.models import AuditLog, ExportJob, HumanFeedback, Plan, Trace, User, utcnow
 from app.ownership import get_owned_trace, load_export, load_project
-from app.schemas import ExportJobCreate, ExportJobOut, HumanFeedbackCreate, HumanFeedbackOut
+from app.schemas import ExportJobCreate, ExportJobOut, ExportListResponse, HumanFeedbackCreate, HumanFeedbackOut
 from app.security import new_id
 
 router = APIRouter(prefix="/v1")
@@ -82,6 +82,29 @@ def create_export(
     project = load_project(db, user.id, payload.project_id)
     job = create_jsonl_export(db, project, user.id, payload)
     return {"export_id": job.id, "status": job.status}
+
+
+@router.get("/projects/{project_id}/exports", response_model=ExportListResponse)
+def list_project_exports(
+    project_id: str,
+    limit: int = Query(default=50, ge=1, le=200),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    project = load_project(db, user.id, project_id)
+    rows = (
+        db.query(ExportJob)
+        .filter(ExportJob.project_id == project.id)
+        .order_by(ExportJob.created_at.desc(), ExportJob.id.desc())
+        .limit(limit + 1)
+        .all()
+    )
+    has_more = len(rows) > limit
+    rows = rows[:limit]
+    return {
+        "data": [ExportJobOut.model_validate(row).model_dump() for row in rows],
+        "next_cursor": rows[-1].id if has_more and rows else None,
+    }
 
 
 @router.get("/exports/{export_id}")

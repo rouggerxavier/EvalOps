@@ -1,4 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from datetime import datetime, timedelta, timezone
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -14,7 +17,7 @@ from app.domain.services.usage_service import apply_usage_with_quota, increment_
 from app.models import EvaluationRun, EvaluationScore, Rubric, RubricVersion, Trace, User
 from app.ownership import load_project, load_trace
 from app.safe_errors import safe_message
-from app.schemas import EvaluationRunOut, EvaluationRunRequest, EvaluationScoreOut
+from app.schemas import CoverageResponse, EvaluationRunOut, EvaluationRunRequest, EvaluationScoreOut, EvaluationSummaryOut
 
 router = APIRouter(prefix="/v1")
 
@@ -187,6 +190,94 @@ def list_project_evaluations(
         .all()
     )
     return {"data": [_run_detail(run, db) for run in runs]}
+
+
+def _window_days(window: str) -> int:
+    if window == "24h":
+        return 1
+    if window == "30d":
+        return 30
+    return 7
+
+
+@router.get("/projects/{project_id}/coverage", response_model=CoverageResponse)
+def get_project_coverage(
+    project_id: str,
+    window: str = Query("7d", pattern=r"^(24h|7d|30d)$"),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    project = load_project(db, user.id, project_id)
+    cutoff = datetime.now(timezone.utc) - timedelta(days=_window_days(window))
+    seven_days_ago = datetime.now(timezone.utc) - timedelta(days=7)
+    total_traces = (
+        db.query(func.count(Trace.id))
+        .filter(Trace.project_id == project.id, Trace.deleted_at.is_(None), Trace.created_at >= cutoff)
+        .scalar()
+        or 0
+    )
+    rubrics = db.query(Rubric).filter(Rubric.project_id == project.id).order_by(Rubric.created_at.desc()).all()
+    data = []
+    for rubric in rubrics:
+        covered = (
+            db.query(func.count(func.distinct(EvaluationRun.trace_id)))
+            .join(Trace, EvaluationRun.trace_id == Trace.id)
+            .filter(
+                Trace.project_id == project.id,
+                Trace.deleted_at.is_(None),
+                Trace.created_at >= cutoff,
+                EvaluationRun.rubric_id == rubric.id,
+                EvaluationRun.status == "completed",
+            )
+            .scalar()
+            or 0
+        )
+        runs_7d = (
+            db.query(func.count(EvaluationRun.id))
+            .filter(
+                EvaluationRun.project_id == project.id,
+                EvaluationRun.rubric_id == rubric.id,
+                EvaluationRun.created_at >= seven_days_ago,
+            )
+            .scalar()
+            or 0
+        )
+        data.append(
+            {
+                "rubric_id": rubric.id,
+                "rubric_slug": rubric.slug,
+                "coverage": round(float(covered) / max(1, int(total_traces)), 4),
+                "runs_7d": int(runs_7d),
+            }
+        )
+    return {"data": data}
+
+
+@router.get("/projects/{project_id}/evaluations/summary", response_model=EvaluationSummaryOut)
+def get_project_evaluation_summary(
+    project_id: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    project = load_project(db, user.id, project_id)
+    seven_days_ago = datetime.now(timezone.utc) - timedelta(days=7)
+    active_rubrics = db.query(func.count(Rubric.id)).filter(Rubric.project_id == project.id).scalar() or 0
+    runs = (
+        db.query(EvaluationRun)
+        .filter(EvaluationRun.project_id == project.id, EvaluationRun.created_at >= seven_days_ago)
+        .all()
+    )
+    completed = [run for run in runs if run.status == "completed" and run.passed is not None]
+    pass_rate = None
+    if completed:
+        pass_rate = round(sum(1 for run in completed if run.passed) / len(completed), 4)
+    cost_usd = sum(float(run.cost_usd or 0) for run in runs)
+    return {
+        "active_rubrics": int(active_rubrics),
+        "runs_7d": len(runs),
+        "pass_rate": pass_rate,
+        "cost_usd": round(cost_usd, 6),
+    }
 
 
 @router.get("/traces/{trace_id}/evaluations")

@@ -1,31 +1,58 @@
 import Link from "next/link";
-import type { ReactNode } from "react";
-import { CheckCircle2, Coins, FileCode2, History, List, MoreHorizontal, Play, Plus, Target } from "lucide-react";
+import { CheckCircle2, Coins, History, List, Play, Plus, Target } from "lucide-react";
 
 import { AuthRequiredPanel } from "@/components/AuthRequiredPanel";
-import { DistBars } from "@/components/DistBars";
-import { RubricDrawer } from "@/components/RubricDrawer";
-import { triggerEvaluationAction } from "@/lib/actions";
-import { getProjectEvaluations, getRubricVersions, getRubrics, getTraces, hasAuthToken, resolveProject } from "@/lib/api";
+import { Badge } from "@/components/ui/Badge";
+import { Copyable } from "@/components/ui/Copyable";
+import { DistBars } from "@/components/ui/DistBars";
+import { Metric } from "@/components/ui/Metric";
+import { PageHeader } from "@/components/ui/PageHeader";
+import { ScoreCell } from "@/components/ui/ScoreCell";
+import {
+  getEvaluationSummary,
+  getProjectEvaluations,
+  getRubricVersions,
+  getRubrics,
+  getTraces,
+  hasAuthToken,
+  resolveProject,
+} from "@/lib/api";
 import { safeErrorMessage } from "@/lib/safe-error";
 import type { EvaluationRun, Rubric, RubricVersion } from "@/lib/types";
 
+import { EvaluationsModals, type EvaluationRowSummary } from "./evaluations-modals";
+
 type Props = {
   params: Promise<{ org: string; project: string }>;
-  searchParams: Promise<{ tab?: string; rubric?: string; created?: string; error?: string }>;
+  searchParams: Promise<{
+    tab?: string;
+    modal?: string;
+    rubric?: string;
+    created?: string;
+    versioned?: string;
+    published?: string;
+    error?: string;
+  }>;
 };
+
+type Tab = "active" | "runs" | "paused";
+const TABS: Tab[] = ["active", "runs", "paused"];
+
+const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+const EVALUATION_RUNS_LIMIT = 100;
+
+function parseTab(value: string | undefined): Tab {
+  return TABS.includes(value as Tab) ? (value as Tab) : "active";
+}
 
 function buildDistribution(scores: number[], buckets = 6): number[] {
   const dist = Array<number>(buckets).fill(0);
   for (const s of scores) {
-    const idx = Math.min(buckets - 1, Math.floor(s * buckets));
+    const idx = Math.min(buckets - 1, Math.max(0, Math.floor(s * buckets)));
     dist[idx]++;
   }
   return dist;
 }
-
-const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
-const EVALUATION_RUNS_LIMIT = 100;
 
 function relTime(iso: string): string {
   const diff = Date.now() - Date.parse(iso);
@@ -38,91 +65,94 @@ function relTime(iso: string): string {
 }
 
 function scoreColor(v: number | null): string {
-  if (v === null) return "var(--text-faint)";
-  if (v >= 0.85) return "var(--ok)";
-  if (v >= 0.7) return "var(--warn)";
-  return "var(--err)";
+  if (v === null) return "var(--fg-4)";
+  if (v >= 0.85) return "var(--success)";
+  if (v >= 0.7) return "var(--warning)";
+  return "var(--danger)";
 }
 
-function isWithinLast7d(run: EvaluationRun): boolean {
-  const timestamp = Date.parse(run.created_at);
-  return Number.isFinite(timestamp) && Date.now() - timestamp <= SEVEN_DAYS_MS;
+function withinLast7d(run: EvaluationRun): boolean {
+  const t = Date.parse(run.created_at);
+  return Number.isFinite(t) && Date.now() - t <= SEVEN_DAYS_MS;
 }
 
 function passRate(runs: EvaluationRun[]): number | null {
-  const resolved = runs.filter((run) => run.passed !== null);
+  const resolved = runs.filter((r) => r.passed !== null);
   if (resolved.length === 0) return null;
-  return resolved.filter((run) => run.passed === true).length / resolved.length;
+  return resolved.filter((r) => r.passed === true).length / resolved.length;
 }
 
-function formatPassRate(value: number | null): string {
-  if (value === null) return "—";
-  return `${Math.round(value * 100)}%`;
+function fmtPct(v: number | null): string {
+  if (v === null) return "—";
+  return `${Math.round(v * 100)}%`;
 }
 
-function formatCost(value: number): string {
+function fmtCost(v: number): string {
   return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: "USD",
-    minimumFractionDigits: value > 0 && value < 0.01 ? 4 : 2,
-    maximumFractionDigits: value > 0 && value < 0.01 ? 4 : 2,
-  }).format(value);
+    minimumFractionDigits: v > 0 && v < 0.01 ? 4 : 3,
+    maximumFractionDigits: v > 0 && v < 0.01 ? 4 : 3,
+  }).format(v);
 }
 
-function isHeuristic(rubric: Rubric): boolean {
-  return rubric.slug.includes("heuristic") || (rubric.description ?? "").toLowerCase().includes("heurística");
-}
+type RubricFlavor = { type_label: "LLM-judge" | "Heurística"; judge_model: string | null };
 
-function EvaluationSummaryCard({
-  hint,
-  icon,
-  label,
-  value,
-}: {
-  hint: string;
-  icon: ReactNode;
-  label: string;
-  value: string;
-}) {
-  return (
-    <div className="evo-metric evo-evaluation-metric">
-      <span className="evo-metric__label">
-        {icon}
-        {label}
-      </span>
-      <strong className="evo-metric__value">{value}</strong>
-      <span className="evo-metric__delta evo-metric__delta--neutral">{hint}</span>
-    </div>
-  );
+function inferRubricFlavor(rubric: Rubric, latest: RubricVersion | null): RubricFlavor {
+  const evaluators = latest?.parsed_spec?.evaluators ?? [];
+  let judgeModel: string | null = null;
+  let isLlm = false;
+  for (const ev of evaluators) {
+    const t = (ev.type ?? "").toLowerCase();
+    if (t.includes("llm")) {
+      isLlm = true;
+      const cfg = ev.config ?? {};
+      const m = (cfg as Record<string, unknown>)["model"];
+      if (typeof m === "string" && !judgeModel) judgeModel = m;
+    }
+  }
+  if (!isLlm) {
+    const hint = `${rubric.slug} ${rubric.description ?? ""}`.toLowerCase();
+    if (hint.includes("llm") || hint.includes("judge")) isLlm = true;
+  }
+  return { type_label: isLlm ? "LLM-judge" : "Heurística", judge_model: judgeModel };
 }
 
 export default async function EvaluationsPage({ params, searchParams }: Props) {
   const { org, project } = await params;
   const qp = await searchParams;
-  const tab = qp.tab ?? "active";
+  const tab = parseTab(qp.tab);
 
-  if (!(await hasAuthToken())) {
-    return <AuthRequiredPanel layout="main" />;
-  }
+  if (!(await hasAuthToken())) return <AuthRequiredPanel layout="main" />;
 
   const resolved = await resolveProject(org, project);
-  const [evalsRes, rubricsRes, tracesRes] = await Promise.all([
+
+  const [summary, evalsRes, rubricsRes, tracesRes] = await Promise.all([
+    getEvaluationSummary(resolved.project_id).catch(() => null),
     getProjectEvaluations(resolved.project_id, EVALUATION_RUNS_LIMIT),
     getRubrics(resolved.project_id),
     getTraces({ projectId: resolved.project_id, limit: 20 }),
   ]);
 
-  const runs = [...evalsRes.data].sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
+  const runs = [...evalsRes.data].sort(
+    (a, b) => Date.parse(b.created_at) - Date.parse(a.created_at),
+  );
   const rubrics = rubricsRes.data;
   const traces = tracesRes.data;
-  const safeQueryError = qp.error ? safeErrorMessage(qp.error, "Falha ao criar avaliação.") : null;
 
   const rubricMap = new Map<string, Rubric>(rubrics.map((r) => [r.id, r]));
-  const selectedRubric = qp.rubric ? (rubricMap.get(qp.rubric) ?? null) : null;
-  let selectedRubricVersions: RubricVersion[] = [];
-  if (selectedRubric) {
-    selectedRubricVersions = (await getRubricVersions(selectedRubric.id)).data;
-  }
+
+  const versionsByRubric = new Map<string, RubricVersion[]>();
+  await Promise.all(
+    rubrics.map(async (r) => {
+      try {
+        const res = await getRubricVersions(r.id);
+        versionsByRubric.set(r.id, res.data);
+      } catch {
+        versionsByRubric.set(r.id, []);
+      }
+    }),
+  );
 
   const byRubric = new Map<string, { rubric: Rubric; runs: EvaluationRun[] }>();
   for (const run of runs) {
@@ -133,201 +163,231 @@ export default async function EvaluationsPage({ params, searchParams }: Props) {
   }
   const evalRows = rubrics.map((rubric) => byRubric.get(rubric.id) ?? { rubric, runs: [] });
 
-  const runs7d = runs.filter(isWithinLast7d).length;
-  const overallPassRate = passRate(runs);
-  const costUsd = runs.reduce((sum, run) => sum + run.cost_usd, 0);
-  const loadedRunsHint =
-    runs.length >= EVALUATION_RUNS_LIMIT
-      ? `Fonte: ultimas ${EVALUATION_RUNS_LIMIT} runs carregadas`
-      : "Fonte: runs carregadas";
+  const totalRuns7d = summary?.runs_7d ?? runs.filter(withinLast7d).length;
+  const activeRubrics = summary?.active_rubrics ?? rubrics.length;
+  const overallPassRate = summary?.pass_rate ?? passRate(runs);
+  const costUsd = summary?.cost_usd ?? runs.reduce((s, r) => s + r.cost_usd, 0);
+
   const baseUrl = `/o/${org}/p/${project}/evaluations`;
   const tabHref = (t: string) => `${baseUrl}?tab=${t}`;
-  const rubricDrawerHref = (rubricId: string) => `${baseUrl}?tab=active&rubric=${rubricId}`;
+  const modalHref = (modal: string, extra: Record<string, string> = {}) => {
+    const s = new URLSearchParams({ tab, modal, ...extra });
+    return `${baseUrl}?${s.toString()}`;
+  };
+
+  const queryError = qp.error ? safeErrorMessage(qp.error, "Falha ao executar ação.") : null;
+  const successMessage = qp.created
+    ? "Run de avaliação criada com sucesso."
+    : qp.versioned || qp.published
+      ? "Rubric publicada."
+      : null;
+
+  const drawerRubricId = qp.modal === "drawer" || qp.modal === "publish" ? qp.rubric ?? null : null;
+  let drawerRow: EvaluationRowSummary | null = null;
+  if (drawerRubricId) {
+    const row = evalRows.find((r) => r.rubric.id === drawerRubricId);
+    if (row) {
+      const scores = row.runs.map((r) => r.aggregate_score).filter((s): s is number => s !== null);
+      const avg = scores.length ? scores.reduce((a, b) => a + b, 0) / scores.length : null;
+      const versions = versionsByRubric.get(row.rubric.id) ?? [];
+      const latest = versions.find((v) => v.version === row.rubric.current_version) ?? versions[0] ?? null;
+      const flavor = inferRubricFlavor(row.rubric, latest);
+      drawerRow = {
+        rubric_id: row.rubric.id,
+        slug: row.rubric.slug,
+        description: row.rubric.description,
+        current_version: row.rubric.current_version,
+        threshold: row.rubric.threshold,
+        type_label: flavor.type_label,
+        judge_model: flavor.judge_model,
+        avg_score: avg,
+        runs_7d: row.runs.filter(withinLast7d).length,
+        pass_rate: passRate(row.runs),
+        yaml_source: latest?.yaml_source ?? null,
+      };
+    }
+  }
 
   return (
-    <div className="evo-page">
-      {/* Header */}
-      <div className="evo-page-header">
-        <div>
-          <p className="evo-page-header__eyebrow">Qualidade · Avaliações</p>
-          <h1 className="evo-page-header__title">Avaliações</h1>
-          <p className="evo-page-header__subtitle">
-            LLM-as-judge e heurísticas executadas sobre traces de produção · {rubrics.length.toLocaleString("pt-BR")} rubrica(s) / {runs.length.toLocaleString("pt-BR")} run(s) carregadas.
-          </p>
-        </div>
-        <div className="evo-page-header__actions">
-          {traces.length > 0 && rubrics.length > 0 && (
-            <Link href="#run-evaluation" className="evo-btn evo-btn--sm">
-              <Play size={13} /> Rodar agora
+    <div className="page">
+      <PageHeader
+        eyebrow="Qualidade"
+        title="Avaliações"
+        subtitle="LLM-as-judge e heurísticas executadas sobre traces de produção."
+        actions={
+          <>
+            <Link href={modalHref("run")} className="btn btn--sm">
+              <Play size={12} /> Rodar agora
             </Link>
-          )}
-          <Link
-            href={`/o/${org}/p/${project}/rubrics`}
-            className="evo-btn evo-btn--sm"
-            data-testid="evaluations-rubrics-link"
-          >
-            <List size={13} /> Ver rubricas
-          </Link>
-          <Link href={`/o/${org}/p/${project}/rubrics`} className="evo-btn evo-btn--sm evo-btn--primary">
-            <Plus size={13} /> {rubrics.length === 0 ? "Criar rubrica" : "Nova rubrica"}
-          </Link>
-        </div>
-      </div>
+            <Link href={`/o/${org}/p/${project}/rubrics`} className="btn btn--sm" data-testid="evaluations-rubrics-link">
+              <List size={12} /> Ver rubricas
+            </Link>
+            <Link href={modalHref("create")} className="btn btn--sm btn--primary">
+              <Plus size={12} /> Nova rubrica
+            </Link>
+          </>
+        }
+      />
 
-      {/* Flash */}
-      {safeQueryError && (
-        <div style={{ padding: "10px 14px", background: "var(--err-bg)", border: "1px solid var(--err-border)", borderRadius: 6, color: "var(--err)", fontSize: 13, marginBottom: 12 }}>
-          {safeQueryError}
+      {queryError && (
+        <div
+          role="alert"
+          style={{
+            padding: "10px 14px",
+            background: "color-mix(in oklab, var(--danger) 14%, transparent)",
+            border: "1px solid color-mix(in oklab, var(--danger) 40%, transparent)",
+            borderRadius: 6,
+            color: "var(--danger)",
+            fontSize: 13,
+            marginBottom: 12,
+          }}
+        >
+          {queryError}
         </div>
       )}
-      {qp.created && (
-        <div style={{ padding: "10px 14px", background: "var(--ok-bg)", border: "1px solid var(--ok-border)", borderRadius: 6, color: "var(--ok)", fontSize: 13, marginBottom: 12 }}>
-          Run de avaliação criada com sucesso.
+      {successMessage && (
+        <div
+          style={{
+            padding: "10px 14px",
+            background: "color-mix(in oklab, var(--success) 14%, transparent)",
+            border: "1px solid color-mix(in oklab, var(--success) 40%, transparent)",
+            borderRadius: 6,
+            color: "var(--success)",
+            fontSize: 13,
+            marginBottom: 12,
+          }}
+        >
+          {successMessage}
         </div>
       )}
 
-      <section className="evo-kpi-grid evo-evaluations-summary" aria-label="Resumo de avaliacoes">
-        <EvaluationSummaryCard
-          icon={<Target size={13} />}
+      <section className="kpi-grid" style={{ gridTemplateColumns: "repeat(4, 1fr)" }}>
+        <Metric
           label="Rubricas ativas"
-          value={rubrics.length.toLocaleString("pt-BR")}
-          hint="Fonte: getRubrics"
+          icon={<Target size={12} />}
+          value={activeRubrics.toLocaleString("pt-BR")}
+          delta="GET /v1/projects/.../evaluations/summary"
         />
-        <EvaluationSummaryCard
-          icon={<History size={13} />}
+        <Metric
           label="Runs 7d"
-          value={runs7d.toLocaleString("pt-BR")}
-          hint={`${loadedRunsHint}; filtro created_at`}
+          icon={<History size={12} />}
+          value={totalRuns7d.toLocaleString("pt-BR")}
+          delta="todas rubricas"
         />
-        <EvaluationSummaryCard
-          icon={<CheckCircle2 size={13} />}
-          label="Pass rate"
-          value={formatPassRate(overallPassRate)}
-          hint={overallPassRate === null ? "Sem runs concluidas nas runs carregadas" : `${loadedRunsHint}; campo passed`}
+        <Metric
+          label="Taxa de aprovação"
+          icon={<CheckCircle2 size={12} />}
+          value={fmtPct(overallPassRate)}
+          delta="média ponderada"
+          deltaTone="up"
         />
-        <EvaluationSummaryCard
-          icon={<Coins size={13} />}
-          label="Custo carregado"
-          value={formatCost(costUsd)}
-          hint={`${loadedRunsHint}; campo cost_usd`}
+        <Metric
+          label="Custo de avaliação"
+          icon={<Coins size={12} />}
+          value={fmtCost(costUsd)}
+          delta="USD · 7d"
         />
       </section>
 
-      {/* Tabs */}
-      <nav className="evo-tabs">
-        <Link href={tabHref("active")} className={`evo-tab${tab === "active" ? " is-active" : ""}`}>
-          <Target size={13} /> Ativas
-          <span className="evo-tab__count">{evalRows.length}</span>
+      <nav className="tabs" aria-label="Filtros de avaliações">
+        <Link href={tabHref("active")} className={`tab${tab === "active" ? " is-active" : ""}`}>
+          <Target size={11} /> Ativas
+          <span className="tab__count">{evalRows.length}</span>
         </Link>
-        <Link href={tabHref("runs")} className={`evo-tab${tab === "runs" ? " is-active" : ""}`}>
-          <History size={13} /> Runs
-          <span className="evo-tab__count">{runs.length.toLocaleString("pt-BR")}</span>
+        <Link href={tabHref("runs")} className={`tab${tab === "runs" ? " is-active" : ""}`}>
+          <History size={11} /> Runs recentes
+          <span className="tab__count">{runs.length.toLocaleString("pt-BR")}</span>
         </Link>
-        <Link href={tabHref("paused")} className={`evo-tab${tab === "paused" ? " is-active" : ""}`}>
+        <Link href={tabHref("paused")} className={`tab${tab === "paused" ? " is-active" : ""}`}>
           Pausadas
-          <span className="evo-tab__count">0</span>
+          <span className="tab__count">0</span>
         </Link>
       </nav>
 
-      <div className={selectedRubric ? "evo-evaluations-layout" : undefined}>
-        <div>
-      {/* Table: Ativas */}
       {tab === "active" && (
-        <div className="evo-table-wrap">
+        <div className="table-wrap">
           {evalRows.length === 0 ? (
-            <div className="evo-evaluations-empty">
-              <p style={{ color: "var(--text-muted)", marginBottom: 8, fontWeight: 600 }}>Nenhuma rubrica cadastrada</p>
-              <p style={{ color: "var(--text-faint)", fontSize: 13 }}>
-                Crie uma rubrica YAML antes de rodar avaliações sobre traces.
-              </p>
-              <Link href={`/o/${org}/p/${project}/rubrics`} className="evo-btn evo-btn--sm evo-btn--primary">
-                <Plus size={13} /> Criar rubrica
+            <div className="empty">
+              <div className="empty__icon"><Target size={18} /></div>
+              <div className="empty__title">Nenhuma rubrica cadastrada</div>
+              <div className="empty__desc">Crie uma rubric YAML antes de rodar avaliações sobre traces.</div>
+              <Link href={modalHref("create")} className="btn btn--sm btn--primary" style={{ marginTop: 12 }}>
+                <Plus size={12} /> Nova rubrica
               </Link>
             </div>
           ) : (
-            <table className="evo-table">
+            <table className="t">
               <thead>
                 <tr>
-                  <th>Evaluation</th>
-                  <th>Rubric</th>
+                  <th>Avaliação</th>
                   <th>Tipo</th>
-                  <th className="evo-table__sortable">Runs (7d)</th>
-                  <th className="evo-table__sortable">Pass rate</th>
-                  <th className="evo-table__sortable">Score médio</th>
-                  <th>Distribuição</th>
-                  <th className="evo-table__sortable">Atualizada</th>
-                  <th style={{ width: 72 }} />
+                  <th>Judge model</th>
+                  <th className="t__num">Runs 7d</th>
+                  <th>Score médio</th>
+                  <th>Distribuição (0 → 1)</th>
+                  <th>Pass rate</th>
+                  <th>Última</th>
+                  <th style={{ width: 32 }} />
                 </tr>
               </thead>
               <tbody>
                 {evalRows.map(({ rubric, runs: rubricRuns }) => {
-                  const scores = rubricRuns.map((r) => r.aggregate_score).filter((s): s is number => s !== null);
-                  const avg = scores.length > 0 ? scores.reduce((a, b) => a + b, 0) / scores.length : null;
+                  const scores = rubricRuns
+                    .map((r) => r.aggregate_score)
+                    .filter((s): s is number => s !== null);
+                  const avg = scores.length ? scores.reduce((a, b) => a + b, 0) / scores.length : null;
                   const dist = buildDistribution(scores);
                   const lastRun = rubricRuns[0];
-                  const heuristic = isHeuristic(rubric);
-                  const rubricRuns7d = rubricRuns.filter(isWithinLast7d).length;
+                  const rubricRuns7d = rubricRuns.filter(withinLast7d).length;
                   const rubricPassRate = passRate(rubricRuns);
+                  const versions = versionsByRubric.get(rubric.id) ?? [];
+                  const latest = versions.find((v) => v.version === rubric.current_version) ?? versions[0] ?? null;
+                  const flavor = inferRubricFlavor(rubric, latest);
+                  const drawerLink = modalHref("drawer", { rubric: rubric.id });
                   return (
-                    <tr key={rubric.id}>
+                    <tr key={rubric.id} className="t__row-link">
                       <td>
-                        <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                          <span className="evo-table__name">{rubric.slug}</span>
-                          <span style={{ fontSize: 11, color: "var(--text-faint)", fontFamily: "var(--font-mono)" }}>
-                            eval_{rubric.slug}
-                          </span>
-                        </div>
+                        <Link href={drawerLink} style={{ display: "flex", flexDirection: "column", gap: 2, color: "inherit" }}>
+                          <span className="t__name">{rubric.slug}</span>
+                          <span className="t__faint" style={{ fontSize: 11 }}>{rubric.description ?? `eval_${rubric.slug}`}</span>
+                        </Link>
                       </td>
                       <td>
-                        <span className="evo-mono evo-muted" style={{ fontSize: 12 }}>
-                          {rubric.slug}_v{rubric.current_version}
-                        </span>
+                        <Badge variant={flavor.type_label === "LLM-judge" ? "eval" : "info"}>
+                          {flavor.type_label === "LLM-judge" ? "LLM-as-judge" : "Heurística"}
+                        </Badge>
                       </td>
-                      <td>
-                        <span className={`evo-badge ${heuristic ? "evo-badge--info" : "evo-badge--eval"}`}>
-                          <span className="evo-badge__dot" />
-                          {heuristic ? "Heurística" : "LLM-as-judge"}
-                        </span>
-                      </td>
-                      <td className="evo-table__num">{rubricRuns7d.toLocaleString("pt-BR")}</td>
-                      <td>
-                        <span className="evo-mono evo-muted" style={{ fontSize: 12 }}>
-                          {formatPassRate(rubricPassRate)}
-                        </span>
-                      </td>
+                      <td className="t__mono t__muted">{flavor.judge_model ?? "—"}</td>
+                      <td className="t__num">{rubricRuns7d.toLocaleString("pt-BR")}</td>
                       <td>
                         {avg === null ? (
-                          <span className="evo-faint">—</span>
+                          <span className="t__faint">—</span>
                         ) : (
-                          <span style={{ fontFamily: "var(--font-mono)", fontSize: 13, color: scoreColor(avg) }}>
-                            {avg.toFixed(2)}
-                          </span>
+                          <span className="mono" style={{ fontSize: 13, color: scoreColor(avg) }}>{avg.toFixed(2)}</span>
                         )}
                       </td>
+                      <td>{scores.length ? <DistBars dist={dist} /> : <span className="t__faint">—</span>}</td>
                       <td>
-                        {scores.length > 0 ? <DistBars dist={dist} /> : <span className="evo-faint">—</span>}
+                        <span
+                          className="mono"
+                          style={{
+                            fontSize: 12,
+                            color: rubricPassRate !== null && rubricPassRate >= rubric.threshold ? "var(--success)" : "var(--warning)",
+                          }}
+                        >
+                          {fmtPct(rubricPassRate)}
+                        </span>
+                        <span className="t__faint mono" style={{ fontSize: 10, marginLeft: 4 }}>
+                          / threshold {rubric.threshold.toFixed(2)}
+                        </span>
                       </td>
-                      <td className="evo-muted">{lastRun ? relTime(lastRun.created_at) + " atrás" : "—"}</td>
+                      <td className="t__faint" style={{ fontSize: 11 }}>
+                        {lastRun ? `${relTime(lastRun.created_at)} atrás` : "—"}
+                      </td>
                       <td>
-                        <div className="evo-row">
-                          <Link
-                            href={rubricDrawerHref(rubric.id)}
-                            className="evo-btn evo-btn--ghost evo-btn--sm evo-btn--icon"
-                            title="Ver YAML da rubrica"
-                            aria-label={`Ver YAML de ${rubric.slug}`}
-                          >
-                            <FileCode2 size={14} />
-                          </Link>
-                          <button
-                            type="button"
-                            className="evo-btn evo-btn--ghost evo-btn--sm evo-btn--icon"
-                            disabled
-                            data-status="planned"
-                            title="Ações por avaliação — em breve"
-                          >
-                            <MoreHorizontal size={14} />
-                          </button>
-                        </div>
+                        <Link href={drawerLink} aria-label={`Abrir detalhes de ${rubric.slug}`} className="t__chev-link">
+                          ›
+                        </Link>
                       </td>
                     </tr>
                   );
@@ -338,87 +398,67 @@ export default async function EvaluationsPage({ params, searchParams }: Props) {
         </div>
       )}
 
-      {/* Table: Runs */}
       {tab === "runs" && (
-        <div className="evo-table-wrap">
+        <div className="table-wrap">
           {runs.length === 0 ? (
-            <div className="evo-evaluations-empty">
-              <p style={{ color: "var(--text-muted)", marginBottom: 8, fontWeight: 600 }}>Nenhuma run ainda</p>
-              <p style={{ color: "var(--text-faint)", fontSize: 13 }}>
+            <div className="empty">
+              <div className="empty__icon"><History size={18} /></div>
+              <div className="empty__title">Nenhuma run ainda</div>
+              <div className="empty__desc">
                 {rubrics.length === 0
-                  ? "Crie uma rubrica YAML antes de rodar avaliações."
+                  ? "Crie uma rubric YAML antes de rodar avaliações."
                   : traces.length === 0
                     ? "Capture um trace antes de rodar avaliações."
-                    : "Use uma rubrica versionada e um trace elegível para iniciar a primeira run."}
-              </p>
-              <div className="evo-row" style={{ justifyContent: "center", marginTop: 14 }}>
-                {rubrics.length === 0 ? (
-                  <Link href={`/o/${org}/p/${project}/rubrics`} className="evo-btn evo-btn--sm evo-btn--primary">
-                    <Plus size={13} /> Criar rubrica
-                  </Link>
-                ) : traces.length === 0 ? (
-                  <Link href={`/o/${org}/p/${project}/traces`} className="evo-btn evo-btn--sm">
-                    Ver traces
-                  </Link>
-                ) : (
-                  <Link href={tabHref("active")} className="evo-btn evo-btn--sm">
-                    <Play size={13} /> Rodar agora
-                  </Link>
-                )}
+                    : "Use uma rubric versionada e um trace elegível para iniciar a primeira run."}
               </div>
+              {rubrics.length > 0 && traces.length > 0 && (
+                <Link href={modalHref("run")} className="btn btn--sm btn--primary" style={{ marginTop: 12 }}>
+                  <Play size={12} /> Rodar agora
+                </Link>
+              )}
             </div>
           ) : (
-            <table className="evo-table">
+            <table className="t">
               <thead>
                 <tr>
                   <th>Trace</th>
                   <th>Rubric</th>
                   <th>Status</th>
-                  <th className="evo-table__sortable">Score</th>
-                  <th className="evo-table__sortable">Custo</th>
-                  <th className="evo-table__sortable">Quando</th>
+                  <th>Score</th>
+                  <th className="t__num">Custo</th>
+                  <th>Quando</th>
                 </tr>
               </thead>
               <tbody>
                 {runs.map((run) => {
                   const rubric = rubricMap.get(run.rubric_id);
+                  const traceHref = `/o/${org}/p/${project}/traces/${run.trace_id}`;
                   return (
                     <tr key={run.id}>
+                      <td><Copyable value={run.trace_id} /></td>
                       <td>
-                        <Link
-                          href={`/o/${org}/p/${project}/traces/${run.trace_id}`}
-                          style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--accent)" }}
-                        >
-                          {run.trace_id.slice(0, 12)}…
+                        <Link href={traceHref} className="t__mono t__muted" style={{ fontSize: 12 }}>
+                          {rubric ? `${rubric.slug} v${run.rubric_version}` : run.rubric_id.slice(0, 12)}
                         </Link>
                       </td>
                       <td>
-                        <span className="evo-mono evo-muted" style={{ fontSize: 12 }}>
-                          {rubric ? `${rubric.slug} v${run.rubric_version}` : run.rubric_id.slice(0, 12)}
-                        </span>
-                      </td>
-                      <td>
                         {run.passed === true ? (
-                          <span className="evo-badge evo-badge--ok"><span className="evo-badge__dot" />Passou</span>
+                          <Badge variant="ok">passou</Badge>
                         ) : run.passed === false ? (
-                          <span className="evo-badge evo-badge--err"><span className="evo-badge__dot" />Falhou</span>
+                          <Badge variant="err">falhou</Badge>
                         ) : (
-                          <span className="evo-badge"><span className="evo-badge__dot" />{run.status}</span>
+                          <Badge>{run.status}</Badge>
                         )}
                       </td>
                       <td>
                         {run.aggregate_score === null ? (
-                          <span className="evo-faint">—</span>
+                          <span className="t__faint">—</span>
                         ) : (
-                          <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: scoreColor(run.aggregate_score) }}>
-                            {run.aggregate_score.toFixed(2)}
-                          </span>
+                          <ScoreCell value={run.aggregate_score} />
                         )}
                       </td>
-                      <td className="evo-table__num evo-muted" style={{ fontSize: 12 }}>
-                        ${run.cost_usd.toFixed(6)}
-                      </td>
-                      <td className="evo-muted" style={{ fontSize: 12 }}>{relTime(run.created_at)} atrás</td>
+                      <td className="t__num t__muted">${run.cost_usd.toFixed(6)}</td>
+                      <td className="t__faint" style={{ fontSize: 11 }}>{relTime(run.created_at)} atrás</td>
                     </tr>
                   );
                 })}
@@ -428,78 +468,24 @@ export default async function EvaluationsPage({ params, searchParams }: Props) {
         </div>
       )}
 
-      {/* Paused */}
       {tab === "paused" && (
-        <div className="evo-table-wrap">
-          <div style={{ padding: "40px 24px", textAlign: "center" }}>
-            <p style={{ color: "var(--text-faint)", fontSize: 13 }}>Nenhuma avaliação pausada.</p>
+        <div className="empty">
+          <div className="empty__icon"><Target size={18} /></div>
+          <div className="empty__title">Nenhuma avaliação pausada</div>
+          <div className="empty__desc">
+            Avaliações são pausadas automaticamente quando custo excede o limite ou quando o judge model fica indisponível.
           </div>
         </div>
       )}
 
-      {/* Run trigger (collapsible) */}
-      {tab === "active" && traces.length > 0 && rubrics.length > 0 && (
-        <details
-          id="run-evaluation"
-          style={{
-            background: "var(--surface-1)",
-            border: "1px solid var(--border)",
-            borderRadius: 8,
-            marginTop: 16,
-          }}
-        >
-          <summary
-            style={{
-              padding: "12px 16px",
-              cursor: "pointer",
-              fontSize: 13,
-              fontWeight: 500,
-              color: "var(--text-dim)",
-              listStyle: "none",
-            }}
-          >
-            Rodar nova avaliação
-          </summary>
-          <div style={{ padding: "0 16px 16px" }}>
-            <form action={triggerEvaluationAction} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-              <input type="hidden" name="org" value={org} />
-              <input type="hidden" name="project" value={project} />
-
-              <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13 }}>
-                <span style={{ color: "var(--text-muted)" }}>Trace</span>
-                <select name="trace_id" defaultValue={traces[0]?.id} style={{ background: "var(--bg-2)", border: "1px solid var(--border)", borderRadius: 6, padding: "6px 10px", color: "var(--text)", fontSize: 13 }}>
-                  {traces.map((trace) => (
-                    <option key={trace.id} value={trace.id}>
-                      {trace.name} ({trace.environment})
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13 }}>
-                <span style={{ color: "var(--text-muted)" }}>Rubric</span>
-                <select name="rubric_id" defaultValue={rubrics[0]?.id} style={{ background: "var(--bg-2)", border: "1px solid var(--border)", borderRadius: 6, padding: "6px 10px", color: "var(--text)", fontSize: 13 }}>
-                  {rubrics.map((rubric) => (
-                    <option key={rubric.id} value={rubric.id}>
-                      {rubric.slug} (v{rubric.current_version})
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <button type="submit" className="evo-btn evo-btn--primary" style={{ alignSelf: "flex-start" }}>
-                Rodar avaliação
-              </button>
-            </form>
-          </div>
-        </details>
-      )}
-        </div>
-
-        {selectedRubric && (
-          <RubricDrawer closeHref={tabHref(tab)} rubric={selectedRubric} versions={selectedRubricVersions} />
-        )}
-      </div>
+      <EvaluationsModals
+        org={org}
+        project={project}
+        projectId={resolved.project_id}
+        rubrics={rubrics.map((r) => ({ id: r.id, slug: r.slug, current_version: r.current_version }))}
+        traces={traces.map((t) => ({ id: t.id, name: t.name, environment: t.environment }))}
+        drawerRow={drawerRow}
+      />
     </div>
   );
 }

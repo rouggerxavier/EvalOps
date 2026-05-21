@@ -1,5 +1,6 @@
 "use client";
 
+import type { ElementType } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -16,7 +17,7 @@ import {
 
 import { APP_SHELL_NAV_SECTIONS, projectHref } from "@/components/app-shell-nav";
 
-const NAV_ICONS: Record<string, React.ElementType> = {
+const NAV_ICONS: Record<string, ElementType> = {
   overview: Home,
   traces: Activity,
   evaluations: Target,
@@ -31,67 +32,65 @@ const NAV_ICONS: Record<string, React.ElementType> = {
 export function Sidebar({ org, project }: { org: string; project: string }) {
   const pathname = usePathname();
   const base = `/o/${org}/p/${project}`;
+  const initials = (project || org).slice(0, 2).toUpperCase();
 
   function isActive(path: string) {
-    if (path === "") return pathname === base || pathname === base + "/";
+    if (path === "") return pathname === base || pathname === `${base}/`;
     return pathname.startsWith(base + path);
   }
 
   return (
-    <aside className="evo-sidebar">
-      <div className="evo-sidebar__brand">
-        <div className="evo-sidebar__logo" aria-hidden="true">
+    <aside className="sidebar" aria-label="Navegacao principal">
+      <Link className="sb-brand" href={base}>
+        <span className="sb-brand__logo" aria-hidden="true">
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-            <path d="M2 3.5 L7 1 L12 3.5 L12 10.5 L7 13 L2 10.5 Z" stroke="#4F8CFF" strokeWidth="1.4" />
-            <circle cx="7" cy="7" r="1.5" fill="#4F8CFF" />
+            <path d="M2 3.5 L7 1 L12 3.5 L12 10.5 L7 13 L2 10.5 Z" stroke="currentColor" strokeWidth="1.4" />
+            <circle cx="7" cy="7" r="1.5" fill="currentColor" />
           </svg>
-        </div>
-        <div className="evo-sidebar__brand-text">
-          <div className="evo-sidebar__brand-name">EvalOps</div>
-          <div className="evo-sidebar__brand-kicker">Project cockpit</div>
-        </div>
-      </div>
-
-      <div className="evo-project-context" aria-label="Contexto do projeto ativo">
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div className="evo-project-context__eyebrow">Workspace · {org}</div>
-          <div className="evo-project-context__name">{project}</div>
-        </div>
-        <span className="evo-context-pill">
-          <span className="evo-context-pill__dot" aria-hidden="true" />
-          prod
         </span>
-      </div>
+        <span className="sb-brand__name">EvalOps</span>
+        <span className="sb-brand__ver">v0.7</span>
+      </Link>
 
-      {APP_SHELL_NAV_SECTIONS.map((section) => (
-        <div className="evo-nav-section" key={section.label}>
-          <div className="evo-nav-section__label">{section.label}</div>
-          {section.items.map(({ id, label, path, shortcut }) => {
-            const Icon = NAV_ICONS[id];
-            const active = isActive(path);
-            return (
-              <Link
-                key={id}
-                href={projectHref(base, path)}
-                className={`evo-nav-item${active ? " is-active" : ""}`}
-                aria-current={active ? "page" : undefined}
-              >
-                <Icon className="evo-nav-item__icon" size={15} />
-                <span className="evo-nav-item__label">{label}</span>
-                {shortcut ? <span className="evo-nav-item__shortcut">{shortcut}</span> : null}
-              </Link>
-            );
-          })}
-        </div>
-      ))}
+      <Link className="sb-workspace" href={base} aria-label="Projeto ativo">
+        <span className="sb-workspace__avatar" aria-hidden="true">{initials}</span>
+        <span style={{ flex: 1, minWidth: 0 }}>
+          <span className="sb-workspace__org">Workspace - {org}</span>
+          <span className="sb-workspace__proj">{project}</span>
+        </span>
+      </Link>
 
-      <div className="evo-sidebar__footer">
-        <div className="evo-sdk-status">
-          <span className="evo-pulse" aria-hidden="true" />
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div className="evo-sdk-status__name">SDK Python</div>
-            <div className="evo-sdk-status__meta">online · ingestão pronta</div>
-          </div>
+      <nav style={{ flex: 1, minHeight: 0 }} aria-label="Secoes do projeto">
+        {APP_SHELL_NAV_SECTIONS.map((section) => (
+          <section className="sb-section" key={section.label}>
+            <div className="sb-section__label">{section.label}</div>
+            {section.items.map(({ id, label, path, shortcut }) => {
+              const Icon = NAV_ICONS[id] ?? Activity;
+              const active = isActive(path);
+              return (
+                <Link
+                  key={id}
+                  href={projectHref(base, path)}
+                  className={`sb-nav-item${active ? " is-active" : ""}`}
+                  aria-current={active ? "page" : undefined}
+                >
+                  <Icon size={15} aria-hidden="true" />
+                  <span>{label}</span>
+                  {shortcut ? <span className="sb-nav-item__shortcut">{shortcut}</span> : null}
+                </Link>
+              );
+            })}
+          </section>
+        ))}
+      </nav>
+
+      <div className="sb-footer">
+        <div className="sb-status">
+          <span className="sb-status__pulse" aria-hidden="true" />
+          <span style={{ minWidth: 0 }}>
+            <span className="sb-status__name">SDK Python</span>
+            <span className="sb-status__meta">online - ingestao pronta</span>
+          </span>
         </div>
       </div>
     </aside>

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { FlaskConical, MoreHorizontal, Play, Plus, RefreshCw, Rocket } from "lucide-react";
+import { FlaskConical, Play, Plus, Rocket } from "lucide-react";
 
 import { AuthRequiredPanel } from "@/components/AuthRequiredPanel";
 import { createExperimentAction, runExperimentAction } from "@/lib/actions";
@@ -40,23 +40,23 @@ function RunResultCard({ run }: { run: ExperimentRun }) {
   const baselineScore = variants[0]?.[1]?.avg_score ?? 0;
 
   return (
-    <div className="evo-card" style={{ marginBottom: 16 }}>
-      <div className="evo-card__header">
+    <div className="card" style={{ marginBottom: 16 }}>
+      <div className="card__header">
         <div>
-          <h3 className="evo-card__title">Resultado da run</h3>
-          <div className="evo-card__subtitle">
+          <h3 className="card__title">Resultado da run</h3>
+          <div className="card__subtitle">
             {relTime(run.completed_at ?? run.created_at)} · {variants.length} variantes
           </div>
         </div>
         <span
-          className={`evo-badge ${run.passed ? "evo-badge--ok" : "evo-badge--err"}`}
+          className={`badge ${run.passed ? "badge--ok" : "badge--err"}`}
         >
-          <span className="evo-badge__dot" />
+          <span className="badge__dot" />
           {run.passed ? "Aprovado" : "Falhou"}
         </span>
       </div>
-      <div className="evo-card__body evo-card__body--flush">
-        <table className="evo-table">
+      <div className="card__body card__body--flush">
+        <table className="t">
           <thead>
             <tr>
               <th>Variante</th>
@@ -88,7 +88,7 @@ function RunResultCard({ run }: { run: ExperimentRun }) {
                       {isWinner && (
                         <Rocket size={14} style={{ color: "var(--ok)", flexShrink: 0 }} />
                       )}
-                      <span className="evo-table__name">{name}</span>
+                      <span className="t__name">{name}</span>
                     </div>
                   </td>
                   <td>
@@ -121,15 +121,15 @@ function RunResultCard({ run }: { run: ExperimentRun }) {
                       </span>
                     </div>
                   </td>
-                  <td className="evo-table__num">
+                  <td className="t__num">
                     ${metrics.avg_cost_usd_per_item.toFixed(5)}
                   </td>
-                  <td className="evo-table__num">
+                  <td className="t__num">
                     {metrics.avg_latency_ms.toFixed(0)}ms
                   </td>
                   <td>
                     {isBaseline ? (
-                      <span className="evo-faint" style={{ fontSize: 12 }}>
+                      <span className="t__faint" style={{ fontSize: 12 }}>
                         baseline
                       </span>
                     ) : (
@@ -147,12 +147,12 @@ function RunResultCard({ run }: { run: ExperimentRun }) {
                   </td>
                   <td>
                     {isWinner ? (
-                      <span className="evo-badge evo-badge--ok">
-                        <span className="evo-badge__dot" /> winner
+                      <span className="badge badge--ok">
+                        <span className="badge__dot" /> winner
                       </span>
                     ) : (
-                      <span className="evo-badge">
-                        <span className="evo-badge__dot" /> avaliada
+                      <span className="badge">
+                        <span className="badge__dot" /> avaliada
                       </span>
                     )}
                   </td>
@@ -214,28 +214,18 @@ export default async function ExperimentosPage({ params, searchParams }: Props) 
   }, null);
 
   return (
-    <div className="evo-page">
+    <div className="page">
       {/* Header */}
-      <div className="evo-page-header">
+      <div className="page-header">
         <div>
-          <p className="evo-page-header__eyebrow">Operação · Experimentos</p>
-          <h1 className="evo-page-header__title">Experimentos</h1>
-          <p className="evo-page-header__subtitle">
+          <p className="page-header__eyebrow">Operação · Experimentos</p>
+          <h1 className="page-header__title">Experimentos</h1>
+          <p className="page-header__subtitle">
             Comparações controladas de modelos, prompts e parâmetros sobre datasets com critérios de aprovação por rubrica.
           </p>
         </div>
-        <div className="evo-row">
-          <button
-            type="button"
-            className="evo-btn evo-btn--sm"
-            disabled
-            data-status="planned"
-            title="Exportar relatório — em breve"
-            style={{ opacity: 0.5, cursor: "not-allowed" }}
-          >
-            <RefreshCw size={13} /> Exportar relatório
-          </button>
-          <Link href="#create-experiment" className="evo-btn evo-btn--sm evo-btn--primary">
+        <div className="row">
+          <Link href="#create-experiment" className="btn btn--sm btn--primary">
             <Plus size={13} /> Novo experimento
           </Link>
         </div>
@@ -274,28 +264,28 @@ export default async function ExperimentosPage({ params, searchParams }: Props) 
       )}
 
       {/* Summary row — só dados reais do payload */}
-      <section className="evo-summary-row" aria-label="Resumo de experimentos">
-        <div className="evo-summary-card">
-          <p className="evo-summary-card__label">Experimentos</p>
-          <div className="evo-summary-card__value">{experiments.length.toLocaleString("pt-BR")}</div>
-          <div className="evo-summary-card__hint">total no projeto</div>
+      <section className="module-summary" aria-label="Resumo de experimentos">
+        <div className="summary-card">
+          <p className="summary-card__label">Experimentos</p>
+          <div className="summary-card__value">{experiments.length.toLocaleString("pt-BR")}</div>
+          <div className="summary-card__hint">total no projeto</div>
         </div>
-        <div className="evo-summary-card">
-          <p className="evo-summary-card__label">Variantes</p>
-          <div className="evo-summary-card__value">{totalVariants.toLocaleString("pt-BR")}</div>
-          <div className="evo-summary-card__hint">soma das variantes</div>
+        <div className="summary-card">
+          <p className="summary-card__label">Variantes</p>
+          <div className="summary-card__value">{totalVariants.toLocaleString("pt-BR")}</div>
+          <div className="summary-card__hint">soma das variantes</div>
         </div>
-        <div className="evo-summary-card">
-          <p className="evo-summary-card__label">Com baseline</p>
-          <div className="evo-summary-card__value">{withBaseline.toLocaleString("pt-BR")}</div>
-          <div className="evo-summary-card__hint">baseline configurado</div>
+        <div className="summary-card">
+          <p className="summary-card__label">Com baseline</p>
+          <div className="summary-card__value">{withBaseline.toLocaleString("pt-BR")}</div>
+          <div className="summary-card__hint">baseline configurado</div>
         </div>
-        <div className="evo-summary-card">
-          <p className="evo-summary-card__label">Última atividade</p>
-          <div className="evo-summary-card__value">
+        <div className="summary-card">
+          <p className="summary-card__label">Última atividade</p>
+          <div className="summary-card__value">
             {latestActivity ? relTime(latestActivity) : "—"}
           </div>
-          <div className="evo-summary-card__hint">experimento criado</div>
+          <div className="summary-card__hint">experimento criado</div>
         </div>
       </section>
 
@@ -304,7 +294,7 @@ export default async function ExperimentosPage({ params, searchParams }: Props) 
 
       {/* Experiments table */}
       {experiments.length === 0 ? (
-        <div className="evo-card" style={{ padding: "48px 24px", textAlign: "center" }}>
+        <div className="card" style={{ padding: "48px 24px", textAlign: "center" }}>
           <FlaskConical
             size={32}
             style={{ color: "var(--text-faint)", margin: "0 auto 12px" }}
@@ -330,8 +320,8 @@ export default async function ExperimentosPage({ params, searchParams }: Props) 
           </ol>
         </div>
       ) : (
-        <div className="evo-table-wrap">
-          <table className="evo-table">
+        <div className="table-wrap">
+          <table className="t">
             <thead>
               <tr>
                 <th>Experimento</th>
@@ -339,7 +329,7 @@ export default async function ExperimentosPage({ params, searchParams }: Props) 
                 <th>Rubrica</th>
                 <th>Variantes</th>
                 <th>Baseline</th>
-                <th className="evo-table__sortable">Criado</th>
+                <th className="">Criado</th>
                 <th style={{ width: 140 }} />
               </tr>
             </thead>
@@ -348,7 +338,7 @@ export default async function ExperimentosPage({ params, searchParams }: Props) 
                 <tr key={exp.id}>
                   <td>
                     <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                      <span className="evo-table__name">{exp.name}</span>
+                      <span className="t__name">{exp.name}</span>
                       <span
                         style={{
                           fontSize: 11,
@@ -361,52 +351,42 @@ export default async function ExperimentosPage({ params, searchParams }: Props) 
                     </div>
                   </td>
                   <td>
-                    <span className="evo-mono evo-muted" style={{ fontSize: 12 }}>
+                    <span className="mono t__muted" style={{ fontSize: 12 }}>
                       {exp.dataset_id.slice(0, 16)}…
                     </span>
                   </td>
                   <td>
-                    <span className="evo-mono evo-muted" style={{ fontSize: 12 }}>
+                    <span className="mono t__muted" style={{ fontSize: 12 }}>
                       {exp.rubric_id.slice(0, 16)}…
                     </span>
                   </td>
                   <td>
                     <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
                       {exp.variants.map((v) => (
-                        <span key={v.name} className="evo-tag">
+                        <span key={v.name} className="tag">
                           {v.name}
                         </span>
                       ))}
                     </div>
                   </td>
                   <td>
-                    <span className="evo-mono evo-muted" style={{ fontSize: 12 }}>
+                    <span className="mono t__muted" style={{ fontSize: 12 }}>
                       {exp.baseline_variant ?? "—"}
                     </span>
                   </td>
-                  <td className="evo-muted" style={{ fontSize: 12 }}>
+                  <td className="t__muted" style={{ fontSize: 12 }}>
                     {relTime(exp.created_at)}
                   </td>
                   <td>
-                    <div className="evo-row" style={{ gap: 4, justifyContent: "flex-end" }}>
+                    <div className="row" style={{ gap: 4, justifyContent: "flex-end" }}>
                       <form action={runExperimentAction} style={{ display: "inline" }}>
                         <input type="hidden" name="org" value={org} />
                         <input type="hidden" name="project" value={project} />
                         <input type="hidden" name="experiment_id" value={exp.id} />
-                        <button type="submit" className="evo-btn evo-btn--sm">
+                        <button type="submit" className="btn btn--sm">
                           <Play size={12} /> Rodar
                         </button>
                       </form>
-                      <button
-                        type="button"
-                        className="evo-btn evo-btn--ghost evo-btn--sm evo-btn--icon"
-                        disabled
-                        data-status="planned"
-                        title="Ações adicionais — em breve"
-                        style={{ opacity: 0.4, cursor: "not-allowed" }}
-                      >
-                        <MoreHorizontal size={14} />
-                      </button>
                     </div>
                   </td>
                 </tr>
@@ -582,7 +562,7 @@ export default async function ExperimentosPage({ params, searchParams }: Props) 
               </label>
 
               <div>
-                <button type="submit" className="evo-btn evo-btn--primary">
+                <button type="submit" className="btn btn--primary">
                   <FlaskConical size={13} /> Criar experimento
                 </button>
               </div>
@@ -611,42 +591,42 @@ export default async function ExperimentosPage({ params, searchParams }: Props) 
       )}
 
       {/* Endpoints reais — referência somente leitura */}
-      <section className="evo-card" style={{ marginTop: 12 }}>
-        <div className="evo-card__header">
+      <section className="card" style={{ marginTop: 12 }}>
+        <div className="card__header">
           <div>
-            <h3 className="evo-card__title">Endpoints ativos</h3>
-            <div className="evo-card__subtitle">Rotas reais do backend que servem este módulo.</div>
+            <h3 className="card__title">Endpoints ativos</h3>
+            <div className="card__subtitle">Rotas reais do backend que servem este módulo.</div>
           </div>
         </div>
-        <div className="evo-card__body">
-          <div className="evo-endpoint-list" aria-label="Endpoints do módulo Experiments">
-            <div className="evo-endpoint-row">
-              <span className="evo-endpoint-row__method evo-endpoint-row__method--get">GET</span>
-              <span className="evo-endpoint-row__path" title="/v1/projects/{project_id}/experiments">
+        <div className="card__body">
+          <div className="endpoint-list" aria-label="Endpoints do módulo Experiments">
+            <div className="endpoint-row">
+              <span className="endpoint-snippet__method method-GET">GET</span>
+              <span className="endpoint-row__path" title="/v1/projects/{project_id}/experiments">
                 /projects/{"{project_id}"}/experiments
               </span>
-              <span className="evo-endpoint-row__note">ativo</span>
+              <span className="endpoint-row__note">ativo</span>
             </div>
-            <div className="evo-endpoint-row">
-              <span className="evo-endpoint-row__method evo-endpoint-row__method--post">POST</span>
-              <span className="evo-endpoint-row__path" title="/v1/projects/{project_id}/experiments">
+            <div className="endpoint-row">
+              <span className="endpoint-snippet__method method-POST">POST</span>
+              <span className="endpoint-row__path" title="/v1/projects/{project_id}/experiments">
                 /projects/{"{project_id}"}/experiments
               </span>
-              <span className="evo-endpoint-row__note">ativo · cria experimento</span>
+              <span className="endpoint-row__note">ativo · cria experimento</span>
             </div>
-            <div className="evo-endpoint-row">
-              <span className="evo-endpoint-row__method evo-endpoint-row__method--post">POST</span>
-              <span className="evo-endpoint-row__path" title="/v1/experiments/{experiment_id}/run">
+            <div className="endpoint-row">
+              <span className="endpoint-snippet__method method-POST">POST</span>
+              <span className="endpoint-row__path" title="/v1/experiments/{experiment_id}/run">
                 /experiments/{"{experiment_id}"}/run
               </span>
-              <span className="evo-endpoint-row__note">ativo · dispara run</span>
+              <span className="endpoint-row__note">ativo · dispara run</span>
             </div>
-            <div className="evo-endpoint-row">
-              <span className="evo-endpoint-row__method evo-endpoint-row__method--get">GET</span>
-              <span className="evo-endpoint-row__path" title="/v1/experiments/{experiment_id}/runs/{run_id}">
+            <div className="endpoint-row">
+              <span className="endpoint-snippet__method method-GET">GET</span>
+              <span className="endpoint-row__path" title="/v1/experiments/{experiment_id}/runs/{run_id}">
                 /experiments/{"{experiment_id}"}/runs/{"{run_id}"}
               </span>
-              <span className="evo-endpoint-row__note">ativo · detalhe da run</span>
+              <span className="endpoint-row__note">ativo · detalhe da run</span>
             </div>
           </div>
         </div>

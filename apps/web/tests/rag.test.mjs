@@ -381,11 +381,7 @@ test("RAG-17: fixtures do not embed sensitive raw fields", () => {
 test("RAG-18: production code under apps/web/lib + components must not hardcode docops", () => {
   const targets = [
     "../lib/rag.ts",
-    "../components/RAGSummaryHeader.tsx",
-    "../components/AnswerPreviewCard.tsx",
-    "../components/RetrievalSummaryCard.tsx",
-    "../components/GroundingQualityCard.tsx",
-    "../components/CitationRefsTable.tsx",
+    "../components/ui/RagPanel.tsx",
   ];
   for (const rel of targets) {
     const body = readFileSync(resolve(__dirname, rel), "utf8");

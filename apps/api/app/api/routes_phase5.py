@@ -49,6 +49,7 @@ from app.schemas import (
     ExperimentRunRequest,
     PromptCreate,
     PromptOut,
+    PromptUsageOut,
     PromptVersionCreate,
     PromptVersionOut,
 )
@@ -166,6 +167,77 @@ def list_prompt_versions(
         .all()
     )
     return {"data": [PromptVersionOut.model_validate(row).model_dump() for row in rows]}
+
+
+@router.get("/prompts/{prompt_id}/usage", response_model=PromptUsageOut)
+def get_prompt_usage(
+    prompt_id: str,
+    limit: int = Query(default=50, ge=1, le=200),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    prompt = _prompt_or_404(prompt_id, user.id, db)
+    versions = (
+        db.query(PromptVersion)
+        .filter(PromptVersion.prompt_id == prompt.id)
+        .order_by(PromptVersion.version.asc())
+        .all()
+    )
+    refs = {prompt.id, prompt.slug}
+    refs.update({version.id for version in versions})
+    refs.update({f"{prompt.slug}@{version.version}" for version in versions})
+
+    rows_by_trace: dict[str, dict] = {}
+    span_rows = (
+        db.query(Trace, Span)
+        .join(Span, Span.trace_id == Trace.id)
+        .filter(
+            Trace.project_id == prompt.project_id,
+            Trace.deleted_at.is_(None),
+            Span.prompt_version_ref.in_(refs),
+        )
+        .order_by(Trace.created_at.desc())
+        .limit(limit)
+        .all()
+    )
+    for trace, span in span_rows:
+        rows_by_trace[trace.id] = {
+            "trace_id": trace.id,
+            "name": trace.name,
+            "service": trace.service,
+            "environment": trace.environment,
+            "status": trace.status,
+            "prompt_version_ref": span.prompt_version_ref,
+            "used_at": trace.created_at,
+        }
+
+    metadata_matches = (
+        db.query(Trace)
+        .filter(Trace.project_id == prompt.project_id, Trace.deleted_at.is_(None))
+        .order_by(Trace.created_at.desc())
+        .all()
+    )
+    for trace in metadata_matches:
+        if len(rows_by_trace) >= limit and trace.id not in rows_by_trace:
+            continue
+        meta = trace.metadata_json or {}
+        meta_ref = meta.get("prompt_ref") or meta.get("prompt_version_ref") or meta.get("prompt_id")
+        if isinstance(meta_ref, str) and meta_ref in refs:
+            rows_by_trace.setdefault(
+                trace.id,
+                {
+                    "trace_id": trace.id,
+                    "name": trace.name,
+                    "service": trace.service,
+                    "environment": trace.environment,
+                    "status": trace.status,
+                    "prompt_version_ref": meta_ref,
+                    "used_at": trace.created_at,
+                },
+            )
+
+    traces = sorted(rows_by_trace.values(), key=lambda row: row["used_at"], reverse=True)[:limit]
+    return {"prompt_id": prompt.id, "usage_count": len(rows_by_trace), "traces": traces}
 
 
 @router.post("/prompts/{prompt_id}/versions", status_code=status.HTTP_201_CREATED)

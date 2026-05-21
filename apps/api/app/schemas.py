@@ -22,6 +22,7 @@ class ProjectCreate(BaseModel):
     name: str = Field(min_length=2, max_length=255)
     slug: str = Field(min_length=2, max_length=255, pattern=r"^[a-z0-9-]+$")
     description: str | None = None
+    default_environment: str = Field(default="prod", pattern=r"^(dev|staging|prod)$")
 
 
 class ProjectOut(BaseModel):
@@ -32,7 +33,22 @@ class ProjectOut(BaseModel):
     name: str
     slug: str
     description: str | None = None
+    default_environment: str = "prod"
     created_at: datetime
+
+
+class ProjectUpdateIn(BaseModel):
+    name: str | None = Field(default=None, min_length=2, max_length=255)
+    description: str | None = None
+    default_environment: str | None = Field(default=None, pattern=r"^(dev|staging|prod)$")
+
+
+class MemberOut(BaseModel):
+    user_id: str
+    email: str
+    name: str
+    role: str
+    joined_at: datetime
 
 
 class ApiKeyCreate(BaseModel):
@@ -143,6 +159,55 @@ class TraceOut(BaseModel):
     metadata: dict = Field(alias="metadata_json")
     redacted: bool = False
     created_at: datetime
+
+
+class TraceFlagIn(BaseModel):
+    reason: str = Field(
+        pattern=r"^(manual|schema_mismatch|low_quality|low_confidence|timeout|cost_spike|other)$"
+    )
+    note: str | None = Field(default=None, max_length=2000)
+
+
+class TraceFlagOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    trace_id: str
+    org_id: str
+    user_id: str
+    reason: str
+    note: str | None = None
+    created_at: datetime
+
+
+class BulkTraceFlagIn(TraceFlagIn):
+    trace_ids: list[str] = Field(min_length=1, max_length=100)
+
+
+class BulkTraceFlagOut(BaseModel):
+    data: list[TraceFlagOut]
+    created: int
+
+
+class TraceRerunIn(BaseModel):
+    model: str | None = Field(default=None, max_length=128)
+    variables: dict = Field(default_factory=dict)
+
+
+class TraceRerunOut(BaseModel):
+    new_trace_id: str
+    status: str
+
+
+class TraceCompareIn(BaseModel):
+    left_trace_id: str
+    right_trace_id: str
+
+
+class TraceCompareOut(BaseModel):
+    left: TraceOut
+    right: TraceOut
+    diff: dict
 
 
 # ── Phase 4: Rubrics & Evaluations ──────────────────────────────────────────
@@ -422,3 +487,114 @@ class ExportJobOut(BaseModel):
     created_by: str | None = None
     created_at: datetime
     completed_at: datetime | None = None
+
+
+class ExportListResponse(BaseModel):
+    data: list[ExportJobOut]
+    next_cursor: str | None = None
+
+
+class AttentionItemOut(BaseModel):
+    trace_id: str
+    cause: str
+    service: str | None = None
+    at: datetime
+
+
+class AttentionResponse(BaseModel):
+    count: int
+    items: list[AttentionItemOut]
+
+
+class CoverageItemOut(BaseModel):
+    rubric_id: str
+    rubric_slug: str
+    coverage: float
+    runs_7d: int
+
+
+class CoverageResponse(BaseModel):
+    data: list[CoverageItemOut]
+
+
+class EvaluationSummaryOut(BaseModel):
+    active_rubrics: int
+    runs_7d: int
+    pass_rate: float | None = None
+    cost_usd: float
+
+
+class PromptUsageTraceOut(BaseModel):
+    trace_id: str
+    name: str
+    service: str | None = None
+    environment: str
+    status: str
+    prompt_version_ref: str | None = None
+    used_at: datetime
+
+
+class PromptUsageOut(BaseModel):
+    prompt_id: str
+    usage_count: int
+    traces: list[PromptUsageTraceOut]
+
+
+class RagCitationOut(BaseModel):
+    rank: int
+    title: str | None = None
+    score: float | None = None
+    source: str | None = None
+    chunk: str | None = None
+
+
+class RagClaimOut(BaseModel):
+    text: str
+    grounded: bool
+    cite: str | None = None
+
+
+class RagClaimChunkOut(BaseModel):
+    claim: str
+    chunk: str
+    score: float | None = None
+
+
+class RagConsolidatedOut(BaseModel):
+    retrieved_docs: int
+    avg_score: float | None = None
+    grounded_claims: int
+    ungrounded_claims: int
+    hallucination_risk: str
+    answer_preview: str | None = None
+    citations: list[RagCitationOut]
+    claims: list[RagClaimOut]
+    claim_to_chunk: list[RagClaimChunkOut]
+
+
+class SdkStatusOut(BaseModel):
+    p95_ingestion_ms: int
+    spans_per_minute: float
+    last_event_at: datetime | None = None
+    services_seen: list[str]
+
+
+class NotificationOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    project_id: str
+    kind: str
+    title: str
+    meta: dict
+    created_at: datetime
+    read_at: datetime | None = None
+
+
+class NotificationListResponse(BaseModel):
+    data: list[NotificationOut]
+    unread_count: int
+
+
+class NotificationMarkReadIn(BaseModel):
+    ids: list[str] = Field(default_factory=list)

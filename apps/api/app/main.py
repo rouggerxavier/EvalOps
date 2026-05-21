@@ -12,6 +12,7 @@ from app.api.routes_rubrics import router as rubrics_router
 from app.api.routes_evaluations import router as evaluations_router
 from app.api.routes_phase5 import router as phase5_router
 from app.api.routes_phase6 import router as phase6_router
+from app.api.routes_trace_actions import router as trace_actions_router
 from app.config import max_body_bytes
 from app.db import Base, SessionLocal, engine, ensure_schema_compatibility
 from app.logging_config import access_logger, configure_logging
@@ -157,6 +158,7 @@ app.include_router(rubrics_router)
 app.include_router(evaluations_router)
 app.include_router(phase5_router)
 app.include_router(phase6_router)
+app.include_router(trace_actions_router)
 
 
 @app.get("/health/liveness")

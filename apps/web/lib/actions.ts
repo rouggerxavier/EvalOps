@@ -1,5 +1,6 @@
 "use server";
 
+import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { isRedirectError } from "next/dist/client/components/redirect-error";
@@ -7,7 +8,9 @@ import { isRedirectError } from "next/dist/client/components/redirect-error";
 import { setApiKeyFlash } from "@/lib/flash";
 import { sanitizeApiError } from "@/lib/safe-error";
 import {
+  bulkFlagTraces,
   buildDatasetFromTraces,
+  compareTraces,
   createApiKey,
   createDataset,
   createExport,
@@ -18,6 +21,10 @@ import {
   createTraceFeedback,
   createRubric,
   createRubricVersion,
+  flagTrace,
+  markNotificationsRead,
+  patchProject,
+  rerunTrace,
   revokeApiKey,
   runExperiment,
   triggerEvaluation,
@@ -39,6 +46,26 @@ function messageFromActionError(error: unknown, fallback: string): string {
   if (!(error instanceof Error)) return fallback;
   return sanitizeApiError(error.message);
 }
+
+function parseJsonObject(raw: string, fallback: Record<string, unknown> = {}): Record<string, unknown> {
+  if (!raw.trim()) return fallback;
+  const parsed = JSON.parse(raw);
+  if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+    return parsed as Record<string, unknown>;
+  }
+  return fallback;
+}
+
+function traceIdsFromForm(formData: FormData): string[] {
+  const repeated = formData.getAll("trace_ids").map(String).filter(Boolean);
+  const commaSeparated = String(formData.get("trace_ids_csv") ?? "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+  return [...new Set([...repeated, ...commaSeparated])];
+}
+
+const ENV_COOKIE = "evalops_env";
 
 export async function createApiKeyAction(formData: FormData): Promise<void> {
   const org = String(formData.get("org") ?? "");
@@ -91,7 +118,8 @@ export async function createRubricAction(formData: FormData): Promise<void> {
   const project = String(formData.get("project") ?? "");
   const projectId = String(formData.get("project_id") ?? "");
   const yamlSource = String(formData.get("yaml_source") ?? "");
-  const path = projectPath(org, project, "rubrics");
+  const section = String(formData.get("redirect_section") ?? "rubrics");
+  const path = projectPath(org, project, section);
 
   let errorMsg: string | null = null;
   try {
@@ -108,7 +136,8 @@ export async function createRubricVersionAction(formData: FormData): Promise<voi
   const project = String(formData.get("project") ?? "");
   const rubricId = String(formData.get("rubric_id") ?? "");
   const yamlSource = String(formData.get("yaml_source") ?? "");
-  const path = projectPath(org, project, "rubrics");
+  const section = String(formData.get("redirect_section") ?? "rubrics");
+  const path = projectPath(org, project, section);
 
   let errorMsg: string | null = null;
   try {
@@ -141,6 +170,47 @@ export async function triggerEvaluationAction(formData: FormData): Promise<void>
     errorMsg = messageFromActionError(error, "Failed to run evaluation");
   }
   redirectWithMessage(path, errorMsg ? { error: errorMsg } : { created: "1" });
+}
+
+export async function triggerEvaluationFromOverviewAction(formData: FormData): Promise<void> {
+  const org = String(formData.get("org") ?? "");
+  const project = String(formData.get("project") ?? "");
+  const traceId = String(formData.get("trace_id") ?? "");
+  const rubricId = String(formData.get("rubric_id") ?? "");
+  const rubricVersionRaw = String(formData.get("rubric_version") ?? "").trim();
+  const path = `/o/${org}/p/${project}`;
+
+  let errorMsg: string | null = null;
+  try {
+    await triggerEvaluation({
+      trace_id: traceId,
+      rubric_id: rubricId,
+      rubric_version: rubricVersionRaw ? Number(rubricVersionRaw) : undefined,
+      triggered_by: "dashboard",
+    });
+    revalidatePath(path);
+  } catch (error) {
+    errorMsg = messageFromActionError(error, "Failed to run evaluation");
+  }
+  redirectWithMessage(path, errorMsg ? { error: errorMsg } : { evaluation: "1" });
+}
+
+export async function publishRubricAction(formData: FormData): Promise<void> {
+  const org = String(formData.get("org") ?? "");
+  const project = String(formData.get("project") ?? "");
+  const rubricId = String(formData.get("rubric_id") ?? "");
+  const yamlSource = String(formData.get("yaml_source") ?? "");
+  const section = String(formData.get("redirect_section") ?? "rubrics");
+  const path = projectPath(org, project, section);
+
+  let errorMsg: string | null = null;
+  try {
+    await createRubricVersion(rubricId, yamlSource);
+    revalidatePath(path);
+  } catch (error) {
+    errorMsg = messageFromActionError(error, "Failed to publish rubric");
+  }
+  redirectWithMessage(path, errorMsg ? { error: errorMsg } : { published: "1" });
 }
 
 export async function createPromptAction(formData: FormData): Promise<void> {
@@ -340,6 +410,91 @@ export async function createTraceFeedbackAction(formData: FormData): Promise<voi
   redirectWithMessage(path, errorMsg ? { error: errorMsg } : { feedback: "1" });
 }
 
+export async function flagTraceAction(formData: FormData): Promise<void> {
+  const org = String(formData.get("org") ?? "");
+  const project = String(formData.get("project") ?? "");
+  const traceId = String(formData.get("trace_id") ?? "");
+  const reason = String(formData.get("reason") ?? "manual");
+  const note = String(formData.get("note") ?? "");
+  const path = projectPath(org, project, `traces/${traceId}`);
+
+  let errorMsg: string | null = null;
+  try {
+    await flagTrace(traceId, { reason, note: note || undefined });
+    revalidatePath(path);
+    revalidatePath(projectPath(org, project, "traces"));
+  } catch (error) {
+    errorMsg = messageFromActionError(error, "Failed to flag trace");
+  }
+  redirectWithMessage(path, errorMsg ? { error: errorMsg } : { flagged: "1" });
+}
+
+export async function bulkFlagTracesAction(formData: FormData): Promise<void> {
+  const org = String(formData.get("org") ?? "");
+  const project = String(formData.get("project") ?? "");
+  const reason = String(formData.get("reason") ?? "manual");
+  const note = String(formData.get("note") ?? "");
+  const path = projectPath(org, project, "traces");
+
+  let errorMsg: string | null = null;
+  try {
+    const traceIds = traceIdsFromForm(formData);
+    if (traceIds.length === 0) throw new Error("No traces selected");
+    await bulkFlagTraces({ trace_ids: traceIds, reason, note: note || undefined });
+    revalidatePath(path);
+  } catch (error) {
+    errorMsg = messageFromActionError(error, "Failed to flag traces");
+  }
+  redirectWithMessage(path, errorMsg ? { error: errorMsg } : { flagged: "1" });
+}
+
+export async function rerunTraceAction(formData: FormData): Promise<void> {
+  const org = String(formData.get("org") ?? "");
+  const project = String(formData.get("project") ?? "");
+  const traceId = String(formData.get("trace_id") ?? "");
+  const model = String(formData.get("model") ?? "");
+  const variablesRaw = String(formData.get("variables_json") ?? "{}");
+  const path = projectPath(org, project, `traces/${traceId}`);
+
+  let result: { new_trace_id: string } | null = null;
+  let errorMsg: string | null = null;
+  try {
+    result = await rerunTrace(traceId, {
+      model: model || undefined,
+      variables: parseJsonObject(variablesRaw),
+    });
+    revalidatePath(path);
+    revalidatePath(projectPath(org, project, "traces"));
+  } catch (error) {
+    errorMsg = messageFromActionError(error, "Failed to rerun trace");
+  }
+  redirectWithMessage(
+    path,
+    result ? { rerun: "1", new_trace_id: result.new_trace_id } : { error: errorMsg ?? "Failed to rerun trace" },
+  );
+}
+
+export async function compareTracesAction(formData: FormData): Promise<void> {
+  const org = String(formData.get("org") ?? "");
+  const project = String(formData.get("project") ?? "");
+  const leftTraceId = String(formData.get("left_trace_id") ?? formData.get("trace_id") ?? "");
+  const rightTraceId = String(formData.get("right_trace_id") ?? "");
+  const sourcePath = projectPath(org, project, leftTraceId ? `traces/${leftTraceId}` : "traces");
+  const comparePath = projectPath(org, project, "traces/compare");
+
+  let errorMsg: string | null = null;
+  try {
+    if (!leftTraceId || !rightTraceId) throw new Error("Both traces are required");
+    await compareTraces({ left_trace_id: leftTraceId, right_trace_id: rightTraceId });
+  } catch (error) {
+    errorMsg = messageFromActionError(error, "Failed to compare traces");
+  }
+  if (errorMsg) {
+    redirectWithMessage(sourcePath, { error: errorMsg });
+  }
+  redirectWithMessage(comparePath, { left: leftTraceId, right: rightTraceId });
+}
+
 export async function createExportAction(formData: FormData): Promise<void> {
   const org = String(formData.get("org") ?? "");
   const project = String(formData.get("project") ?? "");
@@ -377,4 +532,62 @@ export async function createExportAction(formData: FormData): Promise<void> {
   }
 }
 
+export async function markNotificationsReadAction(formData: FormData): Promise<void> {
+  const org = String(formData.get("org") ?? "");
+  const project = String(formData.get("project") ?? "");
+  const projectId = String(formData.get("project_id") ?? "");
+  const currentPath = String(formData.get("current_path") ?? "") || `/o/${org}/p/${project}`;
+  const ids = formData.getAll("ids").map(String).filter(Boolean);
 
+  let errorMsg: string | null = null;
+  try {
+    await markNotificationsRead(projectId, ids);
+    revalidatePath(currentPath);
+  } catch (error) {
+    errorMsg = messageFromActionError(error, "Failed to mark notifications read");
+  }
+  redirectWithMessage(currentPath, errorMsg ? { error: errorMsg } : { notifications_read: "1" });
+}
+
+export async function setEnvironmentAction(formData: FormData): Promise<void> {
+  const org = String(formData.get("org") ?? "");
+  const project = String(formData.get("project") ?? "");
+  const environment = String(formData.get("environment") ?? "prod");
+  const currentPath = String(formData.get("current_path") ?? "") || `/o/${org}/p/${project}`;
+  const store = await cookies();
+  store.set({
+    name: ENV_COOKIE,
+    value: environment,
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    maxAge: 60 * 60 * 24 * 180,
+  });
+  revalidatePath(currentPath);
+  redirectWithMessage(currentPath, { env: environment });
+}
+
+export async function patchProjectAction(formData: FormData): Promise<void> {
+  const org = String(formData.get("org") ?? "");
+  const project = String(formData.get("project") ?? "");
+  const projectId = String(formData.get("project_id") ?? "");
+  const name = String(formData.get("name") ?? "");
+  const description = String(formData.get("description") ?? "");
+  const defaultEnvironment = String(formData.get("default_environment") ?? "") as "dev" | "staging" | "prod" | "";
+  const path = projectPath(org, project, "settings");
+
+  let errorMsg: string | null = null;
+  try {
+    await patchProject(projectId, {
+      name: name || undefined,
+      description: formData.has("description") ? description : undefined,
+      default_environment: defaultEnvironment || undefined,
+    });
+    revalidatePath(path);
+    revalidatePath(`/o/${org}/p/${project}`);
+  } catch (error) {
+    errorMsg = messageFromActionError(error, "Failed to update project");
+  }
+  redirectWithMessage(path, errorMsg ? { error: errorMsg } : { updated: "1" });
+}

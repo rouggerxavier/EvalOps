@@ -1,23 +1,37 @@
 import type {
+  AttentionResponse,
   ApiKey,
   ApiKeyCreateResponse,
+  BulkTraceFlagResponse,
+  CoverageResponse,
   Dataset,
   DatasetItem,
   Experiment,
   ExperimentRun,
+  EvaluationSummary,
   EvaluationRun,
+  ExportListResponse,
   ExportJob,
   HumanFeedback,
+  Member,
+  NotificationListResponse,
   OrgSubscription,
   OrgUsage,
   OverviewResponse,
+  Project,
   Prompt,
+  PromptUsage,
   PromptVersion,
+  RagConsolidated,
   ResolvedProject,
   Rubric,
   RubricVersion,
+  SdkStatus,
+  TraceCompareResponse,
   TraceDetailResponse,
+  TraceFlag,
   TraceListResponse,
+  TraceRerunResponse,
 } from "./types";
 import { getAuthToken, getSession, hasFallbackToken } from "./auth";
 import { getApiBaseUrl } from "./config";
@@ -64,10 +78,45 @@ export async function hasAuthToken(): Promise<boolean> {
   return (await getSession()) !== null;
 }
 
-export async function getOverview(projectId: string, environment?: string): Promise<OverviewResponse> {
+export async function getOverview(
+  projectId: string,
+  environment?: string,
+  window?: "24h" | "7d" | "30d",
+): Promise<OverviewResponse> {
   const params = new URLSearchParams({ project_id: projectId });
   if (environment) params.set("environment", environment);
+  if (window) params.set("window", window);
   return fetchJson<OverviewResponse>(`/analytics/overview?${params.toString()}`);
+}
+
+export async function getAttention(projectId: string): Promise<AttentionResponse> {
+  return fetchJson<AttentionResponse>(`/projects/${projectId}/attention`);
+}
+
+export async function getCoverage(
+  projectId: string,
+  window?: "24h" | "7d" | "30d",
+): Promise<CoverageResponse> {
+  const params = new URLSearchParams();
+  if (window) params.set("window", window);
+  const suffix = params.toString() ? `?${params.toString()}` : "";
+  return fetchJson<CoverageResponse>(`/projects/${projectId}/coverage${suffix}`);
+}
+
+export async function getSdkStatus(projectId: string): Promise<SdkStatus> {
+  return fetchJson<SdkStatus>(`/projects/${projectId}/sdk-status`);
+}
+
+export async function getNotifications(projectId: string, limit = 20): Promise<NotificationListResponse> {
+  const params = new URLSearchParams({ limit: String(limit) });
+  return fetchJson<NotificationListResponse>(`/projects/${projectId}/notifications?${params.toString()}`);
+}
+
+export async function markNotificationsRead(projectId: string, ids: string[]): Promise<{ updated: number }> {
+  return requestJson<{ updated: number }>(`/projects/${projectId}/notifications/mark-read`, {
+    method: "POST",
+    body: JSON.stringify({ ids }),
+  });
 }
 
 export async function getTraces(opts: {
@@ -91,6 +140,51 @@ export async function getTraces(opts: {
 
 export async function getTrace(traceId: string): Promise<TraceDetailResponse> {
   return fetchJson<TraceDetailResponse>(`/traces/${traceId}`);
+}
+
+export async function flagTrace(traceId: string, payload: {
+  reason: string;
+  note?: string;
+}): Promise<TraceFlag> {
+  return requestJson<TraceFlag>(`/traces/${traceId}/flags`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function bulkFlagTraces(payload: {
+  trace_ids: string[];
+  reason: string;
+  note?: string;
+}): Promise<BulkTraceFlagResponse> {
+  return requestJson<BulkTraceFlagResponse>(`/traces/bulk-flag`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function rerunTrace(traceId: string, payload?: {
+  model?: string;
+  variables?: Record<string, unknown>;
+}): Promise<TraceRerunResponse> {
+  return requestJson<TraceRerunResponse>(`/traces/${traceId}/rerun`, {
+    method: "POST",
+    body: JSON.stringify(payload ?? {}),
+  });
+}
+
+export async function compareTraces(payload: {
+  left_trace_id: string;
+  right_trace_id: string;
+}): Promise<TraceCompareResponse> {
+  return requestJson<TraceCompareResponse>(`/traces/compare`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function getTraceRag(traceId: string): Promise<RagConsolidated> {
+  return fetchJson<RagConsolidated>(`/traces/${traceId}/rag`);
 }
 
 export async function createTraceFeedback(traceId: string, payload: {
@@ -171,6 +265,10 @@ export async function getProjectEvaluations(projectId: string, limit = 100): Pro
   return fetchJson<{ data: EvaluationRun[] }>(`/projects/${projectId}/evaluations?${params.toString()}`);
 }
 
+export async function getEvaluationSummary(projectId: string): Promise<EvaluationSummary> {
+  return fetchJson<EvaluationSummary>(`/projects/${projectId}/evaluations/summary`);
+}
+
 export async function getTraceEvaluations(traceId: string): Promise<{ data: EvaluationRun[] }> {
   return fetchJson<{ data: EvaluationRun[] }>(`/traces/${traceId}/evaluations`);
 }
@@ -207,6 +305,11 @@ export async function createPrompt(projectId: string, payload: {
 
 export async function getPromptVersions(promptId: string): Promise<{ data: PromptVersion[] }> {
   return fetchJson<{ data: PromptVersion[] }>(`/prompts/${promptId}/versions`);
+}
+
+export async function getPromptUsage(promptId: string, limit = 50): Promise<PromptUsage> {
+  const params = new URLSearchParams({ limit: String(limit) });
+  return fetchJson<PromptUsage>(`/prompts/${promptId}/usage?${params.toString()}`);
 }
 
 export async function createPromptVersion(promptId: string, payload: {
@@ -316,6 +419,11 @@ export async function getExport(exportId: string): Promise<ExportJob> {
   return fetchJson<ExportJob>(`/exports/${exportId}`);
 }
 
+export async function listExports(projectId: string, limit = 50): Promise<ExportListResponse> {
+  const params = new URLSearchParams({ limit: String(limit) });
+  return fetchJson<ExportListResponse>(`/projects/${projectId}/exports?${params.toString()}`);
+}
+
 export function getExportDownloadPath(exportId: string, redirectPath: string): string {
   const params = new URLSearchParams({ redirect: redirectPath });
   return `/api/exports/${encodeURIComponent(exportId)}/download?${params.toString()}`;
@@ -330,4 +438,24 @@ export async function getOrganizationUsage(orgId: string, period?: string): Prom
   if (period) params.set("period", period);
   const suffix = params.toString() ? `?${params.toString()}` : "";
   return fetchJson<OrgUsage>(`/organizations/${orgId}/usage${suffix}`);
+}
+
+export async function getMembers(orgId: string): Promise<{ data: Member[] }> {
+  return fetchJson<{ data: Member[] }>(`/organizations/${orgId}/members`);
+}
+
+export async function getProjects(orgId: string): Promise<{ data: Project[] }> {
+  const params = new URLSearchParams({ organization_id: orgId });
+  return fetchJson<{ data: Project[] }>(`/projects?${params.toString()}`);
+}
+
+export async function patchProject(projectId: string, payload: {
+  name?: string;
+  description?: string | null;
+  default_environment?: "dev" | "staging" | "prod";
+}): Promise<Project> {
+  return requestJson<Project>(`/projects/${projectId}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
 }
