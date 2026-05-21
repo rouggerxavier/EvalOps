@@ -444,6 +444,11 @@ export async function getMembers(orgId: string): Promise<{ data: Member[] }> {
   return fetchJson<{ data: Member[] }>(`/organizations/${orgId}/members`);
 }
 
+export async function getProjects(orgId: string): Promise<{ data: Project[] }> {
+  const params = new URLSearchParams({ organization_id: orgId });
+  return fetchJson<{ data: Project[] }>(`/projects?${params.toString()}`);
+}
+
 export async function patchProject(projectId: string, payload: {
   name?: string;
   description?: string | null;

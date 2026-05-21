@@ -487,7 +487,7 @@ Status atualizado em 2026-05-21:
 | 13 | ✅ feito | `feat(evaluations): rewrite summary + tabs + drawer` | `feat(evaluations): rewrite summary + tabs + drawer` |
 | 14 | ✅ feito | `feat(modules): migrate prompts/rubrics/datasets/experiments/keys/exports to cockpit` | `feat(modules): rewrite prompts/rubrics/datasets/experiments/keys/exports with real backend` |
 | 15 | ✅ feito | `feat(traces): add compare page` | `feat(traces): add compare page` |
-| 16 | ⏳ pendente | — | `feat(settings): add stub settings page (project patch + members)` |
+| 16 | ✅ feito | `feat(settings): add stub settings page (project patch + members)` | `feat(settings): add stub settings page (project patch + members)` |
 | 17 | ⏳ pendente | — | `feat(shortcuts): extend G+letter shortcuts (G S settings)` |
 | 18 | ⏳ pendente | — | `chore(cleanup): remove deprecated components (AnswerPreviewCard, CitationRefsTable, etc.)` |
 | 19 | ⏳ pendente | — | `docs(readme): replace root README per spec §10` |
@@ -503,7 +503,8 @@ Observações:
 - Commit 14 migrou os 6 módulos secundários (prompts/rubrics/datasets/experiments/keys/exports) para o vocabulário cockpit: todas as classes `evo-*` substituídas por `page`, `page-header`, `btn`, `card`, `table-wrap`/`t`, `module-summary`/`summary-card`, `endpoint-list`/`endpoint-row`, `tabs`, `kpi-grid`, `badge`, `empty`, `grid-detail`, `mono`, `t__muted`, `t__faint`. Removidos os botões decorativos `disabled` ("Importar" em prompts/rubrics/datasets, "Exportar relatório" em experiments, "Ações adicionais" linha-a-linha em experiments). Coluna "Score" placeholder em Prompts virou "Usado por" populada via `GET /v1/prompts/{id}/usage` (`getPromptUsage`). `tsc --noEmit` limpo e `next build` ok.
 - Pendências de §14 carry-over para o commit 20 (testes) e revisão final: integração `listExports` no listing de Exports, wizard "from-traces" em Datasets, aviso de chave-expira-em-7d em Keys, e column "Em uso por" nos demais módulos onde aplicável.
 - Commit 15 entregou `/o/[org]/p/[project]/traces/compare`: aceita `?left=&right=`, dispara `getTrace`x2 + `compareTraces` em paralelo, renderiza 2 `TraceCard`s (status/env/model/copyable id + 4 KPIs), 5 KPIs de diff (status, Δ duração, Δ custo, Δ tokens, Δ início) com tone bom/ruim, waterfalls lado a lado e tabela de spans agregados por `(type,name)` com Δ duração/erros/modelos. Empty state quando faltam params. Botão "Inverter" troca lados. `tsc --noEmit` limpo.
-- Próximo commit funcional do plano: **16 — Settings stub page**.
+- Commit 16 entregou `/o/[org]/p/[project]/settings`: General card (form ligado a `patchProjectAction` → `PATCH /v1/projects/{id}` com name/description/default_environment), Members card (tabela via `GET /v1/organizations/{id}/members`), Billing card (link para `/o/{org}/usage`) e card "Ações reais". Adicionado wrapper `getProjects(orgId)` em `apps/web/lib/api.ts` (usa `GET /v1/projects?organization_id=`) para popular dados do projeto atual. Banners de success/error via query string (`?updated=1` / `?error=`). `tsc --noEmit` limpo, rota responde HTTP 200.
+- Próximo commit funcional do plano: **17 — Extend G+letter shortcuts (G S settings)**.
 
 ---
 
