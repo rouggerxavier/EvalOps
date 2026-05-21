@@ -1,12 +1,14 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { Bell, BookOpen, ChevronRight, Search } from "lucide-react";
+import { Bell, BookOpen, ChevronRight, Search, Settings } from "lucide-react";
 import { usePathname } from "next/navigation";
 
 import { getActiveNavItem, getPageTitle, projectHref } from "@/components/app-shell-nav";
 import { logoutAction } from "@/lib/auth-actions";
+
+const ENVIRONMENTS = ["prod", "staging", "dev"] as const;
 
 export function EvoTopbar({
   org,
@@ -20,6 +22,9 @@ export function EvoTopbar({
   const pathname = usePathname();
   const base = `/o/${org}/p/${project}`;
   const searchRef = useRef<HTMLInputElement>(null);
+  const [environment, setEnvironment] = useState<(typeof ENVIRONMENTS)[number]>("prod");
+  const [envOpen, setEnvOpen] = useState(false);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
   const activeItem = getActiveNavItem(pathname, base);
   const pageName = getPageTitle(pathname, base);
   const isDetailPage = pageName !== activeItem.label;
@@ -42,61 +47,92 @@ export function EvoTopbar({
   }, []);
 
   return (
-    <header className="evo-topbar">
-      <div className="evo-topbar__context">
-        <div className="evo-topbar__eyebrow">Workspace · {org}</div>
-        <div className="evo-breadcrumbs" aria-label="Breadcrumb">
-          <Link className="evo-breadcrumbs__seg" href={base}>{project}</Link>
-          <span className="evo-breadcrumbs__sep">
-            <ChevronRight size={12} />
-          </span>
-          {isDetailPage ? (
-            <>
-              <Link className="evo-breadcrumbs__seg" href={projectHref(base, activeItem.path)}>{activeItem.label}</Link>
-              <span className="evo-breadcrumbs__sep">
-                <ChevronRight size={12} />
-              </span>
-            </>
-          ) : null}
-          <span className="evo-breadcrumbs__current">{pageName}</span>
-        </div>
-      </div>
+    <header className="topbar">
+      <nav className="crumbs" aria-label="Breadcrumb">
+        <span>{org}</span>
+        <span className="crumbs__sep"><ChevronRight size={12} /></span>
+        <Link href={base}><strong>{project}</strong></Link>
+        <span className="crumbs__sep"><ChevronRight size={12} /></span>
+        {isDetailPage ? (
+          <>
+            <Link href={projectHref(base, activeItem.path)}>{activeItem.label}</Link>
+            <span className="crumbs__sep"><ChevronRight size={12} /></span>
+          </>
+        ) : null}
+        <strong>{pageName}</strong>
+      </nav>
 
-      <form className="evo-search" action={`/o/${org}/p/${project}/traces`} method="get">
-        <Search size={14} />
+      <form className="topbar__search" action={`${base}/traces`} method="get">
+        <Search className="topbar__search-icon" size={14} />
         <input ref={searchRef} name="name" placeholder="Buscar traces por nome..." />
-        <span className="evo-search__kbd">⌘K</span>
+        <span className="topbar__search-kbd">CmdK</span>
       </form>
 
-      <div className="evo-env-pill" aria-label="Ambiente ativo">
-        <span className="evo-env-pill__dot" aria-hidden="true" />
-        env: prod
-      </div>
-      <div className="evo-topbar__divider" />
-      <Link className="evo-topbar__action" href="/docs" aria-label="Documentação">
-        <BookOpen size={16} />
-      </Link>
-      <button
-        type="button"
-        className="evo-topbar__action"
-        aria-label="Alertas planejados"
-        title="Alertas planejados"
-        data-status="planned"
-        disabled
-      >
-        <Bell size={16} />
-      </button>
-      <form action={logoutAction} style={{ display: "inline-flex", alignItems: "center" }}>
+      <div className="topbar__right">
+        <div style={{ position: "relative" }}>
+          <button
+            type="button"
+            className="env-chip"
+            onClick={() => setEnvOpen((value) => !value)}
+            aria-expanded={envOpen}
+            aria-label="Ambiente ativo"
+          >
+            <span className="env-chip__dot" aria-hidden="true" />
+            {environment}
+          </button>
+          {envOpen ? (
+            <div className="card" style={{ position: "absolute", right: 0, top: 34, width: 148, zIndex: 20 }}>
+              <div className="card__body" style={{ display: "grid", gap: 6, padding: 8 }}>
+                {ENVIRONMENTS.map((env) => (
+                  <button
+                    key={env}
+                    type="button"
+                    className={`btn btn--sm${env === environment ? " btn--primary" : " btn--ghost"}`}
+                    onClick={() => {
+                      setEnvironment(env);
+                      setEnvOpen(false);
+                    }}
+                  >
+                    {env}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </div>
+
         <button
-          type="submit"
-          className="evo-user-avatar"
-          title="Sair"
-          aria-label="Sair"
-          style={{ cursor: "pointer", border: "none", background: "none", padding: 0 }}
+          type="button"
+          className="icon-btn"
+          onClick={() => setNotificationsOpen((value) => !value)}
+          aria-label="Notificacoes"
+          aria-expanded={notificationsOpen}
         >
-          {initials}
+          <Bell size={15} />
         </button>
-      </form>
+        {notificationsOpen ? (
+          <div className="card" style={{ position: "absolute", right: 74, top: 42, width: 300, zIndex: 20 }}>
+            <div className="card__header">
+              <h3 className="card__title">Notificacoes</h3>
+            </div>
+            <div className="card__body">
+              <div className="faint">Sem notificacoes novas.</div>
+            </div>
+          </div>
+        ) : null}
+
+        <Link className="icon-btn" href="/docs" aria-label="Documentacao">
+          <BookOpen size={15} />
+        </Link>
+        <Link className="icon-btn" href={`${base}/settings`} aria-label="Settings">
+          <Settings size={15} />
+        </Link>
+        <form action={logoutAction} style={{ display: "inline-flex" }}>
+          <button type="submit" className="user-avatar" title="Sair" aria-label="Sair">
+            {initials}
+          </button>
+        </form>
+      </div>
     </header>
   );
 }

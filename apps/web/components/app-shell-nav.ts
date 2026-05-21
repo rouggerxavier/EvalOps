@@ -12,15 +12,15 @@ export type AppShellNavSection = {
 
 export const APP_SHELL_NAV_SECTIONS: AppShellNavSection[] = [
   {
-    label: "Operação",
+    label: "Projeto",
     items: [
       { id: "overview", label: "Overview", path: "", shortcut: "G O" },
       { id: "traces", label: "Traces", path: "/traces", shortcut: "G T" },
-      { id: "evaluations", label: "Avaliações", path: "/evaluations", shortcut: "G E" },
+      { id: "evaluations", label: "Avaliacoes", path: "/evaluations", shortcut: "G E" },
     ],
   },
   {
-    label: "Assets",
+    label: "Recursos",
     items: [
       { id: "prompts", label: "Prompts", path: "/prompts", shortcut: "G P" },
       { id: "rubrics", label: "Rubricas", path: "/rubrics", shortcut: "G R" },
@@ -29,10 +29,10 @@ export const APP_SHELL_NAV_SECTIONS: AppShellNavSection[] = [
     ],
   },
   {
-    label: "Operações / Config",
+    label: "Operacao",
     items: [
       { id: "keys", label: "Chaves API", path: "/keys", shortcut: "G K" },
-      { id: "exports", label: "Exports", path: "/exports", shortcut: "G S" },
+      { id: "exports", label: "Exports", path: "/exports" },
     ],
   },
 ];
