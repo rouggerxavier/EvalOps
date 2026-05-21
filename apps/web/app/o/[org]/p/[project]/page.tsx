@@ -172,6 +172,9 @@ function PageHeader({
   orgSlug,
   environment,
   environmentLabel,
+  loadedTraces,
+  loadedRubrics,
+  loadedRuns,
 }: {
   projectName: string;
   projectSlug: string;
@@ -179,6 +182,9 @@ function PageHeader({
   orgSlug: string;
   environment?: string;
   environmentLabel: string;
+  loadedTraces: number;
+  loadedRubrics: number;
+  loadedRuns: number;
 }) {
   const refreshHref = environment
     ? `/o/${orgSlug}/p/${projectSlug}?environment=${encodeURIComponent(environment)}`
@@ -186,10 +192,10 @@ function PageHeader({
   return (
     <div className="evo-page-header">
       <div>
-        <p className="evo-page-header__eyebrow">Operacao · Overview</p>
+        <p className="evo-page-header__eyebrow">Workspace · {orgName}</p>
         <h1 className="evo-page-header__title">{projectName}</h1>
         <div className="evo-page-header__subtitle">
-          Workspace {orgName} · ambiente {environmentLabel} · leitura operacional com dados carregados do projeto.
+          Resumo de operacao · ambiente {environmentLabel} · {fmtInteger(loadedTraces)} traces / {fmtInteger(loadedRubrics)} rubricas / {fmtInteger(loadedRuns)} runs carregados.
         </div>
       </div>
       <div className="evo-page-header__actions">
@@ -210,6 +216,48 @@ function PageHeader({
         </Link>
       </div>
     </div>
+  );
+}
+
+function OverviewAlertBanner({
+  problemTraces,
+  errorCount,
+  partialCount,
+  tracesHref,
+}: {
+  problemTraces: Trace[];
+  errorCount: number;
+  partialCount: number;
+  tracesHref: (tab: string) => string;
+}) {
+  if (problemTraces.length === 0) return null;
+  const tab = errorCount > 0 ? "errors" : "flagged";
+  const variant: "error" | "warn" = errorCount > 0 ? "error" : "warn";
+  const parts: string[] = [];
+  if (errorCount > 0) parts.push(`${fmtInteger(errorCount)} com erro`);
+  if (partialCount > 0) parts.push(`${fmtInteger(partialCount)} parciais`);
+  const summary = parts.length > 0
+    ? parts.join(" · ")
+    : `${fmtInteger(problemTraces.length)} status diferente de ok`;
+  return (
+    <Link
+      href={tracesHref(tab)}
+      className={`evo-overview-alert evo-overview-alert--${variant}`}
+      data-testid="overview-alert-banner"
+    >
+      <span className="evo-overview-alert__icon" aria-hidden="true">
+        <AlertCircle size={15} />
+      </span>
+      <span className="evo-overview-alert__body">
+        <strong>
+          {fmtInteger(problemTraces.length)} trace(s) precisam de atencao na amostra carregada
+        </strong>
+        <span>{summary} · revise antes do proximo deploy.</span>
+      </span>
+      <span className="evo-overview-alert__cta evo-mono">
+        Revisar traces <ArrowRight size={12} />
+      </span>
+    </Link>
   );
 }
 
@@ -737,6 +785,14 @@ export default async function ProjectOverviewPage({ params, searchParams }: Prop
   const costSeries = cost_by_day.slice(-14).map((d) => ({ label: fmtShortDate(d.day), cost: d.cost_usd, traces: d.traces }));
   const totalDailyTraces = cost_by_day.reduce((sum, day) => sum + day.traces, 0);
 
+  const errorCount = recentTraces.filter((trace) => trace.status === "error").length;
+  const partialCount = recentTraces.filter((trace) => trace.status === "partial").length;
+  const tracesHrefFor = (tab: string) => {
+    const params = new URLSearchParams({ tab });
+    if (environment) params.set("environment", environment);
+    return `/o/${org}/p/${project}/traces?${params.toString()}`;
+  };
+
   return (
     <div className="evo-page evo-overview-page">
       <PageHeader
@@ -746,12 +802,22 @@ export default async function ProjectOverviewPage({ params, searchParams }: Prop
         orgSlug={resolved.org_slug}
         environment={environment}
         environmentLabel={environmentLabel}
+        loadedTraces={recentTraces.length}
+        loadedRubrics={rubrics.length}
+        loadedRuns={recentRuns.length}
+      />
+
+      <OverviewAlertBanner
+        problemTraces={problemTraces}
+        errorCount={errorCount}
+        partialCount={partialCount}
+        tracesHref={tracesHrefFor}
       />
 
       <div className="evo-overview-hero">
         <div className="evo-overview-hero__panel">
           <Badge variant="info">Cockpit operacional</Badge>
-          <h2>Visao geral honesta do projeto</h2>
+          <h2 className="evo-overview-hero__title">Visao geral honesta do projeto</h2>
           <p>
             Traces, custo, modelos, rubricas e runs de avaliacao aparecem aqui somente quando os endpoints atuais retornam dados.
             Lacunas viram orientacao acionavel para os modulos reais.
