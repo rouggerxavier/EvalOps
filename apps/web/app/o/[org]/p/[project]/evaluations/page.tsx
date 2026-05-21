@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { CheckCircle2, Coins, FileCode2, History, MoreHorizontal, Play, Plus, Target } from "lucide-react";
+import { CheckCircle2, Coins, FileCode2, History, List, MoreHorizontal, Play, Plus, Target } from "lucide-react";
 
 import { AuthRequiredPanel } from "@/components/AuthRequiredPanel";
 import { DistBars } from "@/components/DistBars";
@@ -149,10 +149,10 @@ export default async function EvaluationsPage({ params, searchParams }: Props) {
       {/* Header */}
       <div className="evo-page-header">
         <div>
-          <p className="evo-page-header__eyebrow">Operação · Avaliações</p>
-          <h1 className="evo-page-header__title">Evaluations</h1>
+          <p className="evo-page-header__eyebrow">Qualidade · Avaliações</p>
+          <h1 className="evo-page-header__title">Avaliações</h1>
           <p className="evo-page-header__subtitle">
-            Avaliações LLM-as-judge e heurísticas rodadas sobre traces de produção.
+            LLM-as-judge e heurísticas executadas sobre traces de produção · {rubrics.length.toLocaleString("pt-BR")} rubrica(s) / {runs.length.toLocaleString("pt-BR")} run(s) carregadas.
           </p>
         </div>
         <div className="evo-page-header__actions">
@@ -161,6 +161,13 @@ export default async function EvaluationsPage({ params, searchParams }: Props) {
               <Play size={13} /> Rodar agora
             </Link>
           )}
+          <Link
+            href={`/o/${org}/p/${project}/rubrics`}
+            className="evo-btn evo-btn--sm"
+            data-testid="evaluations-rubrics-link"
+          >
+            <List size={13} /> Ver rubricas
+          </Link>
           <Link href={`/o/${org}/p/${project}/rubrics`} className="evo-btn evo-btn--sm evo-btn--primary">
             <Plus size={13} /> {rubrics.length === 0 ? "Criar rubrica" : "Nova rubrica"}
           </Link>
@@ -182,7 +189,7 @@ export default async function EvaluationsPage({ params, searchParams }: Props) {
       <section className="evo-kpi-grid evo-evaluations-summary" aria-label="Resumo de avaliacoes">
         <EvaluationSummaryCard
           icon={<Target size={13} />}
-          label="Rubricas"
+          label="Rubricas ativas"
           value={rubrics.length.toLocaleString("pt-BR")}
           hint="Fonte: getRubrics"
         />
@@ -339,10 +346,10 @@ export default async function EvaluationsPage({ params, searchParams }: Props) {
               <p style={{ color: "var(--text-muted)", marginBottom: 8, fontWeight: 600 }}>Nenhuma run ainda</p>
               <p style={{ color: "var(--text-faint)", fontSize: 13 }}>
                 {rubrics.length === 0
-                  ? "Crie uma rubrica YAML antes de rodar avaliacoes."
+                  ? "Crie uma rubrica YAML antes de rodar avaliações."
                   : traces.length === 0
-                    ? "Capture um trace antes de rodar avaliacoes."
-                    : "Use uma rubrica versionada e um trace elegivel para iniciar a primeira run."}
+                    ? "Capture um trace antes de rodar avaliações."
+                    : "Use uma rubrica versionada e um trace elegível para iniciar a primeira run."}
               </p>
               <div className="evo-row" style={{ justifyContent: "center", marginTop: 14 }}>
                 {rubrics.length === 0 ? (

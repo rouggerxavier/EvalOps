@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { AlertCircle, ChevronRight, Clock, Download, Flag } from "lucide-react";
+import { AlertCircle, ChevronRight, Clock, Download, Flag, Layers } from "lucide-react";
 
 import { AuthRequiredPanel } from "@/components/AuthRequiredPanel";
 import { TracesFilterBar } from "@/components/TracesFilterBar";
@@ -112,10 +112,20 @@ export default async function TracesListPage({ params, searchParams }: Props) {
           <p className="evo-page-header__eyebrow">Observabilidade · Traces</p>
           <h1 className="evo-page-header__title">Traces</h1>
           <p className="evo-page-header__subtitle">
-            Sinal operacional por execução, erro, custo e contexto RAG detectável na página atual.
+            {rows.length.toLocaleString("pt-BR")} trace{rows.length === 1 ? "" : "s"} na página atual ·
+            {" "}auto-refresh a cada 30s · sinal por execução, erro, custo e contexto RAG detectável.
           </p>
         </div>
         <div className="evo-page-header__actions">
+          {autoRefreshEnabled ? (
+            <span
+              className="evo-tag evo-traces-live"
+              data-testid="trace-list-live-pill"
+              title="Auto-refresh ativo · 30s"
+            >
+              <span className="evo-badge__dot" /> ao vivo
+            </span>
+          ) : null}
           <Link href={exportsHref} className="evo-btn evo-btn--sm">
             <Download size={13} /> Exportar JSONL
           </Link>
@@ -177,7 +187,7 @@ export default async function TracesListPage({ params, searchParams }: Props) {
           className={`evo-tab${tab === "rag" ? " is-active" : ""}`}
           data-testid="trace-list-rag-tab"
         >
-          RAG
+          <Layers size={12} /> RAG
           <span className="evo-tab__count">{ragRows.length}</span>
         </Link>
       </nav>

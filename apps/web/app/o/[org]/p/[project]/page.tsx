@@ -172,6 +172,9 @@ function PageHeader({
   orgSlug,
   environment,
   environmentLabel,
+  loadedTraces,
+  loadedRubrics,
+  loadedRuns,
 }: {
   projectName: string;
   projectSlug: string;
@@ -179,6 +182,9 @@ function PageHeader({
   orgSlug: string;
   environment?: string;
   environmentLabel: string;
+  loadedTraces: number;
+  loadedRubrics: number;
+  loadedRuns: number;
 }) {
   const refreshHref = environment
     ? `/o/${orgSlug}/p/${projectSlug}?environment=${encodeURIComponent(environment)}`
@@ -186,10 +192,10 @@ function PageHeader({
   return (
     <div className="evo-page-header">
       <div>
-        <p className="evo-page-header__eyebrow">Operacao · Overview</p>
+        <p className="evo-page-header__eyebrow">Workspace · {orgName}</p>
         <h1 className="evo-page-header__title">{projectName}</h1>
         <div className="evo-page-header__subtitle">
-          Workspace {orgName} · ambiente {environmentLabel} · leitura operacional com dados carregados do projeto.
+          Resumo de operacao · ambiente {environmentLabel} · {fmtInteger(loadedTraces)} traces / {fmtInteger(loadedRubrics)} rubricas / {fmtInteger(loadedRuns)} runs carregados.
         </div>
       </div>
       <div className="evo-page-header__actions">
@@ -200,16 +206,58 @@ function PageHeader({
           data-status="planned"
           title="Filtro de janela - em breve"
         >
-          <Clock size={13} /> Ultimos 7 dias
+          <Clock size={13} /> Últimos 7 dias
         </button>
         <Link href={refreshHref} className="evo-btn evo-btn--sm" title="Atualizar overview">
           <RefreshCw size={13} /> Atualizar
         </Link>
         <Link href={`/o/${orgSlug}/p/${projectSlug}/evaluations`} className="evo-btn evo-btn--sm evo-btn--primary">
-          <Play size={13} /> Rodar avaliacao
+          <Play size={13} /> Rodar avaliação
         </Link>
       </div>
     </div>
+  );
+}
+
+function OverviewAlertBanner({
+  problemTraces,
+  errorCount,
+  partialCount,
+  tracesHref,
+}: {
+  problemTraces: Trace[];
+  errorCount: number;
+  partialCount: number;
+  tracesHref: (tab: string) => string;
+}) {
+  if (problemTraces.length === 0) return null;
+  const tab = errorCount > 0 ? "errors" : "flagged";
+  const variant: "error" | "warn" = errorCount > 0 ? "error" : "warn";
+  const parts: string[] = [];
+  if (errorCount > 0) parts.push(`${fmtInteger(errorCount)} com erro`);
+  if (partialCount > 0) parts.push(`${fmtInteger(partialCount)} parciais`);
+  const summary = parts.length > 0
+    ? parts.join(" · ")
+    : `${fmtInteger(problemTraces.length)} status diferente de ok`;
+  return (
+    <Link
+      href={tracesHref(tab)}
+      className={`evo-overview-alert evo-overview-alert--${variant}`}
+      data-testid="overview-alert-banner"
+    >
+      <span className="evo-overview-alert__icon" aria-hidden="true">
+        <AlertCircle size={15} />
+      </span>
+      <span className="evo-overview-alert__body">
+        <strong>
+          {fmtInteger(problemTraces.length)} trace(s) precisam de atenção na amostra carregada
+        </strong>
+        <span>{summary} · revise antes do próximo deploy.</span>
+      </span>
+      <span className="evo-overview-alert__cta evo-mono">
+        Revisar traces <ArrowRight size={12} />
+      </span>
+    </Link>
   );
 }
 
@@ -264,22 +312,22 @@ function ProjectStatusCard({
       : rubrics.length === 0
       ? "Observabilidade sem rubricas"
       : runs.length === 0
-      ? "Avaliacao pronta para iniciar"
-      : "Operacao sem erro na amostra";
+      ? "Avaliação pronta para iniciar"
+      : "Operação sem erro na amostra";
   const variant: BadgeVariant =
     kpis.traces === 0 ? "info" : flaggedCount > 0 || overviewHasErrors ? "warn" : runs.length === 0 ? "info" : "ok";
   const body =
     kpis.traces === 0
-      ? "O overview ainda nao recebeu traces neste ambiente. Configure uma chave e envie a primeira execucao instrumentada."
+      ? "O overview ainda não recebeu traces neste ambiente. Configure uma chave e envie a primeira execução instrumentada."
       : flaggedCount > 0
-      ? "A amostra carregada contem traces com status diferente de ok. Abra Traces para ver causa, duracao e metadata."
+      ? "A amostra carregada contém traces com status diferente de ok. Abra Traces para ver causa, duração e metadata."
       : overviewHasErrors
-      ? "O endpoint de overview retornou taxa de erro acima de zero, mas a amostra recente nao trouxe um trace problematico."
+      ? "O endpoint de overview retornou taxa de erro acima de zero, mas a amostra recente não trouxe um trace problemático."
       : rubrics.length === 0
-      ? "Traces existem, mas ainda nao ha rubricas cadastradas para avaliar qualidade."
+      ? "Traces existem, mas ainda não há rubricas cadastradas para avaliar qualidade."
       : runs.length === 0
-      ? "Ha traces e rubricas disponiveis; o proximo passo real e rodar uma avaliacao."
-      : "Nenhum erro apareceu nos traces recentes carregados, e ja existem runs de avaliacao no projeto.";
+      ? "Há traces e rubricas disponíveis; o próximo passo real é rodar uma avaliação."
+      : "Nenhum erro apareceu nos traces recentes carregados, e já existem runs de avaliação no projeto.";
 
   return (
     <section className={`evo-overview-status evo-overview-status--${variant}`}>
@@ -302,7 +350,7 @@ function ProjectStatusCard({
           <dd>{fmtInteger(rubrics.length)}</dd>
         </div>
         <div>
-          <dt>Runs avaliacao</dt>
+          <dt>Runs avaliação</dt>
           <dd>{fmtInteger(runs.length)}</dd>
         </div>
       </dl>
@@ -314,8 +362,8 @@ function AreaChart({ data }: { data: ChartPoint[] }) {
   if (data.length === 0) {
     return (
       <EmptyState
-        title="Sem serie diaria"
-        body="O endpoint de overview nao retornou custo por dia para este ambiente."
+        title="Sem série diária"
+        body="O endpoint de overview não retornou custo por dia para este ambiente."
       />
     );
   }
@@ -329,7 +377,7 @@ function AreaChart({ data }: { data: ChartPoint[] }) {
   const area = `${line} L ${points[points.length - 1][0]} ${height - 30} L 0 ${height - 30} Z`;
 
   return (
-    <svg viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" className="evo-overview-chart" role="img" aria-label="Custo diario retornado pelo overview">
+    <svg viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" className="evo-overview-chart" role="img" aria-label="Custo diário retornado pelo overview">
       <defs>
         <linearGradient id="evo-overview-area-grad" x1="0" x2="0" y1="0" y2="1">
           <stop offset="0%" stopColor="var(--accent)" stopOpacity="0.35" />
@@ -401,7 +449,7 @@ function RecentTracesCard({ traces, org, project }: { traces: Trace[]; org: stri
         {traces.length === 0 ? (
           <EmptyState
             title="Nenhum trace recente"
-            body="Quando o SDK enviar traces, eles aparecem aqui com status, modelo, custo e duracao."
+            body="Quando o SDK enviar traces, eles aparecem aqui com status, modelo, custo e duração."
             href={`/o/${org}/p/${project}/keys`}
             action="Configurar chave"
           />
@@ -414,7 +462,7 @@ function RecentTracesCard({ traces, org, project }: { traces: Trace[]; org: stri
               <span className="evo-overview-row__main">
                 <strong>{trace.name}</strong>
                 <small>
-                  {trace.service ?? "servico nao informado"} · {model ?? "modelo nao informado"}
+                  {trace.service ?? "serviço não informado"} · {model ?? "modelo não informado"}
                   {cause ? ` · causa: ${cause}` : ""}
                 </small>
               </span>
@@ -449,28 +497,28 @@ function EvaluationSnapshotCard({
     <section className="evo-overview-card">
       <div className="evo-card__header">
         <div>
-          <h3 className="evo-card__title">Avaliacoes</h3>
+          <h3 className="evo-card__title">Avaliações</h3>
           <div className="evo-card__subtitle">
             {runs.length > 0
-              ? `${fmtInteger(runs.length)} run(s) carregadas · score medio ${fmtScore(avgScore)}`
+              ? `${fmtInteger(runs.length)} run(s) carregadas · score médio ${fmtScore(avgScore)}`
               : "Status real das runs e rubricas do projeto"}
           </div>
         </div>
         <Link className="evo-btn evo-btn--sm" href={`/o/${org}/p/${project}/evaluations`}>
-          Abrir avaliacoes <ArrowRight size={12} />
+          Abrir avaliações <ArrowRight size={12} />
         </Link>
       </div>
       <div className="evo-overview-list">
         {latestRuns.length === 0 ? (
           <EmptyState
-            title={rubrics.length === 0 ? "Nenhuma rubrica cadastrada" : "Nenhuma run de avaliacao"}
+            title={rubrics.length === 0 ? "Nenhuma rubrica cadastrada" : "Nenhuma run de avaliação"}
             body={
               rubrics.length === 0
-                ? "Crie uma rubrica antes de rodar avaliacoes sobre traces."
-                : "As rubricas existem; rode uma avaliacao quando houver trace elegivel."
+                ? "Crie uma rubrica antes de rodar avaliações sobre traces."
+                : "As rubricas existem; rode uma avaliação quando houver trace elegível."
             }
             href={rubrics.length === 0 ? `/o/${org}/p/${project}/rubrics` : `/o/${org}/p/${project}/evaluations`}
-            action={rubrics.length === 0 ? "Criar rubrica" : "Rodar avaliacao"}
+            action={rubrics.length === 0 ? "Criar rubrica" : "Rodar avaliação"}
           />
         ) : latestRuns.map((run) => {
           const rubric = rubricMap.get(run.rubric_id);
@@ -518,7 +566,7 @@ function OperationalSignals({
   if (kpis.traces === 0) {
     signals.push({
       title: "Sem traces neste ambiente",
-      body: `O cockpit ainda nao tem execucoes para resumir em ${environmentLabel}.`,
+      body: `O cockpit ainda não tem execuções para resumir em ${environmentLabel}.`,
       href: `/o/${org}/p/${project}/keys`,
       variant: "info",
     });
@@ -538,7 +586,7 @@ function OperationalSignals({
   } else if (kpis.error_rate > 0) {
     signals.push({
       title: `Taxa de erro ${formatPercent(kpis.error_rate)}`,
-      body: "O overview retornou erro na janela, mas a amostra recente nao trouxe a linha exata.",
+      body: "O overview retornou erro na janela, mas a amostra recente não trouxe a linha exata.",
       href: tracesHref("errors"),
       variant: "warn",
     });
@@ -554,7 +602,7 @@ function OperationalSignals({
   if (rubrics.length === 0) {
     signals.push({
       title: "Sem rubricas",
-      body: "Avaliacoes precisam de uma rubrica versionada.",
+      body: "Avaliações precisam de uma rubrica versionada.",
       href: `/o/${org}/p/${project}/rubrics`,
       variant: "info",
     });
@@ -562,7 +610,7 @@ function OperationalSignals({
   if (rubrics.length > 0 && runs.length === 0) {
     signals.push({
       title: "Rubricas sem runs",
-      body: "Ha rubricas cadastradas, mas nenhuma avaliacao foi rodada ainda.",
+      body: "Há rubricas cadastradas, mas nenhuma avaliação foi rodada ainda.",
       href: `/o/${org}/p/${project}/evaluations`,
       variant: "eval",
     });
@@ -573,7 +621,7 @@ function OperationalSignals({
       <div className="evo-card__header">
         <div>
           <h3 className="evo-card__title">Sinais operacionais</h3>
-          <div className="evo-card__subtitle">Somente condicoes derivadas dos payloads carregados</div>
+          <div className="evo-card__subtitle">Somente condições derivadas dos payloads carregados</div>
         </div>
       </div>
       <div className="evo-overview-signal-list">
@@ -581,8 +629,8 @@ function OperationalSignals({
           <div className="evo-overview-signal evo-overview-signal--ok">
             <CheckCircle2 size={15} />
             <span>
-              <strong>Sem sinal critico na amostra</strong>
-              <small>Nenhum erro ou lacuna basica apareceu nos dados carregados para esta Overview.</small>
+              <strong>Sem sinal crítico na amostra</strong>
+              <small>Nenhum erro ou lacuna básica apareceu nos dados carregados para esta Overview.</small>
             </span>
           </div>
         ) : signals.map((signal) => (
@@ -618,7 +666,7 @@ function NextActions({
       ? {
           icon: <Activity size={16} />,
           title: "Abrir traces",
-          body: "Ver execucoes recentes, waterfall, metadata e feedback humano.",
+          body: "Ver execuções recentes, waterfall, metadata e feedback humano.",
           href: `/o/${org}/p/${project}/traces`,
           tone: "primary",
         }
@@ -632,14 +680,14 @@ function NextActions({
     hasRubrics
       ? {
           icon: <Target size={16} />,
-          title: hasRuns ? "Revisar avaliacoes" : "Rodar avaliacao",
+          title: hasRuns ? "Revisar avaliações" : "Rodar avaliação",
           body: hasRuns ? "Abrir runs, scores e rubricas usadas." : "Executar uma rubrica existente sobre um trace.",
           href: `/o/${org}/p/${project}/evaluations`,
         }
       : {
           icon: <ListChecks size={16} />,
           title: "Criar rubrica",
-          body: "Definir criterios versionados antes de medir qualidade.",
+          body: "Definir critérios versionados antes de medir qualidade.",
           href: `/o/${org}/p/${project}/rubrics`,
         },
     {
@@ -651,13 +699,13 @@ function NextActions({
     {
       icon: <Sparkles size={16} />,
       title: "Gerenciar prompts",
-      body: "Ver templates e versoes de prompt cadastrados.",
+      body: "Ver templates e versões de prompt cadastrados.",
       href: `/o/${org}/p/${project}/prompts`,
     },
   ];
 
   return (
-    <section className="evo-overview-actions" aria-label="Proximos passos">
+    <section className="evo-overview-actions" aria-label="Próximos passos">
       {actions.map((action) => (
         <Link
           className={`evo-overview-action ${action.tone === "primary" ? "evo-overview-action--primary" : ""}`}
@@ -701,7 +749,7 @@ function ProjectContext({
         <small>
           {environmentLabel === "sem filtro"
             ? "Sem filtro de ambiente em overview/traces"
-            : "Filtro aplicado em overview/traces; rubricas e runs sao do projeto"}
+            : "Filtro aplicado em overview/traces; rubricas e runs são do projeto"}
         </small>
       </div>
     </section>
@@ -737,6 +785,14 @@ export default async function ProjectOverviewPage({ params, searchParams }: Prop
   const costSeries = cost_by_day.slice(-14).map((d) => ({ label: fmtShortDate(d.day), cost: d.cost_usd, traces: d.traces }));
   const totalDailyTraces = cost_by_day.reduce((sum, day) => sum + day.traces, 0);
 
+  const errorCount = recentTraces.filter((trace) => trace.status === "error").length;
+  const partialCount = recentTraces.filter((trace) => trace.status === "partial").length;
+  const tracesHrefFor = (tab: string) => {
+    const params = new URLSearchParams({ tab });
+    if (environment) params.set("environment", environment);
+    return `/o/${org}/p/${project}/traces?${params.toString()}`;
+  };
+
   return (
     <div className="evo-page evo-overview-page">
       <PageHeader
@@ -746,15 +802,25 @@ export default async function ProjectOverviewPage({ params, searchParams }: Prop
         orgSlug={resolved.org_slug}
         environment={environment}
         environmentLabel={environmentLabel}
+        loadedTraces={recentTraces.length}
+        loadedRubrics={rubrics.length}
+        loadedRuns={recentRuns.length}
+      />
+
+      <OverviewAlertBanner
+        problemTraces={problemTraces}
+        errorCount={errorCount}
+        partialCount={partialCount}
+        tracesHref={tracesHrefFor}
       />
 
       <div className="evo-overview-hero">
         <div className="evo-overview-hero__panel">
           <Badge variant="info">Cockpit operacional</Badge>
-          <h2>Visao geral honesta do projeto</h2>
+          <h2 className="evo-overview-hero__title">Visão geral honesta do projeto</h2>
           <p>
-            Traces, custo, modelos, rubricas e runs de avaliacao aparecem aqui somente quando os endpoints atuais retornam dados.
-            Lacunas viram orientacao acionavel para os modulos reais.
+            Traces, custo, modelos, rubricas e runs de avaliação aparecem aqui somente quando os endpoints atuais retornam dados.
+            Lacunas viram orientação acionável para os módulos reais.
           </p>
           <ProjectContext resolved={resolved} environmentLabel={environmentLabel} />
         </div>
@@ -769,10 +835,10 @@ export default async function ProjectOverviewPage({ params, searchParams }: Prop
 
       <section className="evo-overview-metric-grid" aria-label="Resumo operacional">
         <OverviewMetricCard label="Traces" icon={<Activity size={13} />} value={fmtNumber(kpis.traces)} hint="Fonte: analytics/overview" variant="info" />
-        <OverviewMetricCard label="p95 latencia" icon={<Clock size={13} />} value={formatLatency(kpis.latency_p95_ms)} hint="Fonte: analytics/overview" variant="warn" />
+        <OverviewMetricCard label="p95 latência" icon={<Clock size={13} />} value={formatLatency(kpis.latency_p95_ms)} hint="Fonte: analytics/overview" variant="warn" />
         <OverviewMetricCard label="Custo" icon={<Coins size={13} />} value={formatCost(kpis.cost_usd)} hint="USD retornado pelo overview" variant="eval" />
         <OverviewMetricCard label="Erro" icon={<AlertCircle size={13} />} value={formatPercent(kpis.error_rate)} hint="Taxa retornada pelo overview" variant={kpis.error_rate > 0 ? "err" : "ok"} />
-        <OverviewMetricCard label="Score medio" icon={<Target size={13} />} value={fmtScore(kpis.avg_score)} hint={kpis.avg_score === null ? "Sem fonte de score no payload" : "Fonte: analytics/overview"} variant="eval" />
+        <OverviewMetricCard label="Score médio" icon={<Target size={13} />} value={fmtScore(kpis.avg_score)} hint={kpis.avg_score === null ? "Sem fonte de score no payload" : "Fonte: analytics/overview"} variant="eval" />
       </section>
 
       <NextActions
@@ -792,11 +858,11 @@ export default async function ProjectOverviewPage({ params, searchParams }: Prop
         <div className="evo-overview-card">
           <div className="evo-card__header">
             <div>
-              <h3 className="evo-card__title">Custo diario</h3>
+              <h3 className="evo-card__title">Custo diário</h3>
               <div className="evo-card__subtitle">
                 {cost_by_day.length > 0
-                  ? `${fmtInteger(totalDailyTraces)} trace(s) na serie carregada`
-                  : "Sem serie de custo retornada"}
+                  ? `${fmtInteger(totalDailyTraces)} trace(s) na série carregada`
+                  : "Sem série de custo retornada"}
               </div>
             </div>
             <div className="evo-row">
@@ -852,7 +918,7 @@ export default async function ProjectOverviewPage({ params, searchParams }: Prop
           </div>
           <div className="evo-overview-shortcuts">
             <Link href={`/o/${org}/p/${project}/traces`}><Activity size={14} /> Traces</Link>
-            <Link href={`/o/${org}/p/${project}/evaluations`}><BarChart3 size={14} /> Avaliacoes</Link>
+            <Link href={`/o/${org}/p/${project}/evaluations`}><BarChart3 size={14} /> Avaliações</Link>
             <Link href={`/o/${org}/p/${project}/rubrics`}><ListChecks size={14} /> Rubricas</Link>
             <Link href={`/o/${org}/p/${project}/datasets`}><Database size={14} /> Datasets</Link>
             <Link href={`/o/${org}/p/${project}/prompts`}><FileText size={14} /> Prompts</Link>
@@ -864,7 +930,7 @@ export default async function ProjectOverviewPage({ params, searchParams }: Prop
       <footer className="evo-footer">
         <span>EvalOps Studio</span>
         <span className="evo-spacer" />
-        <a href="/docs">Documentacao</a>
+        <a href="/docs">Documentação</a>
         <a href={`${apiRoot()}/health/readiness`} target="_blank" rel="noreferrer">Readiness API</a>
       </footer>
     </div>

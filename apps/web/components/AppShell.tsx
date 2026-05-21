@@ -1,5 +1,9 @@
 import type { ReactNode } from "react";
+import { Suspense } from "react";
 
+import { EvoShortcuts } from "@/components/EvoShortcuts";
+import { EvoToastBridge } from "@/components/EvoToastBridge";
+import { EvoToastHost } from "@/components/EvoToastHost";
 import { EvoTopbar } from "@/components/EvoTopbar";
 import { KeyboardShortcuts } from "@/components/KeyboardShortcuts";
 import { Sidebar } from "@/components/Sidebar";
@@ -20,6 +24,11 @@ export function AppShell({ children, org, project, initials }: Props) {
         <EvoTopbar org={org} project={project} initials={initials} />
         {children}
       </div>
+      <EvoShortcuts />
+      <Suspense fallback={null}>
+        <EvoToastBridge />
+      </Suspense>
+      <EvoToastHost />
     </div>
   );
 }
