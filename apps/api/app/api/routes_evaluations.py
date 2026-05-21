@@ -17,7 +17,7 @@ from app.domain.services.usage_service import apply_usage_with_quota, increment_
 from app.models import EvaluationRun, EvaluationScore, Rubric, RubricVersion, Trace, User
 from app.ownership import load_project, load_trace
 from app.safe_errors import safe_message
-from app.schemas import CoverageResponse, EvaluationRunOut, EvaluationRunRequest, EvaluationScoreOut
+from app.schemas import CoverageResponse, EvaluationRunOut, EvaluationRunRequest, EvaluationScoreOut, EvaluationSummaryOut
 
 router = APIRouter(prefix="/v1")
 
@@ -251,6 +251,33 @@ def get_project_coverage(
             }
         )
     return {"data": data}
+
+
+@router.get("/projects/{project_id}/evaluations/summary", response_model=EvaluationSummaryOut)
+def get_project_evaluation_summary(
+    project_id: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    project = load_project(db, user.id, project_id)
+    seven_days_ago = datetime.now(timezone.utc) - timedelta(days=7)
+    active_rubrics = db.query(func.count(Rubric.id)).filter(Rubric.project_id == project.id).scalar() or 0
+    runs = (
+        db.query(EvaluationRun)
+        .filter(EvaluationRun.project_id == project.id, EvaluationRun.created_at >= seven_days_ago)
+        .all()
+    )
+    completed = [run for run in runs if run.status == "completed" and run.passed is not None]
+    pass_rate = None
+    if completed:
+        pass_rate = round(sum(1 for run in completed if run.passed) / len(completed), 4)
+    cost_usd = sum(float(run.cost_usd or 0) for run in runs)
+    return {
+        "active_rubrics": int(active_rubrics),
+        "runs_7d": len(runs),
+        "pass_rate": pass_rate,
+        "cost_usd": round(cost_usd, 6),
+    }
 
 
 @router.get("/traces/{trace_id}/evaluations")

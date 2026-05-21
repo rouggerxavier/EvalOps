@@ -473,6 +473,11 @@ class ExportJobOut(BaseModel):
     completed_at: datetime | None = None
 
 
+class ExportListResponse(BaseModel):
+    data: list[ExportJobOut]
+    next_cursor: str | None = None
+
+
 class AttentionItemOut(BaseModel):
     trace_id: str
     cause: str
@@ -494,6 +499,61 @@ class CoverageItemOut(BaseModel):
 
 class CoverageResponse(BaseModel):
     data: list[CoverageItemOut]
+
+
+class EvaluationSummaryOut(BaseModel):
+    active_rubrics: int
+    runs_7d: int
+    pass_rate: float | None = None
+    cost_usd: float
+
+
+class PromptUsageTraceOut(BaseModel):
+    trace_id: str
+    name: str
+    service: str | None = None
+    environment: str
+    status: str
+    prompt_version_ref: str | None = None
+    used_at: datetime
+
+
+class PromptUsageOut(BaseModel):
+    prompt_id: str
+    usage_count: int
+    traces: list[PromptUsageTraceOut]
+
+
+class RagCitationOut(BaseModel):
+    rank: int
+    title: str | None = None
+    score: float | None = None
+    source: str | None = None
+    chunk: str | None = None
+
+
+class RagClaimOut(BaseModel):
+    text: str
+    grounded: bool
+    cite: str | None = None
+
+
+class RagClaimChunkOut(BaseModel):
+    claim: str
+    chunk: str
+    score: float | None = None
+
+
+class RagConsolidatedOut(BaseModel):
+    retrieved_docs: int
+    avg_score: float | None = None
+    grounded_claims: int
+    ungrounded_claims: int
+    hallucination_risk: str
+    answer_preview: str | None = None
+    citations: list[RagCitationOut]
+    claims: list[RagClaimOut]
+    claim_to_chunk: list[RagClaimChunkOut]
 
 
 class SdkStatusOut(BaseModel):
