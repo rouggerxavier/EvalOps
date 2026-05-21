@@ -139,6 +139,71 @@ versions list, eyebrow P5, flash inline.
 
 ---
 
+## P7.9 — Files Changed (commit `4aa0621`)
+
+P7.9 — `4aa0621` feat(web): P7.9 evaluations re-tune
+(header/actions/badge)
+- `apps/web/app/o/[org]/p/[project]/evaluations/page.tsx` —
+  PageHeader eyebrow `Operação · Avaliações` → `Qualidade ·
+  Avaliações` (ZIP voice). H1 `Evaluations` → `Avaliações`.
+  Subtitle reformulado para `LLM-as-judge e heurísticas
+  executadas sobre traces de produção · {rubrics.length}
+  rubrica(s) / {runs.length} run(s) carregadas` derivado de
+  payload (sem dado inventado). Nova action ghost `Ver rubricas`
+  (`List` icon · `data-testid="evaluations-rubrics-link"` · rota
+  real `/o/{org}/p/{project}/rubrics`) inserida entre `Rodar
+  agora` e `Nova rubrica`. KPI label `Rubricas` → `Rubricas
+  ativas` (hint `Fonte: getRubrics` preservado para
+  evaluations-premium guard). Adiciona import `List` de
+  lucide-react.
+- `apps/web/tests/evaluations-p7.test.mjs` (novo) — 8 testes
+  cobrindo server contract (`getProjectEvaluations` /
+  `EVALUATION_RUNS_LIMIT` / `getRubrics` /
+  `getTraces limit:20` / `getRubricVersions` /
+  `triggerEvaluationAction`), header re-tune (Qualidade eyebrow
+  + Avaliações title + ZIP-voice subtitle com `rubrics.length`/
+  `runs.length`), Ver rubricas entre Rodar agora e Nova rubrica
+  com testid + import List, KPI `Rubricas ativas`, DistBars +
+  RubricDrawer + form `triggerEvaluationAction` preservados,
+  planned controls + empty states (`Nenhuma rubrica cadastrada`,
+  `Criar rubrica`, `Nenhuma run ainda`, `traces.length === 0`,
+  `Ver traces`, `#run-evaluation`), real data only (sem
+  `PreviewActionModal`, `EvaluationDrawer` ZIP,
+  `EndpointSnippet`, `Math.random`, `grounded_in_retrieval`
+  mock), `aggregate_score` + `buildDistribution` reais,
+  tabs/counts/CSS preservados (`evo-tab__count`, `.dist-bars`,
+  `.evo-evaluations-summary`, `.evo-evaluations-layout`).
+
+Validation:
+- `npm test`: 183/183 pass (175 anteriores + 8 P7.9).
+- `tsc --noEmit`: limpo.
+
+Preservado deliberadamente: `AuthRequiredPanel`,
+`hasAuthToken`/`resolveProject`, server contract
+`getProjectEvaluations(resolved.project_id,
+EVALUATION_RUNS_LIMIT)` + `getRubrics(resolved.project_id)` +
+`getTraces({projectId: resolved.project_id, limit: 20})` +
+`getRubricVersions(selectedRubric.id)`,
+`triggerEvaluationAction` form completo (`<details
+id="run-evaluation">` com selects de trace + rubric), tabs
+ativas/runs/pausadas com `evo-tab__count`, tabela `.evo-table`
+ativa (9 colunas reais: Evaluation/Rubric/Tipo/Runs 7d/Pass
+rate/Score médio/Distribuição/Atualizada + actions), `DistBars`
+real via `buildDistribution(scores)`, `scoreColor` por faixa
+(`>=0.85` ok / `>=0.7` warn / err), `rubricDrawerHref` para
+abrir `RubricDrawer` read-only com YAML, tabela runs com
+`aggregate_score` + `cost_usd` + `passed` + `created_at`, 4
+`EvaluationSummaryCard` (Rubricas ativas / Runs 7d / Pass rate
+/ Custo carregado) com hints `Fonte: getRubrics` /
+`loadedRunsHint`, flash `qp.created`/`qp.error` via
+`safeErrorMessage`, planned `MoreHorizontal` `disabled
+data-status="planned"`, layout `.evo-evaluations-layout`
+quando `selectedRubric` ativo. `RubricDrawer.tsx` e
+`DistBars.tsx` não alterados — re-tune mecânico fica em
+`page.tsx`.
+
+---
+
 ## P7.8 — Files Changed (commit `3470543`)
 
 P7.8 — `3470543` feat(web): P7.8 overview re-tune (header/alert

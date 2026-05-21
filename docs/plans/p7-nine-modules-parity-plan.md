@@ -291,14 +291,36 @@ Status legend: ⬜ pendente · 🟨 em andamento · ✅ landed
   `overview-premium.test.mjs`. Espírito da premissa preservado:
   banner aparece somente com sinal real (`problemTraces.length > 0`).
 
-### P7.9 — Evaluations (re-tune) ⬜
+### P7.9 — Evaluations (re-tune) ✅ `4aa0621`
 
-- Arquivos: `apps/web/app/o/[org]/p/[project]/evaluations/page.tsx`,
-  `RubricDrawer.tsx`, `DistBars.tsx`.
-- Referência: ZIP `preview/screens/evaluations.jsx`.
-- Preservar: drawer rubrica, dist bars com dados reais,
-  `triggerEvaluationAction`.
-- Re-tune: layout secondary cards, badges, ações.
+- Arquivos alterados:
+  - `apps/web/app/o/[org]/p/[project]/evaluations/page.tsx` —
+    PageHeader eyebrow `Qualidade · Avaliações` (ZIP voice). H1
+    passa de `Evaluations` para `Avaliações`. Subtitle: `LLM-as-
+    judge e heurísticas executadas sobre traces de produção ·
+    {rubrics.length} rubrica(s) / {runs.length} run(s)
+    carregadas` (real counts). Nova action `Ver rubricas`
+    (`List` icon · `data-testid="evaluations-rubrics-link"`)
+    inserida entre `Rodar agora` e `Nova rubrica`. KPI
+    `Rubricas` renomeado para `Rubricas ativas`. Importa `List`
+    de lucide-react.
+  - `apps/web/tests/evaluations-p7.test.mjs` (novo) — 8 testes.
+- Validation: `npm test` 183/183 pass · `tsc --noEmit` limpo.
+- Conteúdo preservado: AuthRequiredPanel, `getProjectEvaluations`
+  + `EVALUATION_RUNS_LIMIT` + `getRubrics` + `getTraces` +
+  `getRubricVersions`, `triggerEvaluationAction` form (`<details
+  id="run-evaluation">`), tabs ativas/runs/pausadas com
+  `evo-tab__count`, tabela `.evo-table` ativa com `DistBars`
+  real (`buildDistribution`), `scoreColor`, `rubricDrawerHref`,
+  tabela runs com `aggregate_score`/`cost_usd`/`passed`,
+  `RubricDrawer` read-only (YAML), 4 `EvaluationSummaryCard`
+  (Rubricas ativas / Runs 7d / Pass rate / Custo carregado) com
+  hints reais, planned `MoreHorizontal` `disabled
+  data-status="planned"`, layout `.evo-evaluations-layout`
+  quando `selectedRubric` ativo.
+- Nota: `RubricDrawer.tsx` e `DistBars.tsx` não alterados — re-tune
+  fica em `page.tsx` (header + actions + label). Drawer/dist bars
+  já carregam estado real.
 
 ---
 
