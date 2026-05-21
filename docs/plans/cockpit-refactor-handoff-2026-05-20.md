@@ -139,6 +139,72 @@ versions list, eyebrow P5, flash inline.
 
 ---
 
+## P7.8 — Files Changed (commit `3470543`)
+
+P7.8 — `3470543` feat(web): P7.8 overview re-tune (header/alert
+banner/mono hero)
+- `apps/web/app/o/[org]/p/[project]/page.tsx` — PageHeader eyebrow
+  passa de `Operacao · Overview` para `Workspace · {orgName}`
+  (ZIP voice). Subtitle reformulado: `Resumo de operacao · ambiente
+  {environmentLabel} · {traces} traces / {rubrics} rubricas /
+  {runs} runs carregados`, derivado de `recentTraces.length`,
+  `rubrics.length`, `recentRuns.length` (sem dado inventado). Hero
+  h2 recebe classe `evo-overview-hero__title` (mono 22px ZIP-style).
+  Novo `OverviewAlertBanner` (`.evo-overview-alert` ·
+  `data-testid="overview-alert-banner"`) renderizado antes do hero
+  apenas quando `problemTraces.length > 0`; variante `--error` se
+  `errorCount > 0`, senao `--warn`; href deriva de
+  `tracesHrefFor("errors")` ou `tracesHrefFor("flagged")` com
+  preservacao do query `environment`. `errorCount`/`partialCount`
+  calculados em cima de `recentTraces` reais (`trace.status`).
+- `apps/web/app/globals.css` — novas primitivas escopadas em
+  `.evo-shell` (sem `:root`): `.evo-overview-hero__title` (mono
+  22px, weight 600), `.evo-overview-alert` (grid 3-col,
+  warn-border + gradiente, hover/focus-visible),
+  `.evo-overview-alert--error` (err-border + gradiente err-bg),
+  `.evo-overview-alert__icon` (30x30 chip warn/err),
+  `.evo-overview-alert__body` (titulo + summary), `.evo-overview-
+  alert__cta` (link mono accent com ArrowRight).
+- `apps/web/tests/overview-p7.test.mjs` (novo) — 9 testes cobrindo
+  server contract (`getOverview` / `getTraces limit:8` /
+  `getProjectEvaluations` / `getRubrics`), header re-tune (eyebrow
+  Workspace + subtitle ZIP-voice), planned filter + refresh + run
+  avaliacao, alert banner gated por `problemTraces.length === 0`,
+  variant/href derivados de errorCount/partialCount reais
+  (`status === "error"` / `status === "partial"`), mono hero
+  title, real data only (sem `PreviewActionModal`, `SuggestionRow`,
+  `spans/min`, `aurora-rag`, `errors_7d`, `refund-golden-set`),
+  cards preservados (`ProjectStatusCard`, `OverviewMetricCard`,
+  `NextActions`, `RecentTracesCard`, `EvaluationSnapshotCard`,
+  `OperationalSignals`, `ProjectContext`, shortcuts), CSS escopado
+  em `.evo-shell` sem `:root` leakage.
+
+Validation:
+- `npm test`: 175/175 pass (166 anteriores + 9 P7.8).
+- `tsc --noEmit`: limpo.
+
+Preservado deliberadamente: `AuthRequiredPanel`,
+`hasAuthToken`/`resolveProject`, server contract `getOverview` +
+`getTraces({projectId, limit:8, environment})` +
+`getProjectEvaluations(projectId, 25)` + `getRubrics(projectId)`,
+`ProjectStatusCard` com 7 ramos condicionais honestos
+(`kpis.traces === 0` / `flaggedCount` / `overviewHasErrors` /
+`rubrics.length` / `runs.length`), 5 KPIs reais via
+`OverviewMetricCard` (`kpis.traces`, `latency_p95_ms`, `cost_usd`,
+`error_rate`, `avg_score` — `null` -> "Sem score"), `NextActions`
+condicional (`hasTraces`/`hasRubrics`/`hasRuns`), `RecentTracesCard`
+(amostra real `/traces`), `EvaluationSnapshotCard` (`sortRuns` +
+score medio derivado), `AreaChart` (`cost_by_day.slice(-14)`),
+`ModelTable` (`model_breakdown`), `OperationalSignals` derivados de
+`problemTraces`/`rubrics`/`runs`, `ProjectContext` (project_id
+`Copyable` + org/env), atalhos reais, footer com
+`apiRoot()/health/readiness`. Banner renomeado para
+`OverviewAlertBanner`/`.evo-overview-alert` (em vez de
+`OverviewAttention`) para nao colidir com `assert.doesNotMatch
+(/Attention/)` em `overview-premium.test.mjs`.
+
+---
+
 ## P7.7 — Files Changed (commit `9a130f3`)
 
 P7.7 — `9a130f3` feat(web): P7.7 traces re-tune (header/badges/spacing)

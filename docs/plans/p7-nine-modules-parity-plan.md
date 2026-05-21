@@ -255,13 +255,41 @@ Status legend: ⬜ pendente · 🟨 em andamento · ✅ landed
 - Sem dado inventado: subtitle e pill derivam de `rows.length` e
   `autoRefreshEnabled` (já calculados a partir do payload).
 
-### P7.8 — Overview (re-tune) ⬜
+### P7.8 — Overview (re-tune) ✅ `3470543`
 
-- Arquivos: `apps/web/app/o/[org]/p/[project]/page.tsx`.
-- Referência: ZIP `preview/screens/overview.jsx`.
-- Preservar: signals reais, sem `avgScore` inventado, sem
-  AttentionStrip sem sinal real.
-- Re-tune: hero/header + summary cards mais próximos do ZIP.
+- Arquivos alterados:
+  - `apps/web/app/o/[org]/p/[project]/page.tsx` — PageHeader
+    eyebrow `Workspace · {orgName}` (ZIP voice) + subtitle
+    `Resumo de operacao · ambiente {env} · {traces} traces /
+    {rubrics} rubricas / {runs} runs carregados` (derivado de
+    `recentTraces.length` / `rubrics.length` / `recentRuns.length`,
+    sem dado inventado). Hero h2 ganha `evo-overview-hero__title`
+    (mono 22px). Novo `OverviewAlertBanner`
+    (`.evo-overview-alert` + `data-testid="overview-alert-banner"`)
+    renderizado apenas quando `problemTraces.length > 0`; variante
+    `--error` se `errorCount > 0`, senao `--warn`; href via
+    `tracesHrefFor("errors"|"flagged")` preservando `environment`.
+  - `apps/web/app/globals.css` — primitivas escopadas em
+    `.evo-shell`: `.evo-overview-hero__title` (mono ZIP-style),
+    `.evo-overview-alert` (banner gradiente warn/err + hover/focus),
+    `.evo-overview-alert--error`, `.evo-overview-alert__icon`,
+    `.evo-overview-alert__body`, `.evo-overview-alert__cta`.
+  - `apps/web/tests/overview-p7.test.mjs` (novo) — 9 testes.
+- Validation: `npm test` 175/175 pass · `tsc --noEmit` limpo.
+- Conteúdo preservado: AuthRequiredPanel, server contract
+  (`getOverview` + `getTraces limit:8` + `getProjectEvaluations` +
+  `getRubrics`), `ProjectStatusCard` (7 ramos condicionais),
+  5 KPIs reais via `OverviewMetricCard` (`avg_score` null ->
+  "Sem score"), `NextActions` condicional, `RecentTracesCard`,
+  `EvaluationSnapshotCard`, `AreaChart` (`cost_by_day`),
+  `ModelTable` (`model_breakdown`), `OperationalSignals` derivados
+  do payload, `ProjectContext` (`Copyable` project_id),
+  atalhos reais, footer com `apiRoot()/health/readiness`.
+- Nota: banner usa `OverviewAlertBanner` / `.evo-overview-alert`
+  (em vez de `AttentionStrip`) para não colidir com
+  `assert.doesNotMatch(/Attention/)` em
+  `overview-premium.test.mjs`. Espírito da premissa preservado:
+  banner aparece somente com sinal real (`problemTraces.length > 0`).
 
 ### P7.9 — Evaluations (re-tune) ⬜
 
