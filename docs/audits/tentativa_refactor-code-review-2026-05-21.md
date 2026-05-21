@@ -398,7 +398,13 @@ Teste: criar trace com 100 runs; conferir que `GET /v1/traces?project_id=...` fa
 
 ---
 
-## 🟠 7. p95 de ingestão off-by-one (sub-reporta)
+## ✅ 7. p95 de ingestão off-by-one (sub-reporta) — **CORRIGIDO**
+
+> Status (2026-05-21): helper `_p95_nearest_rank` em `routes.py:38-44` substitui ambos os call-sites (sdk-status e overview). Teste `test_sdk_status_p95_uses_nearest_rank` insere 10 traces com latências 10..100ms e exige p95 ≥ 95 (ceil(0.95·n)-1 = 9 → 100ms vs. fórmula antiga = 90ms). Suite cheia: 297 passed.
+
+---
+
+## 🟠 7. p95 de ingestão off-by-one (sub-reporta) — original
 
 ### Onde
 `apps/api/app/api/routes.py:328-334`
@@ -889,7 +895,7 @@ Antes de marcar como pronto:
 - [x] Bug #4: backend aceita `duration_gt` / `rag=true`, frontend não filtra em JS. Filtro RAG portátil SQLite (`("true","1")`). **Pendência:** endpoint global `/traces/segments` para counts cross-tab.
 - [x] Bug #5: migration `0006_prompt_ref_index.py` + LIMIT na query + `usage_count` honesto + `usage_count_truncated`.
 - [x] Bug #6: window function para `last_score` + índice composto `(trace_id, created_at)`.
-- [ ] Bug #7: cálculo de p95 corrigido.
+- [x] Bug #7: helper `_p95_nearest_rank` aplicado em `sdk-status` e `overview`; teste com lista determinística 10..100 confirma p95 ≥ 95.
 - [ ] Bug #8: schema `min_length=1` em `NotificationMarkReadIn.ids`.
 - [ ] Bug #9: action normaliza `""` → `null`.
 - [ ] Bug #10: status CSV no `list_traces` + overview pede `error,partial`.

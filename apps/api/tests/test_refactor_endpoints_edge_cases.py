@@ -340,6 +340,45 @@ def test_list_traces_last_score_picks_most_recent_run() -> None:
     assert row["last_score"] == 0.91
 
 
+def test_sdk_status_p95_uses_nearest_rank() -> None:
+    client = TestClient(app)
+    headers, project_id, _ = _bootstrap(client)
+    now = datetime.now(timezone.utc)
+    with SessionLocal() as db:
+        project = db.get(Project, project_id)
+        assert project is not None
+        for i in range(10):
+            latency_ms = (i + 1) * 10
+            ended = now - timedelta(milliseconds=latency_ms)
+            db.add(
+                Trace(
+                    id=new_id("tr"),
+                    project_id=project_id,
+                    organization_id=project.organization_id,
+                    client_trace_id=f"p95-{i}",
+                    name="rag.answer",
+                    service="bot",
+                    environment="prod",
+                    started_at=ended - timedelta(milliseconds=50),
+                    ended_at=ended,
+                    duration_ms=50,
+                    status="ok",
+                    tags={},
+                    metadata_json={},
+                    total_tokens_in=0,
+                    total_tokens_out=0,
+                    total_cost_usd=0,
+                    created_at=now,
+                )
+            )
+        db.commit()
+
+    response = client.get(f"/v1/projects/{project_id}/sdk-status", headers=headers)
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["p95_ingestion_ms"] >= 95
+
+
 def test_bulk_flag_traces_creates_one_per_id() -> None:
     client = TestClient(app)
     headers, _, api_key = _bootstrap(client)

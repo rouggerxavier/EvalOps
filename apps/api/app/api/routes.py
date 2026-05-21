@@ -1,4 +1,5 @@
 import base64
+import math
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
@@ -33,6 +34,15 @@ from app.schemas import (
 from app.security import new_id
 
 router = APIRouter(prefix="/v1")
+
+
+def _p95_nearest_rank(values: list[int | float]) -> int | float:
+    if not values:
+        return 0
+    sorted_values = sorted(values)
+    n = len(sorted_values)
+    index = min(n - 1, max(0, math.ceil(0.95 * n) - 1))
+    return sorted_values[index]
 
 
 def _encode_cursor(created_at: datetime, trace_id: str) -> str:
@@ -338,12 +348,7 @@ def get_project_sdk_status(
     for trace in traces:
         if trace.created_at and trace.ended_at:
             ingestion_latencies.append(_delta_ms(trace.created_at, trace.ended_at))
-    ingestion_latencies.sort()
-    if ingestion_latencies:
-        p95_index = max(0, min(len(ingestion_latencies) - 1, int(0.95 * (len(ingestion_latencies) - 1))))
-        p95 = ingestion_latencies[p95_index]
-    else:
-        p95 = 0
+    p95 = _p95_nearest_rank(ingestion_latencies)
     last_trace_at = max((trace.created_at for trace in traces), default=None)
     last_event_at = max((event.occurred_at for event in events), default=None)
     candidates = [value for value in [last_trace_at, last_event_at] if value is not None]
@@ -599,9 +604,7 @@ def analytics_overview(
             "recent_flagged": [],
         }
 
-    durations = sorted([row.duration_ms for row in rows])
-    p95_index = max(0, min(len(durations) - 1, int(0.95 * (len(durations) - 1))))
-    p95 = durations[p95_index]
+    p95 = _p95_nearest_rank([row.duration_ms for row in rows])
     error_count = sum(1 for row in rows if row.status == "error")
     total_cost = float(sum(Decimal(str(row.total_cost_usd)) for row in rows))
 
