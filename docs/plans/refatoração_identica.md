@@ -486,7 +486,7 @@ Status atualizado em 2026-05-21:
 | 12 | ✅ feito | `032eeae feat(traces): rewrite list + detail (tabs, filters, bulk flag, RAG panel)` | `feat(traces): rewrite list + detail (tabs, filters, bulk flag, RAG panel)` |
 | 13 | ✅ feito | `feat(evaluations): rewrite summary + tabs + drawer` | `feat(evaluations): rewrite summary + tabs + drawer` |
 | 14 | ✅ feito | `feat(modules): migrate prompts/rubrics/datasets/experiments/keys/exports to cockpit` | `feat(modules): rewrite prompts/rubrics/datasets/experiments/keys/exports with real backend` |
-| 15 | ⏳ pendente | — | `feat(traces): add compare page` |
+| 15 | ✅ feito | `feat(traces): add compare page` | `feat(traces): add compare page` |
 | 16 | ⏳ pendente | — | `feat(settings): add stub settings page (project patch + members)` |
 | 17 | ⏳ pendente | — | `feat(shortcuts): extend G+letter shortcuts (G S settings)` |
 | 18 | ⏳ pendente | — | `chore(cleanup): remove deprecated components (AnswerPreviewCard, CitationRefsTable, etc.)` |
@@ -502,7 +502,8 @@ Observações:
 - Commit 13 entregou Evaluations cockpit: `PageHeader` (Qualidade · Avaliações + 3 botões header com modais), 4 KPIs reais via `GET /v1/projects/{id}/evaluations/summary` (rubricas ativas, runs 7d, taxa de aprovação, custo de avaliação), 3 tabs (Ativas / Runs recentes / Pausadas) com counts, tabela densa com DistBars + threshold + Judge model + relTime, drawer (Modal) com 3 Metrics + YAML + botões Publicar/Rodar, modais "Rodar agora" / "Nova rubric" / "Publicar v{N+1}" ligados a `triggerEvaluationAction` / `createRubricAction` / `publishRubricAction` (Server Actions com `redirect_section=evaluations`). Sem botão decorativo.
 - Commit 14 migrou os 6 módulos secundários (prompts/rubrics/datasets/experiments/keys/exports) para o vocabulário cockpit: todas as classes `evo-*` substituídas por `page`, `page-header`, `btn`, `card`, `table-wrap`/`t`, `module-summary`/`summary-card`, `endpoint-list`/`endpoint-row`, `tabs`, `kpi-grid`, `badge`, `empty`, `grid-detail`, `mono`, `t__muted`, `t__faint`. Removidos os botões decorativos `disabled` ("Importar" em prompts/rubrics/datasets, "Exportar relatório" em experiments, "Ações adicionais" linha-a-linha em experiments). Coluna "Score" placeholder em Prompts virou "Usado por" populada via `GET /v1/prompts/{id}/usage` (`getPromptUsage`). `tsc --noEmit` limpo e `next build` ok.
 - Pendências de §14 carry-over para o commit 20 (testes) e revisão final: integração `listExports` no listing de Exports, wizard "from-traces" em Datasets, aviso de chave-expira-em-7d em Keys, e column "Em uso por" nos demais módulos onde aplicável.
-- Próximo commit funcional do plano: **15 — Trace compare page**.
+- Commit 15 entregou `/o/[org]/p/[project]/traces/compare`: aceita `?left=&right=`, dispara `getTrace`x2 + `compareTraces` em paralelo, renderiza 2 `TraceCard`s (status/env/model/copyable id + 4 KPIs), 5 KPIs de diff (status, Δ duração, Δ custo, Δ tokens, Δ início) com tone bom/ruim, waterfalls lado a lado e tabela de spans agregados por `(type,name)` com Δ duração/erros/modelos. Empty state quando faltam params. Botão "Inverter" troca lados. `tsc --noEmit` limpo.
+- Próximo commit funcional do plano: **16 — Settings stub page**.
 
 ---
 
