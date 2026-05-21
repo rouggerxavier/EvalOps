@@ -598,4 +598,4 @@ class NotificationListResponse(BaseModel):
 
 
 class NotificationMarkReadIn(BaseModel):
-    ids: list[str] = Field(default_factory=list)
+    ids: list[str] = Field(min_length=1, max_length=200)

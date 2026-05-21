@@ -393,9 +393,11 @@ def mark_project_notifications_read(
     db: Session = Depends(get_db),
 ) -> dict:
     now = utcnow()
-    query = db.query(Notification).filter(Notification.project_id == project.id, Notification.read_at.is_(None))
-    if payload.ids:
-        query = query.filter(Notification.id.in_(payload.ids))
+    query = (
+        db.query(Notification)
+        .filter(Notification.project_id == project.id, Notification.read_at.is_(None))
+        .filter(Notification.id.in_(payload.ids))
+    )
     rows = query.all()
     for row in rows:
         row.read_at = now

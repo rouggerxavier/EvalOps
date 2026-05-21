@@ -437,7 +437,13 @@ Teste com lista determinística `[1..100]`: p95 deve ser ≥95.
 
 ---
 
-## 🟡 8. `POST /notifications/mark-read` com `ids: []` marca TODAS
+## ✅ 8. `POST /notifications/mark-read` com `ids: []` marca TODAS — **CORRIGIDO**
+
+> Status (2026-05-21): `NotificationMarkReadIn.ids = Field(min_length=1, max_length=200)` rejeita `[]` no Pydantic (422). Rota agora aplica `Notification.id.in_(payload.ids)` incondicionalmente (defesa em profundidade). `markNotificationsRead` no frontend retorna `{updated: 0}` para `ids=[]` sem chamar API. Teste `test_mark_read_empty_ids_is_rejected_with_422` cobre. Suite cheia: 298 passed.
+
+---
+
+## 🟡 8. `POST /notifications/mark-read` com `ids: []` marca TODAS — original
 
 ### Onde
 `apps/api/app/api/routes.py:280-296`
@@ -896,7 +902,7 @@ Antes de marcar como pronto:
 - [x] Bug #5: migration `0006_prompt_ref_index.py` + LIMIT na query + `usage_count` honesto + `usage_count_truncated`.
 - [x] Bug #6: window function para `last_score` + índice composto `(trace_id, created_at)`.
 - [x] Bug #7: helper `_p95_nearest_rank` aplicado em `sdk-status` e `overview`; teste com lista determinística 10..100 confirma p95 ≥ 95.
-- [ ] Bug #8: schema `min_length=1` em `NotificationMarkReadIn.ids`.
+- [x] Bug #8: `min_length=1, max_length=200` em `NotificationMarkReadIn.ids` + filtro `in_` incondicional + guarda no `markNotificationsRead` (frontend).
 - [ ] Bug #9: action normaliza `""` → `null`.
 - [ ] Bug #10: status CSV no `list_traces` + overview pede `error,partial`.
 - [ ] Bug #11: pelo menos botão "voltar à página 1" ativo.

@@ -117,6 +117,9 @@ export async function getNotifications(projectId: string, limit = 20): Promise<N
 }
 
 export async function markNotificationsRead(projectId: string, ids: string[]): Promise<{ updated: number }> {
+  if (ids.length === 0) {
+    return { updated: 0 };
+  }
   return requestJson<{ updated: number }>(`/projects/${projectId}/notifications/mark-read`, {
     method: "POST",
     body: JSON.stringify({ ids }),

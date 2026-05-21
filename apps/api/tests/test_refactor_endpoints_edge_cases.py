@@ -340,6 +340,17 @@ def test_list_traces_last_score_picks_most_recent_run() -> None:
     assert row["last_score"] == 0.91
 
 
+def test_mark_read_empty_ids_is_rejected_with_422() -> None:
+    client = TestClient(app)
+    headers, project_id, _ = _bootstrap(client)
+    response = client.post(
+        f"/v1/projects/{project_id}/notifications/mark-read",
+        headers=headers,
+        json={"ids": []},
+    )
+    assert response.status_code == 422, response.text
+
+
 def test_sdk_status_p95_uses_nearest_rank() -> None:
     client = TestClient(app)
     headers, project_id, _ = _bootstrap(client)
