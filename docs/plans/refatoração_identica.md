@@ -489,7 +489,7 @@ Status atualizado em 2026-05-21:
 | 15 | ✅ feito | `feat(traces): add compare page` | `feat(traces): add compare page` |
 | 16 | ✅ feito | `feat(settings): add stub settings page (project patch + members)` | `feat(settings): add stub settings page (project patch + members)` |
 | 17 | ✅ feito | `c267780 feat(shortcuts): extend G+letter shortcuts (G S settings)` | `feat(shortcuts): extend G+letter shortcuts (G S settings)` |
-| 18 | ⏳ pendente | — | `chore(cleanup): remove deprecated components (AnswerPreviewCard, CitationRefsTable, etc.)` |
+| 18 | ✅ feito | `f88f032 chore(cleanup): remove deprecated components superseded by cockpit refactor` | `chore(cleanup): remove deprecated components (AnswerPreviewCard, CitationRefsTable, etc.)` |
 | 19 | ⏳ pendente | — | `docs(readme): replace root README per spec §10` |
 | 20 | ⏳ pendente | — | `test: add backend unit tests for new endpoints` |
 | 21 | ⏳ pendente | — | `test(e2e): add Playwright smoke for each refactored route` |
@@ -505,7 +505,8 @@ Observações:
 - Commit 15 entregou `/o/[org]/p/[project]/traces/compare`: aceita `?left=&right=`, dispara `getTrace`x2 + `compareTraces` em paralelo, renderiza 2 `TraceCard`s (status/env/model/copyable id + 4 KPIs), 5 KPIs de diff (status, Δ duração, Δ custo, Δ tokens, Δ início) com tone bom/ruim, waterfalls lado a lado e tabela de spans agregados por `(type,name)` com Δ duração/erros/modelos. Empty state quando faltam params. Botão "Inverter" troca lados. `tsc --noEmit` limpo.
 - Commit 16 entregou `/o/[org]/p/[project]/settings`: General card (form ligado a `patchProjectAction` → `PATCH /v1/projects/{id}` com name/description/default_environment), Members card (tabela via `GET /v1/organizations/{id}/members`), Billing card (link para `/o/{org}/usage`) e card "Ações reais". Adicionado wrapper `getProjects(orgId)` em `apps/web/lib/api.ts` (usa `GET /v1/projects?organization_id=`) para popular dados do projeto atual. Banners de success/error via query string (`?updated=1` / `?error=`). `tsc --noEmit` limpo, rota responde HTTP 200.
 - Commit 17 adicionou item `settings` a `APP_SHELL_NAV_SECTIONS` (seção Operacao, path `/settings`, shortcut `G S`). `EvoShortcuts` consome `APP_SHELL_NAV_ITEMS`, então o atalho aciona `router.push` para `/o/{org}/p/{project}/settings` sem mudanças adicionais; Sidebar renderiza o link automaticamente. Teste `ux-polish-p6` ajustado: assert do par `id: "settings", shortcut: "G S"` (preview não atribui letra a exports). Conjunto de letras inalterado.
-- Próximo commit funcional do plano: **18 — Cleanup de componentes deprecados (AnswerPreviewCard, CitationRefsTable, GroundingQualityCard, RAGSummaryHeader, RetrievalSummaryCard, SpanWaterfall legado etc.)**.
+- Commit 18 removeu 8 componentes legados (`AnswerPreviewCard`, `CitationRefsTable`, `GroundingQualityCard`, `RAGSummaryHeader`, `RetrievalSummaryCard`, `SpanWaterfall`, `TracesFilterBar`, `KeyboardShortcuts`) — todos absorvidos por `components/ui/RagPanel`, `components/ui/Waterfall`, `components/ui/FiltersBar` e `components/EvoShortcuts`. Excluídos `tests/traces-p7.test.mjs` e `tests/traces-premium.test.mjs` (asserções do layout flat pré-refactor, obsoletas após commits 11–12). `tests/rag.test.mjs` (RAG-18) reduzido a `lib/rag.ts` + `components/ui/RagPanel.tsx`. `tests/ux-polish-p6.test.mjs` subteste de atalhos repointado para `EvoShortcuts.tsx` (contrato `prefixArmed`/`projectHref(base, target)`). `tsc --noEmit` limpo; testes RAG-* e shortcut verdes. Pendências CSS legadas (`.evo-shell` em ux-polish-p6 #5 e route-error #3) deixadas para o commit 20 (testes) por já serem pré-existentes.
+- Próximo commit funcional do plano: **19 — substituir README raiz conforme §10**.
 
 ---
 
