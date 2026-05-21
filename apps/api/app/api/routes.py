@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from sqlalchemy import func, or_, and_
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
@@ -454,15 +454,23 @@ def list_traces(
     trace_ids = [row.id for row in rows]
     last_scores: dict[str, float | None] = {}
     if trace_ids:
-        runs = (
-            db.query(EvaluationRun)
-            .filter(EvaluationRun.trace_id.in_(trace_ids))
-            .order_by(EvaluationRun.trace_id.asc(), EvaluationRun.created_at.desc())
-            .all()
+        ranked = (
+            select(
+                EvaluationRun.trace_id.label("trace_id"),
+                EvaluationRun.aggregate_score.label("aggregate_score"),
+                func.row_number()
+                .over(
+                    partition_by=EvaluationRun.trace_id,
+                    order_by=EvaluationRun.created_at.desc(),
+                )
+                .label("rn"),
+            )
+            .where(EvaluationRun.trace_id.in_(trace_ids))
+            .subquery()
         )
-        for run in runs:
-            if run.trace_id not in last_scores:
-                last_scores[run.trace_id] = float(run.aggregate_score) if run.aggregate_score is not None else None
+        latest_q = select(ranked.c.trace_id, ranked.c.aggregate_score).where(ranked.c.rn == 1)
+        for row in db.execute(latest_q):
+            last_scores[row.trace_id] = float(row.aggregate_score) if row.aggregate_score is not None else None
     data = []
     for row in rows:
         item = TraceOut.model_validate(row).model_dump()

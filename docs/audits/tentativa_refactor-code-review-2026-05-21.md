@@ -311,7 +311,15 @@ Teste de carga: criar 5k traces com `metadata.prompt_ref` apontando para o mesmo
 
 ---
 
-## 🟠 6. `list_traces` carrega todos `EvaluationRun`s para popular `last_score`
+## ✅ 6. `list_traces` carrega todos `EvaluationRun`s para popular `last_score` — **CORRIGIDO**
+
+> **Status:** corrigido em `<este commit>` (branch `claude/repository-access-X2Zcv`)
+>
+> - `routes.py:list_traces` agora usa SQL window function (`row_number() OVER (PARTITION BY trace_id ORDER BY created_at DESC)`) e filtra `rn = 1`. Apenas a linha mais recente por trace é trazida do DB.
+> - Migration `0007_evaluation_runs_trace_created_index.py` cria índice composto `evaluation_runs (trace_id, created_at)` (Postgres usa `DESC`, SQLite ignora).
+> - Teste regressão `test_list_traces_last_score_picks_most_recent_run` em `tests/test_refactor_endpoints_edge_cases.py` cria runs `0.2` (antigo) + `0.91` (novo) → asserta `last_score == 0.91`.
+
+
 
 ### Onde
 `apps/api/app/api/routes.py:443-458` (commit `3083e31`)
@@ -880,7 +888,7 @@ Antes de marcar como pronto:
 - [x] Bug #3: Bell e WorkspaceSwitcher montados em `EvoTopbar.tsx`/`AppShell.tsx`. **Pendência:** `markRead` Server Action e fechar Bug #8 antes de adicionar.
 - [x] Bug #4: backend aceita `duration_gt` / `rag=true`, frontend não filtra em JS. Filtro RAG portátil SQLite (`("true","1")`). **Pendência:** endpoint global `/traces/segments` para counts cross-tab.
 - [x] Bug #5: migration `0006_prompt_ref_index.py` + LIMIT na query + `usage_count` honesto + `usage_count_truncated`.
-- [ ] Bug #6: subquery/window function para `last_score` + índice composto.
+- [x] Bug #6: window function para `last_score` + índice composto `(trace_id, created_at)`.
 - [ ] Bug #7: cálculo de p95 corrigido.
 - [ ] Bug #8: schema `min_length=1` em `NotificationMarkReadIn.ids`.
 - [ ] Bug #9: action normaliza `""` → `null`.

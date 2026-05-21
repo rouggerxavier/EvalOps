@@ -4,7 +4,7 @@ from fastapi.testclient import TestClient
 
 from app.db import Base, SessionLocal, engine
 from app.main import app
-from app.models import Project, Trace, User
+from app.models import EvaluationRun, Project, Rubric, Trace, User
 from app.security import create_access_token, new_id
 
 
@@ -281,6 +281,63 @@ def test_prompt_usage_counts_metadata_only_traces_and_signals_truncation() -> No
     assert full["usage_count"] == 5
     assert full["usage_count_truncated"] is False
     assert len(full["traces"]) == 5
+
+
+def test_list_traces_last_score_picks_most_recent_run() -> None:
+    client = TestClient(app)
+    headers, project_id, api_key = _bootstrap(client)
+    trace_id = _ingest_trace(client, api_key, status="ok")
+    now = datetime.now(timezone.utc)
+    with SessionLocal() as db:
+        db.add(
+            Rubric(
+                id="rb_x",
+                project_id=project_id,
+                slug="grounding",
+                description=None,
+                current_version=1,
+                threshold=0.7,
+            )
+        )
+        db.add_all(
+            [
+                EvaluationRun(
+                    id="evr_old",
+                    project_id=project_id,
+                    trace_id=trace_id,
+                    rubric_id="rb_x",
+                    rubric_version=1,
+                    triggered_by="test",
+                    status="completed",
+                    aggregate_score=0.2,
+                    passed=False,
+                    cost_usd=0.01,
+                    run_metadata={},
+                    created_at=now - timedelta(hours=2),
+                ),
+                EvaluationRun(
+                    id="evr_new",
+                    project_id=project_id,
+                    trace_id=trace_id,
+                    rubric_id="rb_x",
+                    rubric_version=2,
+                    triggered_by="test",
+                    status="completed",
+                    aggregate_score=0.91,
+                    passed=True,
+                    cost_usd=0.01,
+                    run_metadata={},
+                    created_at=now,
+                ),
+            ]
+        )
+        db.commit()
+
+    response = client.get(f"/v1/traces?project_id={project_id}", headers=headers)
+    assert response.status_code == 200, response.text
+    body = response.json()
+    row = next(t for t in body["data"] if t["id"] == trace_id)
+    assert row["last_score"] == 0.91
 
 
 def test_bulk_flag_traces_creates_one_per_id() -> None:
