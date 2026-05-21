@@ -346,10 +346,10 @@ export default async function EvaluationsPage({ params, searchParams }: Props) {
               <p style={{ color: "var(--text-muted)", marginBottom: 8, fontWeight: 600 }}>Nenhuma run ainda</p>
               <p style={{ color: "var(--text-faint)", fontSize: 13 }}>
                 {rubrics.length === 0
-                  ? "Crie uma rubrica YAML antes de rodar avaliacoes."
+                  ? "Crie uma rubrica YAML antes de rodar avaliações."
                   : traces.length === 0
-                    ? "Capture um trace antes de rodar avaliacoes."
-                    : "Use uma rubrica versionada e um trace elegivel para iniciar a primeira run."}
+                    ? "Capture um trace antes de rodar avaliações."
+                    : "Use uma rubrica versionada e um trace elegível para iniciar a primeira run."}
               </p>
               <div className="evo-row" style={{ justifyContent: "center", marginTop: 14 }}>
                 {rubrics.length === 0 ? (
