@@ -118,7 +118,8 @@ export async function createRubricAction(formData: FormData): Promise<void> {
   const project = String(formData.get("project") ?? "");
   const projectId = String(formData.get("project_id") ?? "");
   const yamlSource = String(formData.get("yaml_source") ?? "");
-  const path = projectPath(org, project, "rubrics");
+  const section = String(formData.get("redirect_section") ?? "rubrics");
+  const path = projectPath(org, project, section);
 
   let errorMsg: string | null = null;
   try {
@@ -135,7 +136,8 @@ export async function createRubricVersionAction(formData: FormData): Promise<voi
   const project = String(formData.get("project") ?? "");
   const rubricId = String(formData.get("rubric_id") ?? "");
   const yamlSource = String(formData.get("yaml_source") ?? "");
-  const path = projectPath(org, project, "rubrics");
+  const section = String(formData.get("redirect_section") ?? "rubrics");
+  const path = projectPath(org, project, section);
 
   let errorMsg: string | null = null;
   try {
@@ -198,7 +200,8 @@ export async function publishRubricAction(formData: FormData): Promise<void> {
   const project = String(formData.get("project") ?? "");
   const rubricId = String(formData.get("rubric_id") ?? "");
   const yamlSource = String(formData.get("yaml_source") ?? "");
-  const path = projectPath(org, project, "rubrics");
+  const section = String(formData.get("redirect_section") ?? "rubrics");
+  const path = projectPath(org, project, section);
 
   let errorMsg: string | null = null;
   try {

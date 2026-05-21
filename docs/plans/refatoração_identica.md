@@ -484,7 +484,7 @@ Status atualizado em 2026-05-21:
 | 10 | ✅ feito | `5db1f22 feat(lib): add endpoint actions` | `feat(lib): add api wrappers + server actions for new endpoints` |
 | 11 | ✅ feito | `feat(overview): rewrite to match preview cockpit` | `feat(overview): rewrite to match preview cockpit (attention strip, 5 KPIs, suggestions, coverage)` |
 | 12 | ✅ feito | `032eeae feat(traces): rewrite list + detail (tabs, filters, bulk flag, RAG panel)` | `feat(traces): rewrite list + detail (tabs, filters, bulk flag, RAG panel)` |
-| 13 | ⏳ pendente | — | `feat(evaluations): rewrite summary + tabs + drawer` |
+| 13 | ✅ feito | `feat(evaluations): rewrite summary + tabs + drawer` | `feat(evaluations): rewrite summary + tabs + drawer` |
 | 14 | ⏳ pendente | — | `feat(modules): rewrite prompts/rubrics/datasets/experiments/keys/exports with real backend` |
 | 15 | ⏳ pendente | — | `feat(traces): add compare page` |
 | 16 | ⏳ pendente | — | `feat(settings): add stub settings page (project patch + members)` |
@@ -499,7 +499,8 @@ Observações:
 - O commit 10 também adicionou tipos em `apps/web/lib/types.ts`, além de wrappers e Server Actions.
 - Commit 11 entregou a Overview alinhada ao preview (header c/ janela 24h/7d/30d, attention strip via `GET /v1/projects/{id}/attention`, 5 KPIs com sparkline, custo+volume area chart, custo por modelo, traces flagged, SDK status, sugestões com modais ligadas a Server Actions e cobertura por avaliação via `GET /v1/projects/{id}/coverage`).
 - Commit 12 entregou Traces list (5 tabs, GET filters, bulk-flag client island via `bulkFlagTracesAction`, tabela 12 colunas com `last_score`) e Trace detail (4 ações funcionais via modais — flag/rerun/compare/evaluate — 5 KPIs, tabs RAG/Waterfall/Metadata/Feedback via `?tab=`, painel RAG via `GET /v1/traces/{id}/rag`).
-- Próximo commit funcional do plano: **13 — Evaluations rewrite**.
+- Commit 13 entregou Evaluations cockpit: `PageHeader` (Qualidade · Avaliações + 3 botões header com modais), 4 KPIs reais via `GET /v1/projects/{id}/evaluations/summary` (rubricas ativas, runs 7d, taxa de aprovação, custo de avaliação), 3 tabs (Ativas / Runs recentes / Pausadas) com counts, tabela densa com DistBars + threshold + Judge model + relTime, drawer (Modal) com 3 Metrics + YAML + botões Publicar/Rodar, modais "Rodar agora" / "Nova rubric" / "Publicar v{N+1}" ligados a `triggerEvaluationAction` / `createRubricAction` / `publishRubricAction` (Server Actions com `redirect_section=evaluations`). Sem botão decorativo.
+- Próximo commit funcional do plano: **14 — Modules rewrite (prompts/rubrics/datasets/experiments/keys/exports)**.
 
 ---
 
