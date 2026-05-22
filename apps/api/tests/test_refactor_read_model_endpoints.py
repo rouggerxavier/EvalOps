@@ -263,6 +263,7 @@ def _ingest_trace_with_spans(
     trace_name: str,
     trace_duration_ms: int,
     spans: list[dict],
+    metadata: dict | None = None,
 ) -> str:
     now = datetime.now(timezone.utc)
     payload = {
@@ -276,7 +277,7 @@ def _ingest_trace_with_spans(
                 "ended_at": (now + timedelta(milliseconds=trace_duration_ms)).isoformat(),
                 "status": "ok",
                 "tags": {},
-                "metadata": {},
+                "metadata": metadata or {},
                 "spans": spans,
             }
         ]
@@ -369,6 +370,56 @@ def test_slow_kind_default_is_trace_duration() -> None:
     assert slow_id in ids and fast_id not in ids
     item = next(row for row in body["data"] if row["id"] == slow_id)
     assert item["slow_reason"] == "trace"
+
+
+def test_rag_filter_matches_trace_with_only_response_finalize_span() -> None:
+    """Bug 2.1: the detail page treats a `response.finalize` span as RAG even
+    without `rag.%` spans. The list must keep the same contract."""
+    client = TestClient(app)
+    headers, project_id, api_key = _bootstrap(client)
+
+    finalize_only = _ingest_trace_with_spans(
+        client,
+        api_key,
+        client_trace_id="finalize-only",
+        trace_name="qa.compose",
+        trace_duration_ms=500,
+        spans=[_span("response.finalize", "llm_call", 0, 480)],
+    )
+    plain = _ingest_trace_with_spans(
+        client,
+        api_key,
+        client_trace_id="plain-llm",
+        trace_name="qa.compose",
+        trace_duration_ms=500,
+        spans=[_span("openai.chat", "llm_call", 0, 480)],
+    )
+
+    body = client.get(f"/v1/traces?project_id={project_id}&rag=true", headers=headers).json()
+    ids = {row["id"] for row in body["data"]}
+    assert finalize_only in ids
+    assert plain not in ids
+
+
+def test_rag_filter_matches_trace_with_rag_metadata_keys() -> None:
+    """Bug 2.1: metadata keys (pipeline_version, retrieved_count, …) declare a
+    trace as RAG even when no span name matches."""
+    client = TestClient(app)
+    headers, project_id, api_key = _bootstrap(client)
+
+    by_metadata = _ingest_trace_with_spans(
+        client,
+        api_key,
+        client_trace_id="rag-by-metadata",
+        trace_name="agent.run",
+        trace_duration_ms=500,
+        spans=[_span("openai.chat", "llm_call", 0, 480)],
+        metadata={"pipeline_version": "2026.05", "retrieved_count": 3},
+    )
+
+    body = client.get(f"/v1/traces?project_id={project_id}&rag=true", headers=headers).json()
+    ids = {row["id"] for row in body["data"]}
+    assert by_metadata in ids
 
 
 def test_rag_filter_matches_traces_via_span_name() -> None:

@@ -492,6 +492,63 @@ def _classify_cost_source(trace: Trace) -> str:
     return "unknown"
 
 
+# Contract for "is this a RAG trace?" — kept in sync with the frontend's
+# isRagTrace() in apps/web/lib/rag.ts so the list filter and the detail page
+# decide on the exact same signals.
+_RAG_SPAN_NAMES_EXACT: tuple[str, ...] = (
+    "rag.retrieve",
+    "rag.grounding.validate",
+    "response.finalize",
+)
+_RAG_METADATA_KEYS: tuple[str, ...] = (
+    "pipeline_version",
+    "retrieved_count",
+    "citation_count",
+    "grounding_ok",
+    "quality_level",
+    "quality_score",
+    "support_rate",
+)
+
+
+def _rag_filter_predicate():
+    """Return a SQLAlchemy filter expression selecting traces with RAG evidence.
+
+    The predicate matches any of:
+    - ``trace.name`` starts with ``rag.`` (legacy convention).
+    - ``trace.metadata.is_rag`` truthy (explicit flag).
+    - ``trace.metadata`` contains any of ``_RAG_METADATA_KEYS``.
+    - any span belongs to ``_RAG_SPAN_NAMES_EXACT`` or has a name like
+      ``rag.%``.
+
+    Matches the contract used by the trace detail UI; keeps list and detail
+    aligned.
+    """
+    # Note: `.as_string()` is required for cross-dialect JSON key-existence —
+    # bare `Trace.metadata_json[key].isnot(None)` returns true on SQLite even
+    # for absent keys (different cast pipeline). The text projection collapses
+    # both backends to "string or NULL", and IS NOT NULL then matches presence.
+    metadata_clauses = [
+        Trace.metadata_json[key].as_string().isnot(None) for key in _RAG_METADATA_KEYS
+    ]
+    span_subq = (
+        select(Span.trace_id)
+        .where(
+            or_(
+                Span.name.in_(_RAG_SPAN_NAMES_EXACT),
+                Span.name.ilike("rag.%"),
+            )
+        )
+        .scalar_subquery()
+    )
+    return or_(
+        Trace.name.ilike("rag.%"),
+        Trace.metadata_json["is_rag"].as_string().in_(("true", "1")),
+        *metadata_clauses,
+        Trace.id.in_(span_subq),
+    )
+
+
 _SLOW_KIND_TO_SPAN_PREDICATE: dict[str, object] = {
     "llm": Span.type == "llm_call",
     "retrieval": or_(
@@ -547,19 +604,7 @@ def list_traces(
             query = query.filter(Trace.duration_ms > duration_gt)
             effective_slow_kind = "trace"
     if rag is True:
-        # Unified RAG detection: trace.name prefix, metadata flag, OR any span
-        # named "rag.*". Keeps the list filter aligned with the detail page,
-        # which inspects spans directly via routes_trace_actions.
-        rag_span_subq = (
-            select(Span.trace_id).where(Span.name.ilike("rag.%")).scalar_subquery()
-        )
-        query = query.filter(
-            or_(
-                Trace.name.ilike("rag.%"),
-                Trace.metadata_json["is_rag"].as_string().in_(("true", "1")),
-                Trace.id.in_(rag_span_subq),
-            )
-        )
+        query = query.filter(_rag_filter_predicate())
     if cursor:
         cursor_created_at, cursor_id = _decode_cursor(cursor)
         query = query.filter(
