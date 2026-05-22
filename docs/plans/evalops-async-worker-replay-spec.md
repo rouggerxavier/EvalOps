@@ -416,7 +416,11 @@ placeholder sem job — preferível falhar visivelmente a criar lixo silencioso.
 
 ---
 
-### Fase D — Frontend
+### Fase D — Frontend — **✅ IMPLEMENTADO (2026-05-21)**
+
+Status: detalhe do trace ganhou badge dinâmico `replay · {status}` no header (variante `info|warn|ok|err` segundo `metadata.replay_status`). Banner "Replay de tr_xxx" aparece quando `metadata.replay_of` está presente, ligando ao trace original com a mensagem apropriada (`queued`/`running` → "Recarregue para atualizar"; `failed` → mostra `replay_error`; `completed` → "Replay concluído — métricas refletem a nova execução"). Banner `qp.rerun=1` no source agora menciona explicitamente que o worker processa em background. Polling automático fica para iteração posterior — spec marca como opcional. `tsc --noEmit` limpo.
+
+
 
 **Escopo:** mínimo. A UI já consulta o trace por ID após receber `new_trace_id` —
 não há mudança visual estrutural necessária. Apenas tratar os novos valores de
