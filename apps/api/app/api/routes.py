@@ -703,20 +703,20 @@ _OVERVIEW_WINDOW_TO_TIMEDELTA: dict[str, timedelta] = {
 }
 
 
-def _resolve_overview_cutoff(window: str | None, limit_days: int) -> tuple[datetime, int]:
-    """Resolve the overview cutoff timestamp and the equivalent day-count.
+def _resolve_overview_cutoff(window: str | None, limit_days: int) -> tuple[datetime, int | None]:
+    """Resolve the overview cutoff timestamp and an optional day-cap.
 
-    ``window`` takes precedence over ``limit_days``. Day-count is used to cap
-    ``cost_by_day`` after the cutoff is applied; ``24h`` collapses to a single
-    day so the chart shows one bucket.
+    ``window`` takes precedence over ``limit_days``. When ``window`` is set the
+    cutoff itself bounds ``cost_by_day`` (no additional ``LIMIT``) so the daily
+    series sums back to the same trace universe as the KPIs — a 24 h window
+    crossing midnight still returns two calendar-day buckets, matching the
+    KPI ``traces`` count. ``limit_days`` callers keep the legacy bucket cap.
     """
     if window in _OVERVIEW_WINDOW_TO_TIMEDELTA:
         delta = _OVERVIEW_WINDOW_TO_TIMEDELTA[window]
-        days = max(1, delta.days or 1)
-    else:
-        days = max(1, min(limit_days, 90))
-        delta = timedelta(days=days)
-    return utcnow() - delta, days
+        return utcnow() - delta, None
+    days = max(1, min(limit_days, 90))
+    return utcnow() - timedelta(days=days), days
 
 
 @router.get("/analytics/overview")
@@ -766,15 +766,14 @@ def analytics_overview(
     )
     if environment:
         day_rows_query = day_rows_query.filter(Trace.environment == environment)
-    day_rows = list(
-        reversed(
-            day_rows_query
-            .group_by(func.date(Trace.created_at))
-            .order_by(func.date(Trace.created_at).desc())
-            .limit(day_cap)
-            .all()
-        )
+    day_query = (
+        day_rows_query
+        .group_by(func.date(Trace.created_at))
+        .order_by(func.date(Trace.created_at).desc())
     )
+    if day_cap is not None:
+        day_query = day_query.limit(day_cap)
+    day_rows = list(reversed(day_query.all()))
 
     model_rows_query = (
         db.query(

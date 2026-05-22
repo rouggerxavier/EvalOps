@@ -154,3 +154,35 @@ def test_analytics_overview_window_rejects_invalid_value() -> None:
     headers, project_id, _ = _bootstrap_project_with_two_traces(client)
     bad = client.get(f"/v1/analytics/overview?project_id={project_id}&window=90d", headers=headers)
     assert bad.status_code == 422
+
+
+def test_analytics_overview_cost_by_day_sums_to_kpis_across_midnight_in_24h() -> None:
+    """Bug 1.1: a 24h window that straddles midnight must keep cost_by_day's
+    aggregated traces in sync with the KPI traces count. Previously the
+    `limit(day_cap)` capped cost_by_day at one calendar day even when the
+    cutoff already covered two."""
+    client = TestClient(app)
+    headers, project_id, trace_ids = _bootstrap_project_with_two_traces(client)
+
+    # Anchor one trace 2 hours ago, another 22 hours ago — both inside the
+    # 24h window, on different calendar days (whenever this test runs).
+    now = datetime.now(timezone.utc)
+    with SessionLocal() as db:
+        first = db.get(Trace, trace_ids[0])
+        second = db.get(Trace, trace_ids[1])
+        assert first is not None and second is not None
+        first.created_at = now - timedelta(hours=2)
+        second.created_at = now - timedelta(hours=22)
+        db.add_all([first, second])
+        db.commit()
+
+    body = client.get(
+        f"/v1/analytics/overview?project_id={project_id}&window=24h",
+        headers=headers,
+    ).json()
+    kpi_traces = body["kpis"]["traces"]
+    day_traces = sum(int(row["traces"]) for row in body["cost_by_day"])
+    assert kpi_traces == 2
+    assert day_traces == kpi_traces, (
+        f"cost_by_day sum ({day_traces}) must match kpis.traces ({kpi_traces})"
+    )
