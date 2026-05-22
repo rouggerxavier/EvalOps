@@ -137,8 +137,24 @@ def _persist_trace(
         duration_span_ms = int((span_in.ended_at - span_in.started_at).total_seconds() * 1000)
         if span_in.cost_usd is None:
             cost = compute_cost_usd(span_in.provider, span_in.model, span_in.tokens_in, span_in.tokens_out)
+            # `compute_cost_usd` returns 0 for unknown provider/model. Split that
+            # zero into "estimated" (tokens present, no table match) and
+            # "unknown" (no tokens at all) so the UI can warn the user that the
+            # displayed cost is not a measurement.
+            if cost > 0:
+                cost_source = "priced"
+            elif (span_in.tokens_in or 0) + (span_in.tokens_out or 0) > 0:
+                cost_source = "estimated"
+            else:
+                cost_source = "unknown"
         else:
+            # Client supplied the cost — trust the number, but flag the trace
+            # as "provided" so an aggregated total is not confused with a
+            # priced-by-table measurement.
             cost = Decimal(str(span_in.cost_usd))
+            cost_source = "provided"
+        span_metadata = dict(span_in.metadata or {})
+        span_metadata["_cost_source"] = cost_source
         row = Span(
             id=span_id,
             trace_id=trace_id,
@@ -162,7 +178,7 @@ def _persist_trace(
             input=span_in.input,
             output=span_in.output,
             error=span_in.error,
-            metadata_json=span_in.metadata,
+            metadata_json=span_metadata,
         )
         if do_redact:
             redact_span(row)

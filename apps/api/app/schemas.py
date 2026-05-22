@@ -159,6 +159,9 @@ class TraceOut(BaseModel):
     metadata: dict = Field(alias="metadata_json")
     redacted: bool = False
     created_at: datetime
+    # Populated at the route layer (list + detail) — not a column. Marked
+    # optional so model_validate(trace) does not complain.
+    cost_source: str | None = None
 
 
 class TraceFlagIn(BaseModel):

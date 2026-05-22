@@ -287,9 +287,20 @@ def _ingest_trace_with_spans(
     return response.json()["results"][0]["trace_id"]
 
 
-def _span(name: str, type_: str, start_ms: int, end_ms: int) -> dict:
+def _span(
+    name: str,
+    type_: str,
+    start_ms: int,
+    end_ms: int,
+    *,
+    provider: str | None = None,
+    model: str | None = None,
+    tokens_in: int | None = None,
+    tokens_out: int | None = None,
+    cost_usd: float | None = None,
+) -> dict:
     base = datetime.now(timezone.utc)
-    return {
+    span: dict = {
         "client_span_id": f"sp_{name.replace('.', '_')}_{start_ms}",
         "type": type_,
         "name": name,
@@ -297,6 +308,17 @@ def _span(name: str, type_: str, start_ms: int, end_ms: int) -> dict:
         "ended_at": (base + timedelta(milliseconds=end_ms)).isoformat(),
         "status": "ok",
     }
+    if provider is not None:
+        span["provider"] = provider
+    if model is not None:
+        span["model"] = model
+    if tokens_in is not None:
+        span["tokens_in"] = tokens_in
+    if tokens_out is not None:
+        span["tokens_out"] = tokens_out
+    if cost_usd is not None:
+        span["cost_usd"] = cost_usd
+    return span
 
 
 def test_slow_kind_llm_filters_traces_by_llm_span_duration() -> None:
@@ -420,6 +442,151 @@ def test_rag_filter_matches_trace_with_rag_metadata_keys() -> None:
     body = client.get(f"/v1/traces?project_id={project_id}&rag=true", headers=headers).json()
     ids = {row["id"] for row in body["data"]}
     assert by_metadata in ids
+
+
+def test_cost_source_priced_for_known_provider_model_with_tokens() -> None:
+    """Bug 6.1: priced via pricing table → cost_source=priced."""
+    client = TestClient(app)
+    headers, project_id, api_key = _bootstrap(client)
+    tid = _ingest_trace_with_spans(
+        client,
+        api_key,
+        client_trace_id="priced",
+        trace_name="qa.compose",
+        trace_duration_ms=500,
+        spans=[
+            _span(
+                "openai.chat",
+                "llm_call",
+                0,
+                480,
+                provider="openai",
+                model="gpt-4o-mini",
+                tokens_in=200,
+                tokens_out=100,
+            )
+        ],
+    )
+    body = client.get(f"/v1/traces?project_id={project_id}", headers=headers).json()
+    item = next(row for row in body["data"] if row["id"] == tid)
+    assert item["cost_source"] == "priced"
+    detail = client.get(f"/v1/traces/{tid}", headers=headers).json()
+    assert detail["trace"]["cost_source"] == "priced"
+
+
+def test_cost_source_provided_when_client_supplies_cost() -> None:
+    """Bug 6.1: client-supplied cost_usd marks the span (and aggregated trace)
+    as `provided`, even when provider/model is in the pricing table — the
+    backend trusts the number but flags it as user input."""
+    client = TestClient(app)
+    headers, project_id, api_key = _bootstrap(client)
+    tid = _ingest_trace_with_spans(
+        client,
+        api_key,
+        client_trace_id="provided",
+        trace_name="qa.compose",
+        trace_duration_ms=500,
+        spans=[
+            _span(
+                "openai.chat",
+                "llm_call",
+                0,
+                480,
+                provider="openai",
+                model="gpt-4o-mini",
+                tokens_in=200,
+                tokens_out=100,
+                cost_usd=0.0042,
+            )
+        ],
+    )
+    body = client.get(f"/v1/traces?project_id={project_id}", headers=headers).json()
+    item = next(row for row in body["data"] if row["id"] == tid)
+    assert item["cost_source"] == "provided"
+
+
+def test_cost_source_estimated_for_unknown_model_with_tokens() -> None:
+    """Bug 6.1: unknown provider/model + tokens → estimated (not "priced 0")."""
+    client = TestClient(app)
+    headers, project_id, api_key = _bootstrap(client)
+    tid = _ingest_trace_with_spans(
+        client,
+        api_key,
+        client_trace_id="estimated",
+        trace_name="qa.compose",
+        trace_duration_ms=500,
+        spans=[
+            _span(
+                "openai.chat",
+                "llm_call",
+                0,
+                480,
+                provider="someprov",
+                model="model-x",
+                tokens_in=50,
+                tokens_out=20,
+            )
+        ],
+    )
+    body = client.get(f"/v1/traces?project_id={project_id}", headers=headers).json()
+    item = next(row for row in body["data"] if row["id"] == tid)
+    assert item["cost_source"] == "estimated"
+
+
+def test_cost_source_unknown_when_no_cost_no_tokens() -> None:
+    """Bug 6.1: no cost, no tokens — pure absence of signal."""
+    client = TestClient(app)
+    headers, project_id, api_key = _bootstrap(client)
+    tid = _ingest_trace_with_spans(
+        client,
+        api_key,
+        client_trace_id="silent",
+        trace_name="agent.run",
+        trace_duration_ms=500,
+        spans=[_span("agent.act", "tool", 0, 480)],
+    )
+    body = client.get(f"/v1/traces?project_id={project_id}", headers=headers).json()
+    item = next(row for row in body["data"] if row["id"] == tid)
+    assert item["cost_source"] == "unknown"
+
+
+def test_cost_source_worst_wins_in_mixed_trace() -> None:
+    """Bug 6.1: one provided span + one priced span → trace is `provided`."""
+    client = TestClient(app)
+    headers, project_id, api_key = _bootstrap(client)
+    tid = _ingest_trace_with_spans(
+        client,
+        api_key,
+        client_trace_id="mixed",
+        trace_name="qa.compose",
+        trace_duration_ms=900,
+        spans=[
+            _span(
+                "openai.chat.priced",
+                "llm_call",
+                0,
+                400,
+                provider="openai",
+                model="gpt-4o-mini",
+                tokens_in=100,
+                tokens_out=50,
+            ),
+            _span(
+                "openai.chat.provided",
+                "llm_call",
+                410,
+                880,
+                provider="openai",
+                model="gpt-4o-mini",
+                tokens_in=20,
+                tokens_out=10,
+                cost_usd=0.003,
+            ),
+        ],
+    )
+    body = client.get(f"/v1/traces?project_id={project_id}", headers=headers).json()
+    item = next(row for row in body["data"] if row["id"] == tid)
+    assert item["cost_source"] == "provided"
 
 
 def test_rag_filter_matches_traces_via_span_name() -> None:

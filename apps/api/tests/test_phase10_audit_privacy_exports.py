@@ -560,7 +560,12 @@ def test_no_redaction_preserves_extended_fields() -> None:
         sp = db.query(Span).filter(Span.trace_id == trace_id).first()
         assert sp.messages_in is not None
         assert sp.error == {"detail": "boom with internal info"}
-        assert sp.metadata_json == {"customer_email": "c@acme.com"}
+        # The trace ingest pipeline adds `_cost_source` to span metadata; the
+        # contract for callers is "user keys preserved untouched". Filter the
+        # system prefix before equality, but assert it carries an expected value.
+        user_metadata = {k: v for k, v in sp.metadata_json.items() if not k.startswith("_")}
+        assert user_metadata == {"customer_email": "c@acme.com"}
+        assert sp.metadata_json.get("_cost_source") in {"priced", "estimated", "unknown", "provided"}
         ev = db.query(Event).join(Span).filter(Span.trace_id == trace_id).first()
         assert ev.payload == {"email": "leak@acme.com"}
 

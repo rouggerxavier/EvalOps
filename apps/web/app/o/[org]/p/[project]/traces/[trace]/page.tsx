@@ -40,6 +40,16 @@ type Props = {
   }>;
 };
 
+function costSourceLabel(source: string | null | undefined): string | undefined {
+  // Translates the backend `cost_source` enum into copy honest about how the
+  // total was derived. Returns undefined for `priced` so the metric falls back
+  // to the model name (default neutral state).
+  if (source === "provided") return "valor enviado pelo cliente";
+  if (source === "estimated") return "sem preço — estimado por tokens";
+  if (source === "unknown") return "sem preço nem tokens";
+  return undefined;
+}
+
 function parseTab(value: string | undefined, hasRag: boolean): Tab {
   if (value === "rag" && hasRag) return "rag";
   if (value === "waterfall" || value === "metadata" || value === "feedback") return value;
@@ -231,8 +241,8 @@ export default async function TraceDetailPage({ params, searchParams }: Props) {
         <Metric
           label="Custo"
           value={formatCost(t.total_cost_usd)}
-          delta={traceModel ?? "sem modelo"}
-          deltaTone="neutral"
+          delta={costSourceLabel(t.cost_source) ?? (traceModel ?? "sem modelo")}
+          deltaTone={t.cost_source && t.cost_source !== "priced" ? "down" : "neutral"}
         />
         <Metric
           label="Spans / Eventos"

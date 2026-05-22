@@ -473,18 +473,67 @@ def ingest_traces(
     return ingest_trace_batch(db, project, payload, redact_header)
 
 
-def _classify_cost_source(trace: Trace) -> str:
-    """Honest classification of how reliable ``total_cost_usd`` is.
+# Priority of cost-source labels (worst-of-mix wins). Plain "unknown" beats
+# everything; "provided" beats "priced" because a client-supplied number is
+# less verifiable than a table-applied one. The UI uses this to surface the
+# most degraded signal across spans, not the most flattering.
+_COST_SOURCE_PRIORITY: dict[str, int] = {
+    "unknown": 4,
+    "estimated": 3,
+    "provided": 2,
+    "priced": 1,
+}
 
-    Returns one of:
-    - ``priced``: backend matched provider/model and applied the pricing table.
-    - ``estimated``: tokens were recorded but no price was found — the cost
-      column is a deterministic zero, not a measurement of $0.
-    - ``unknown``: no tokens and no cost — pure absence of signal.
 
-    Caller is expected to render a badge/tooltip differentiating these so a
-    user does not mistake an unpriced zero for "actually free".
+def _bulk_cost_source_for_traces(db: Session, trace_ids: list[str]) -> dict[str, str]:
+    """Aggregate the per-span ``_cost_source`` metadata into a trace-level label.
+
+    Spans without cost or tokens are ignored — they carry no cost signal and
+    would otherwise drag every trace with a tool/eval span into "unknown".
+    Falls back to the legacy aggregate-only heuristic for spans ingested
+    before this metadata was being written.
     """
+    if not trace_ids:
+        return {}
+    rows = (
+        db.query(Span.trace_id, Span.metadata_json, Span.cost_usd, Span.tokens_in, Span.tokens_out)
+        .filter(Span.trace_id.in_(trace_ids))
+        .all()
+    )
+    per_trace: dict[str, str] = {}
+    for trace_id, metadata, cost, tokens_in, tokens_out in rows:
+        has_signal = (cost or 0) > 0 or (tokens_in or 0) > 0 or (tokens_out or 0) > 0
+        if not has_signal:
+            continue
+        source = None
+        if isinstance(metadata, dict):
+            raw = metadata.get("_cost_source")
+            if isinstance(raw, str) and raw in _COST_SOURCE_PRIORITY:
+                source = raw
+        if source is None:
+            # Legacy span: no `_cost_source` written at ingest. Infer from
+            # available signals so historical data still shows a label.
+            if (cost or 0) > 0:
+                source = "priced"
+            elif (tokens_in or 0) + (tokens_out or 0) > 0:
+                source = "estimated"
+            else:
+                source = "unknown"
+        prev = per_trace.get(trace_id)
+        if prev is None or _COST_SOURCE_PRIORITY[source] > _COST_SOURCE_PRIORITY[prev]:
+            per_trace[trace_id] = source
+    return per_trace
+
+
+def _classify_cost_source(trace: Trace, *, span_label: str | None = None) -> str:
+    """Single-trace classifier kept for compatibility.
+
+    Prefer ``_bulk_cost_source_for_traces`` for list-style queries; this helper
+    is a single-row convenience used by the detail endpoint where we already
+    have the spans loaded.
+    """
+    if span_label is not None:
+        return span_label
     if (trace.total_cost_usd or 0) > 0:
         return "priced"
     if (trace.total_tokens_in or 0) > 0 or (trace.total_tokens_out or 0) > 0:
@@ -637,12 +686,13 @@ def list_traces(
         latest_q = select(ranked.c.trace_id, ranked.c.aggregate_score).where(ranked.c.rn == 1)
         for row in db.execute(latest_q):
             last_scores[row.trace_id] = float(row.aggregate_score) if row.aggregate_score is not None else None
+    cost_sources = _bulk_cost_source_for_traces(db, trace_ids)
     data = []
     for row in rows:
         item = TraceOut.model_validate(row).model_dump()
         item["last_score"] = last_scores.get(row.id)
         item["slow_reason"] = effective_slow_kind
-        item["cost_source"] = _classify_cost_source(row)
+        item["cost_source"] = _classify_cost_source(row, span_label=cost_sources.get(row.id))
         data.append(item)
     next_cursor = _encode_cursor(rows[-1].created_at, rows[-1].id) if has_more and rows else None
     return {"data": data, "next_cursor": next_cursor}
@@ -714,8 +764,11 @@ def get_trace(
         }
         for row in feedback
     ]
+    cost_sources = _bulk_cost_source_for_traces(db, [trace_id])
+    trace_out = TraceOut.model_validate(trace).model_dump()
+    trace_out["cost_source"] = _classify_cost_source(trace, span_label=cost_sources.get(trace_id))
     return {
-        "trace": TraceOut.model_validate(trace).model_dump(),
+        "trace": trace_out,
         "spans": span_data,
         "events_count": len(events),
         "feedback": feedback_data,
