@@ -21,6 +21,7 @@ import {
   createTraceFeedback,
   createRubric,
   createRubricVersion,
+  deleteApiKey,
   flagTrace,
   markNotificationsRead,
   patchProject,
@@ -111,6 +112,23 @@ export async function revokeApiKeyAction(formData: FormData): Promise<void> {
     errorMsg = messageFromActionError(error, "Failed to revoke API key");
   }
   redirectWithMessage(path, errorMsg ? { error: errorMsg } : { revoked: "1" });
+}
+
+export async function deleteApiKeyAction(formData: FormData): Promise<void> {
+  const org = String(formData.get("org") ?? "");
+  const project = String(formData.get("project") ?? "");
+  const projectId = String(formData.get("project_id") ?? "");
+  const keyId = String(formData.get("key_id") ?? "");
+  const path = projectPath(org, project, "keys");
+
+  let errorMsg: string | null = null;
+  try {
+    await deleteApiKey(projectId, keyId);
+    revalidatePath(path);
+  } catch (error) {
+    errorMsg = messageFromActionError(error, "Failed to delete API key");
+  }
+  redirectWithMessage(path, errorMsg ? { error: errorMsg } : { deleted: "1" });
 }
 
 export async function createRubricAction(formData: FormData): Promise<void> {

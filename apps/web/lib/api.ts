@@ -243,6 +243,17 @@ export async function revokeApiKey(projectId: string, keyId: string): Promise<vo
   }
 }
 
+export async function deleteApiKey(projectId: string, keyId: string): Promise<void> {
+  const res = await fetch(`${getApiBaseUrl()}/projects/${projectId}/api-keys/${keyId}`, {
+    method: "DELETE",
+    headers: await authHeaders(),
+    cache: "no-store",
+  });
+  if (!res.ok) {
+    throw new Error(`API ${res.status}: ${await res.text()}`);
+  }
+}
+
 export async function getRubrics(projectId: string): Promise<{ data: Rubric[] }> {
   return fetchJson<{ data: Rubric[] }>(`/projects/${projectId}/rubrics`);
 }

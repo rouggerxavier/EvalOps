@@ -109,3 +109,38 @@ def revoke_key(
         )
         db.commit()
     return key
+
+
+class ApiKeyStillActiveError(Exception):
+    """Raised when caller tries to hard-delete a key that has not been revoked."""
+
+
+def delete_key(
+    db: Session,
+    project: Project,
+    key_id: str,
+    actor_user_id: str,
+) -> ApiKey | None:
+    """Hard-delete a revoked API key.
+
+    Returns the deleted row, ``None`` when the row is missing or belongs to a
+    different project (router translates to 404 without leaking existence), and
+    raises :class:`ApiKeyStillActiveError` when the key is still active so the
+    router can return 409 — active keys must be revoked first.
+    """
+    key = db.get(ApiKey, key_id)
+    if not key or key.project_id != project.id:
+        return None
+    if key.revoked_at is None:
+        raise ApiKeyStillActiveError(key_id)
+    record_audit(
+        db, "api_key.deleted",
+        organization_id=project.organization_id,
+        actor_user_id=actor_user_id,
+        target_type="api_key",
+        target_id=key.id,
+        payload={"project_id": project.id, "key_name": key.name},
+    )
+    db.delete(key)
+    db.commit()
+    return key

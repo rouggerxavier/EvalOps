@@ -3,7 +3,7 @@ import { Plus, RefreshCw, ShieldCheck } from "lucide-react";
 
 import { AuthRequiredPanel } from "@/components/AuthRequiredPanel";
 import { CopyTextButton } from "@/components/CopyTextButton";
-import { createApiKeyAction, revokeApiKeyAction } from "@/lib/actions";
+import { createApiKeyAction, deleteApiKeyAction, revokeApiKeyAction } from "@/lib/actions";
 import { getApiKeys, hasAuthToken, resolveProject } from "@/lib/api";
 import { consumeApiKeyFlash } from "@/lib/flash";
 import { formatDateTime } from "@/lib/format";
@@ -25,6 +25,7 @@ type Props = {
     tab?: string;
     created?: string;
     revoked?: string;
+    deleted?: string;
     error?: string;
   }>;
 };
@@ -230,6 +231,7 @@ export default async function KeysPage({ params, searchParams }: Props) {
         <div style={alertStyle("ok")}>Chave API criada. Copie o segredo agora, ele nao sera exibido novamente.</div>
       )}
       {qp.revoked && <div style={alertStyle("ok")}>Chave API revogada com sucesso.</div>}
+      {qp.deleted && <div style={alertStyle("ok")}>Chave API excluída com sucesso.</div>}
 
       {flash && (
         <section className="card" style={{ marginBottom: 12 }}>
@@ -385,7 +387,19 @@ export default async function KeysPage({ params, searchParams }: Props) {
                               <button type="submit" className="btn btn--sm">Revogar</button>
                             </form>
                           ) : (
-                            <span className="t__faint" style={{ fontSize: 12 }}>-</span>
+                            <form action={deleteApiKeyAction} style={{ display: "flex", justifyContent: "flex-end" }}>
+                              <input type="hidden" name="org" value={org} />
+                              <input type="hidden" name="project" value={project} />
+                              <input type="hidden" name="project_id" value={resolved.project_id} />
+                              <input type="hidden" name="key_id" value={key.id} />
+                              <button
+                                type="submit"
+                                className="btn btn--sm"
+                                style={{ color: "var(--err)", borderColor: "var(--err-border)" }}
+                              >
+                                Excluir
+                              </button>
+                            </form>
                           )}
                         </td>
                       </tr>

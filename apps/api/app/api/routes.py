@@ -299,6 +299,24 @@ def revoke_api_key(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="not_found")
 
 
+@router.delete("/projects/{project_id}/api-keys/{key_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_api_key(
+    key_id: str,
+    project: Project = Depends(get_owned_project),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> None:
+    try:
+        key = api_key_service.delete_key(db, project, key_id, user.id)
+    except api_key_service.ApiKeyStillActiveError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="api_key_not_revoked",
+        ) from exc
+    if key is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="not_found")
+
+
 def _problem_cause(trace: Trace, spans: list[Span]) -> str:
     meta = trace.metadata_json or {}
     for key in ("cause", "error_type", "flagged_reason", "reason"):
