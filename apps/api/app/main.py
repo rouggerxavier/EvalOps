@@ -44,14 +44,21 @@ def _run_alembic_upgrade() -> None:
 
 
 @asynccontextmanager
-async def lifespan(_: FastAPI):
+async def lifespan(app: FastAPI):
     configure_logging()
     if _use_alembic():
         _run_alembic_upgrade()
     else:
         Base.metadata.create_all(bind=engine)
         ensure_schema_compatibility()
-    yield
+    from app.workers.queue import create_arq_pool, close_arq_pool
+
+    app.state.arq_pool = await create_arq_pool()
+    try:
+        yield
+    finally:
+        await close_arq_pool(app.state.arq_pool)
+        app.state.arq_pool = None
 
 
 app = FastAPI(title="EvalOps API", version="0.1.0", lifespan=lifespan)

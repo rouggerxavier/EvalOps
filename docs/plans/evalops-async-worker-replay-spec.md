@@ -330,7 +330,21 @@ async def test_replay_trace_variables_substituted(mock_db, mock_provider):
 
 ---
 
-### Fase C — Rota backend: enfileirar o job real
+### Fase C — Rota backend: enfileirar o job real — **✅ IMPLEMENTADO (2026-05-21)**
+
+Status:
+- `app/workers/queue.py` — `create_arq_pool()` best-effort retorna `None` se Redis indisponível (sem crashar startup); `close_arq_pool()` no shutdown; `get_arq_pool()` dependency FastAPI levanta 503 `replay_unavailable` quando pool é None (§C-1).
+- `app/main.py:lifespan` agora cria pool em `app.state.arq_pool` no startup e fecha no shutdown (§C-2).
+- `routes_trace_actions.py:rerun_trace` virou `async def`; depende de `get_arq_pool`; chama `await arq_pool.enqueue_job("replay_trace", original_trace_id=..., new_trace_id=...)` antes do commit; exception do enqueue dispara `rollback()` + HTTPException 503 (sem placeholder fantasma).
+- `schemas.py:TraceRerunOut` ganha `replay_status: str = "queued"`.
+
+Conftest:
+- `_FakeArqPool` registrado como dependency override de `get_arq_pool` no module load + reinstalado na autouse fixture (módulo `test_phase11` chama `dependency_overrides.clear()`).
+- Fixture `fake_arq_pool` expõe o stub aos testes — `from tests.conftest import` re-executaria o módulo e quebraria o rebind do DB.
+
+Testes novos: `test_rerun_trace_writes_audit` (assert job enfileirado + replay_status), `test_rerun_trace_returns_503_when_redis_unavailable` (pool None → 503 sem audit nem placeholder), `test_rerun_trace_returns_503_when_enqueue_raises` (pool quebrado também → 503). Suite cheia: 318 passed.
+
+
 
 **Escopo:** modificar `rerun_trace` em `routes_trace_actions.py` para usar `arq` e
 enfileirar o job após criar o placeholder. O contrato externo da rota não muda

@@ -598,9 +598,10 @@ def test_flag_trace_creates_audit_log_and_dedups() -> None:
         assert len(audits) == 1
 
 
-def test_rerun_trace_writes_audit() -> None:
+def test_rerun_trace_writes_audit(fake_arq_pool) -> None:
     from app.models import AuditLog
 
+    fake_arq_pool.jobs.clear()
     client = TestClient(app)
     headers, _, api_key = _bootstrap(client)
     trace_id = _ingest_trace(client, api_key, status="ok")
@@ -610,6 +611,8 @@ def test_rerun_trace_writes_audit() -> None:
         json={"reason": "investigate", "model": "gpt-4o-mini", "variables": {}},
     )
     assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["replay_status"] == "queued"
     with SessionLocal() as db:
         audits = (
             db.query(AuditLog)
@@ -617,6 +620,88 @@ def test_rerun_trace_writes_audit() -> None:
             .all()
         )
         assert len(audits) == 1
+    assert any(
+        name == "replay_trace"
+        and kwargs.get("original_trace_id") == trace_id
+        and kwargs.get("new_trace_id") == body["new_trace_id"]
+        for name, _args, kwargs in fake_arq_pool.jobs
+    ), f"esperado replay_trace enfileirado, jobs={fake_arq_pool.jobs}"
+
+
+def test_rerun_trace_returns_503_when_redis_unavailable(fake_arq_pool) -> None:
+    from app.workers.queue import get_arq_pool
+
+    _restore = app.dependency_overrides.get(get_arq_pool)
+    client = TestClient(app)
+    headers, _, api_key = _bootstrap(client)
+    trace_id = _ingest_trace(client, api_key, status="ok")
+
+    def _no_pool():
+        from fastapi import HTTPException, status as _status
+
+        raise HTTPException(status_code=_status.HTTP_503_SERVICE_UNAVAILABLE, detail="replay_unavailable")
+
+    app.dependency_overrides[get_arq_pool] = _no_pool
+    try:
+        response = client.post(
+            f"/v1/traces/{trace_id}/rerun",
+            headers=headers,
+            json={"model": None, "variables": {}},
+        )
+    finally:
+        if _restore is not None:
+            app.dependency_overrides[get_arq_pool] = _restore
+        else:
+            app.dependency_overrides.pop(get_arq_pool, None)
+    assert response.status_code == 503, response.text
+    assert response.json()["detail"] == "replay_unavailable"
+
+    with SessionLocal() as db:
+        from app.models import AuditLog
+
+        audits = (
+            db.query(AuditLog)
+            .filter(AuditLog.action == "trace.rerun_requested", AuditLog.target_id == trace_id)
+            .all()
+        )
+        assert audits == [], "503 não deve gravar audit nem placeholder"
+        traces = (
+            db.query(Trace)
+            .filter(
+                Trace.project_id != None,  # noqa: E711
+                Trace.metadata_json["replay_of"].as_string() == trace_id,
+            )
+            .all()
+        )
+        assert traces == [], "503 não deve criar placeholder fantasma"
+
+
+def test_rerun_trace_returns_503_when_enqueue_raises(fake_arq_pool) -> None:
+    from app.workers.queue import get_arq_pool
+
+    _restore = app.dependency_overrides.get(get_arq_pool)
+    client = TestClient(app)
+    headers, _, api_key = _bootstrap(client)
+    trace_id = _ingest_trace(client, api_key, status="ok")
+
+    class _BrokenPool:
+        async def enqueue_job(self, *args, **kwargs):
+            raise ConnectionError("redis_down")
+
+    app.dependency_overrides[get_arq_pool] = lambda: _BrokenPool()
+    try:
+        response = client.post(
+            f"/v1/traces/{trace_id}/rerun",
+            headers=headers,
+            json={"model": None, "variables": {}},
+        )
+    finally:
+        if _restore is not None:
+            app.dependency_overrides[get_arq_pool] = _restore
+        else:
+            app.dependency_overrides.pop(get_arq_pool, None)
+    assert response.status_code == 503
+    assert response.json()["detail"] == "replay_unavailable"
 
 
 def test_members_listing_paginates_with_cursor() -> None:

@@ -197,6 +197,7 @@ class TraceRerunIn(BaseModel):
 class TraceRerunOut(BaseModel):
     new_trace_id: str
     status: str
+    replay_status: str = "queued"
 
 
 class TraceCompareIn(BaseModel):

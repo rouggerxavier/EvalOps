@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.db import get_db
 from app.deps import get_current_user
 from app.domain.services.audit_service import record_audit
+from app.workers.queue import get_arq_pool
 from app.models import Span, Trace, TraceFlag, User, utcnow
 from app.ownership import load_trace
 from app.schemas import (
@@ -385,11 +386,12 @@ def bulk_flag_traces(
 
 
 @router.post("/traces/{trace_id}/rerun", response_model=TraceRerunOut)
-def rerun_trace(
+async def rerun_trace(
     trace_id: str,
     payload: TraceRerunIn,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    arq_pool=Depends(get_arq_pool),
 ) -> dict:
     trace = load_trace(db, user.id, trace_id)
     now = utcnow()
@@ -422,21 +424,39 @@ def rerun_trace(
         metadata_json=metadata,
     )
     db.add(new_trace)
+    new_trace_id = new_trace.id
+    original_id = trace.id
+    org_id = trace.organization_id
+    actor_id = user.id
+
+    try:
+        await arq_pool.enqueue_job(
+            "replay_trace",
+            original_trace_id=original_id,
+            new_trace_id=new_trace_id,
+        )
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="replay_unavailable",
+        ) from exc
+
     record_audit(
         db,
         "trace.rerun_requested",
-        organization_id=trace.organization_id,
-        actor_user_id=user.id,
+        organization_id=org_id,
+        actor_user_id=actor_id,
         target_type="trace",
-        target_id=trace.id,
+        target_id=original_id,
         payload={
-            "new_trace_id": new_trace.id,
+            "new_trace_id": new_trace_id,
             "model": payload.model,
             "variables": payload.variables,
         },
     )
     db.commit()
-    return {"new_trace_id": new_trace.id, "status": "queued"}
+    return {"new_trace_id": new_trace_id, "status": "queued", "replay_status": "queued"}
 
 
 @router.post("/traces/compare", response_model=TraceCompareOut)
