@@ -45,17 +45,41 @@ test("keys: create form preserves required hidden + visible fields", () => {
 });
 
 test("keys: row actions render Revogar for active and Excluir for revoked", () => {
-  // Revoke form gated by !key.revoked_at.
-  assert.match(page, /!key\.revoked_at \?[\s\S]*?action=\{revokeApiKeyAction\}/);
-  assert.match(page, /action=\{revokeApiKeyAction\}/);
-  assert.match(page, /\bRevogar\b/);
-  // Delete form gated by the revoked branch with the danger-coloured button.
-  assert.match(page, /action=\{deleteApiKeyAction\}/);
-  assert.match(page, /\bExcluir\b/);
-  assert.match(page, /color: "var\(--err\)"/);
+  // Bug 3.1: assert the *structural* binding — Revogar inside the !revoked_at
+  // branch and Excluir inside the revoked branch of the same ternary. A
+  // regression that inverts the two forms must fail this test, not pass
+  // because both strings appear somewhere on the page.
+  //
+  // A naive `\([\s\S]*?\)` capture is unsafe because JSX style values like
+  // `color: "var(--err)"` introduce inner `)` that stop the lazy capture too
+  // early. Anchor instead on the `</form>` terminator that both branches end
+  // with — there is exactly one `</form>` per branch in the JSX ternary.
+  const ternaryMatch = page.match(
+    /!key\.revoked_at \? \(\s*([\s\S]*?<\/form>)\s*\)\s*:\s*\(\s*([\s\S]*?<\/form>)\s*\)/,
+  );
+  assert.ok(ternaryMatch, "ternary on !key.revoked_at not found in row actions");
+  const [, activeBranch, revokedBranch] = ternaryMatch;
+
+  // Active branch must wire revokeApiKeyAction and render the Revogar button,
+  // and must NOT contain delete-related affordances.
+  assert.match(activeBranch, /action=\{revokeApiKeyAction\}/);
+  assert.match(activeBranch, /\bRevogar\b/);
+  assert.doesNotMatch(activeBranch, /deleteApiKeyAction/);
+  assert.doesNotMatch(activeBranch, /\bExcluir\b/);
+
+  // Revoked branch must wire deleteApiKeyAction and render the danger-coloured
+  // Excluir button, and must NOT expose the Revogar action.
+  assert.match(revokedBranch, /action=\{deleteApiKeyAction\}/);
+  assert.match(revokedBranch, /\bExcluir\b/);
+  assert.match(revokedBranch, /color: "var\(--err\)"/);
+  assert.doesNotMatch(revokedBranch, /revokeApiKeyAction/);
+  assert.doesNotMatch(revokedBranch, /\bRevogar\b/);
+
   // Both forms must carry project_id and key_id so the action can dispatch.
-  assert.match(page, /name="key_id"/);
-  assert.match(page, /name="project_id"/);
+  assert.match(activeBranch, /name="key_id"/);
+  assert.match(activeBranch, /name="project_id"/);
+  assert.match(revokedBranch, /name="key_id"/);
+  assert.match(revokedBranch, /name="project_id"/);
 });
 
 test("keys: success/error alerts cover created, revoked and deleted", () => {

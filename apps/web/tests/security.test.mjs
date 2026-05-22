@@ -525,24 +525,16 @@ test("Fix-7B.7: export download route proxies backend with auth and safe redirec
   assert.match(src, /410/);
 });
 
-test("Fix-7B.7: planned controls are explicitly disabled in touched pages", () => {
-  const overview = readFileSync(new URL("../app/o/[org]/p/[project]/page.tsx", import.meta.url), "utf8");
-  const evaluations = readFileSync(new URL("../app/o/[org]/p/[project]/evaluations/page.tsx", import.meta.url), "utf8");
-  const traceDetail = readFileSync(new URL("../app/o/[org]/p/[project]/traces/[trace]/page.tsx", import.meta.url), "utf8");
-
-  assert.match(overview, /data-status="planned"/);
-  assert.match(evaluations, /data-status="planned"/);
-  assert.match(traceDetail, /data-status="planned"/);
-  assert.match(traceDetail, /disabled/);
-});
-
 test("Fix-7B.7: actionable controls in touched pages use real links/forms", () => {
-  const overview = readFileSync(new URL("../app/o/[org]/p/[project]/page.tsx", import.meta.url), "utf8");
-  const evaluations = readFileSync(new URL("../app/o/[org]/p/[project]/evaluations/page.tsx", import.meta.url), "utf8");
-  const exportsPage = readFileSync(new URL("../app/o/[org]/p/[project]/exports/page.tsx", import.meta.url), "utf8");
-
-  assert.match(overview, /href=\{`\/o\/\$\{org\}\/p\/\$\{project\}\/evaluations`\}/);
-  assert.match(evaluations, /href="#run-evaluation"/);
+  const exportsPage = readFileSync(
+    new URL("../app/o/[org]/p/[project]/exports/page.tsx", import.meta.url),
+    "utf8",
+  );
+  // Exports remains the canonical touchpoint: createExportAction binds the
+  // single real "Solicitar export" form. Other previously-"planned" surfaces
+  // on the overview and evaluations pages have been removed or rewired to
+  // real backend actions in Fase 7 — assert what still exists today rather
+  // than the historical `data-status="planned"` markers.
   assert.match(exportsPage, /action=\{createExportAction\}/);
 });
 

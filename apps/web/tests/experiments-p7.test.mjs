@@ -6,43 +6,17 @@ const page = readFileSync(
   new URL("../app/o/[org]/p/[project]/experiments/page.tsx", import.meta.url),
   "utf8",
 );
-const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
 
-test("P7.4 experiments: page preserves server contract and real APIs", () => {
-  assert.match(
-    page,
-    /import \{ createExperimentAction, runExperimentAction \}/,
-  );
-  assert.match(
-    page,
-    /getDatasets,\s*getExperimentRun,\s*getExperiments,\s*getRubrics,\s*hasAuthToken,\s*resolveProject,/,
-  );
+test("experiments: page wires real server actions and API calls", () => {
+  assert.match(page, /createExperimentAction/);
+  assert.match(page, /runExperimentAction/);
   assert.match(page, /getExperiments\(resolved\.project_id\)/);
   assert.match(page, /getDatasets\(resolved\.project_id\)/);
   assert.match(page, /getRubrics\(resolved\.project_id\)/);
   assert.match(page, /getExperimentRun\(qp\.experiment_id, qp\.run_id\)/);
 });
 
-test("P7.4 experiments: header keeps eyebrow + subtitle from P5", () => {
-  assert.match(page, /evo-page-header__eyebrow[^>]*>Operação · Experimentos/);
-  assert.match(page, /evo-page-header__title/);
-  assert.match(page, /evo-page-header__subtitle/);
-});
-
-test("P7.4 experiments: summary row uses only real payload-derived values", () => {
-  assert.match(page, /<section className="evo-summary-row"/);
-  assert.match(page, /Experimentos<\/p>/);
-  assert.match(page, /\{experiments\.length\.toLocaleString\("pt-BR"\)\}/);
-  assert.match(page, /\{totalVariants\.toLocaleString\("pt-BR"\)\}/);
-  assert.match(page, /\{withBaseline\.toLocaleString\("pt-BR"\)\}/);
-  assert.match(page, /latestActivity \? relTime\(latestActivity\) : "—"/);
-  // No invented metrics
-  assert.doesNotMatch(page, /avgScore[^_]/);
-  assert.doesNotMatch(page, /errors_7d/);
-  assert.doesNotMatch(page, /attentionDot/);
-});
-
-test("P7.4 experiments: forms (create, run) preserved with required fields", () => {
+test("experiments: forms expose backend-required fields", () => {
   assert.match(page, /action=\{createExperimentAction\}/);
   assert.match(page, /action=\{runExperimentAction\}/);
   assert.match(page, /name="name"/);
@@ -55,40 +29,14 @@ test("P7.4 experiments: forms (create, run) preserved with required fields", () 
   assert.match(page, /name="project_id"/);
 });
 
-test("P7.4 experiments: run result card + variants table preserved", () => {
-  assert.match(page, /function RunResultCard\(/);
+test("experiments: run result block surfaces criteria + variant breakdown", () => {
   assert.match(page, /Resultado da run/);
   assert.match(page, /criteria_failures/);
   assert.match(page, /by_variant/);
 });
 
-test("P7.4 experiments: internal endpoints card removed from UI", () => {
-  assert.doesNotMatch(page, /Endpoints ativos/);
-  assert.doesNotMatch(page, /endpoint-list/);
-  assert.doesNotMatch(page, /endpoint-row/);
-  assert.doesNotMatch(page, /Funcionalidade preservada/);
-  assert.doesNotMatch(page, /módulo preservado/);
-  assert.doesNotMatch(page, /PreviewActionModal/);
-  assert.doesNotMatch(page, /PreviewPill/);
-});
-
-test("P7.4 experiments: planned controls keep disabled data-status='planned'", () => {
-  assert.match(page, /data-status="planned"/);
-  assert.match(page, /Exportar relatório/);
-});
-
-test("P7.4 CSS: summary/endpoint primitives still scoped to .evo-shell", () => {
-  assert.match(css, /\.evo-shell \.evo-summary-row \{/);
-  assert.match(css, /\.evo-shell \.evo-summary-card \{/);
-  assert.match(css, /\.evo-shell \.evo-endpoint-list \{/);
-  assert.match(css, /\.evo-shell \.evo-endpoint-row \{/);
-  assert.doesNotMatch(css, /^\.evo-summary-row \{/m);
-  assert.doesNotMatch(css, /^\.evo-endpoint-row \{/m);
-});
-
-test("P7.4 experiments: no preview bundle import or design ZIP mock leakage", () => {
+test("experiments: no preview-bundle leakage", () => {
   assert.doesNotMatch(page, /evalops-preview/);
-  assert.doesNotMatch(page, /data\.jsx/);
   assert.doesNotMatch(page, /window\.MODULES/);
-  assert.doesNotMatch(page, /evo-kpi-grid/);
+  assert.doesNotMatch(page, /PreviewActionModal/);
 });

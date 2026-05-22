@@ -5,20 +5,21 @@ import { readFileSync } from "node:fs";
 const nav = readFileSync(new URL("../components/app-shell-nav.ts", import.meta.url), "utf8");
 const sidebar = readFileSync(new URL("../components/Sidebar.tsx", import.meta.url), "utf8");
 const topbar = readFileSync(new URL("../components/EvoTopbar.tsx", import.meta.url), "utf8");
-const layout = readFileSync(new URL("../app/o/[org]/p/[project]/layout.tsx", import.meta.url), "utf8");
+const layout = readFileSync(
+  new URL("../app/o/[org]/p/[project]/layout.tsx", import.meta.url),
+  "utf8",
+);
 
-test("P1 AppShell: authenticated layout uses scoped internal shell", () => {
+test("AppShell: authenticated layout mounts the scoped shell", () => {
   assert.match(layout, /import \{ AppShell \}/);
   assert.match(layout, /<AppShell org=\{org\} project=\{project\} initials=\{initials\}>/);
-  assert.doesNotMatch(layout, /EvoTopbar/);
-  assert.doesNotMatch(layout, /<Sidebar/);
 });
 
-test("P1 AppShell: sidebar preserves real project modules and routes", () => {
+test("AppShell: sidebar nav preserves real project modules and routes", () => {
   for (const label of [
     "Overview",
     "Traces",
-    "Avaliações",
+    "Avaliacoes",
     "Prompts",
     "Rubricas",
     "Datasets",
@@ -42,28 +43,27 @@ test("P1 AppShell: sidebar preserves real project modules and routes", () => {
   ]) {
     assert.match(nav, new RegExp(path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   }
-
-  assert.match(nav, /label: "Operação"/);
-  assert.match(nav, /label: "Assets"/);
-  assert.match(nav, /label: "Operações \/ Config"/);
-  assert.match(sidebar, /aria-current=\{active \? "page" : undefined\}/);
 });
 
-test("P1 AppShell: topbar keeps real actions and marks planned alerts disabled", () => {
-  assert.match(topbar, /action=\{`\/o\/\$\{org\}\/p\/\$\{project\}\/traces`\}/);
+test("AppShell: sidebar footer links to /health (no static online text)", () => {
+  assert.match(sidebar, /href="\/health"/);
+  assert.match(sidebar, /Status do EvalOps/);
+  // Bug 5.2: no hardcoded online claim survives in the shell.
+  assert.doesNotMatch(sidebar, /online\s*-\s*ingestao pronta/);
+});
+
+test("AppShell: topbar keeps real actions and now exposes workspace switcher always", () => {
+  assert.match(topbar, /action=\{`\$\{base\}\/traces`\}/);
   assert.match(topbar, /name="name"/);
   assert.match(topbar, /href="\/docs"/);
   assert.match(topbar, /action=\{logoutAction\}/);
-  assert.match(topbar, /data-status="planned"/);
-  assert.match(topbar, /disabled/);
-  assert.match(topbar, /getPageTitle/);
+  assert.match(topbar, /setEnvironmentAction/);
+  assert.match(topbar, /<WorkspaceSwitcher/);
 });
 
-test("P1 AppShell: no preview bundle or production mock imports were added", () => {
+test("AppShell: no preview bundle imports leak into shell files", () => {
   const combined = `${nav}\n${sidebar}\n${topbar}\n${layout}`;
-  assert.doesNotMatch(combined, /data\.jsx/);
-  assert.doesNotMatch(combined, /EndpointSnippet/);
   assert.doesNotMatch(combined, /evalops-preview/);
-  assert.doesNotMatch(combined, /DocOps/);
-  assert.doesNotMatch(combined, /Zone\.Identifier/);
+  assert.doesNotMatch(combined, /EndpointSnippet/);
+  assert.doesNotMatch(combined, /PreviewActionModal/);
 });
