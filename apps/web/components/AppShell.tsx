@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { Suspense } from "react";
+import { cookies } from "next/headers";
 
 import { EvoShortcuts } from "@/components/EvoShortcuts";
 import { EvoToastBridge } from "@/components/EvoToastBridge";
@@ -8,6 +9,9 @@ import { EvoTopbar } from "@/components/EvoTopbar";
 import { Sidebar } from "@/components/Sidebar";
 import { getNotifications, getProjects, resolveProject } from "@/lib/api";
 import type { NotificationItem } from "@/lib/types";
+
+const ENV_COOKIE = "evalops_env";
+const VALID_ENVS = new Set(["dev", "staging", "prod"]);
 
 type Props = {
   children: ReactNode;
@@ -18,6 +22,11 @@ type Props = {
 
 export async function AppShell({ children, org, project, initials }: Props) {
   const resolved = await resolveProject(org, project).catch(() => null);
+  const cookieStore = await cookies();
+  const envCookie = cookieStore.get(ENV_COOKIE)?.value;
+  const environment: "dev" | "staging" | "prod" = VALID_ENVS.has(envCookie ?? "")
+    ? (envCookie as "dev" | "staging" | "prod")
+    : "prod";
 
   let notifications: NotificationItem[] = [];
   let projects: { org: string; project: string; label: string }[] = [{ org, project, label: project }];
@@ -37,7 +46,15 @@ export async function AppShell({ children, org, project, initials }: Props) {
     <div className="app-shell evo-shell">
       <Sidebar org={org} project={project} />
       <div className="app-main evo-main">
-        <EvoTopbar org={org} project={project} initials={initials} notifications={notifications} projects={projects} />
+        <EvoTopbar
+          org={org}
+          project={project}
+          initials={initials}
+          notifications={notifications}
+          projects={projects}
+          projectId={resolved?.project_id ?? null}
+          environment={environment}
+        />
         {children}
       </div>
       <EvoShortcuts />

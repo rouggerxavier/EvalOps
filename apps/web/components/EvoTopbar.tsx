@@ -8,6 +8,7 @@ import { usePathname } from "next/navigation";
 import { getActiveNavItem, getPageTitle, projectHref } from "@/components/app-shell-nav";
 import { NotificationsBell } from "@/components/ui/NotificationsBell";
 import { WorkspaceSwitcher } from "@/components/ui/WorkspaceSwitcher";
+import { setEnvironmentAction } from "@/lib/actions";
 import { logoutAction } from "@/lib/auth-actions";
 import type { NotificationItem } from "@/lib/types";
 
@@ -21,17 +22,20 @@ export function EvoTopbar({
   initials,
   notifications = [],
   projects = [],
+  projectId = null,
+  environment = "prod",
 }: {
   org: string;
   project: string;
   initials: string;
   notifications?: NotificationItem[];
   projects?: WorkspaceProject[];
+  projectId?: string | null;
+  environment?: (typeof ENVIRONMENTS)[number];
 }) {
   const pathname = usePathname();
   const base = `/o/${org}/p/${project}`;
   const searchRef = useRef<HTMLInputElement>(null);
-  const [environment, setEnvironment] = useState<(typeof ENVIRONMENTS)[number]>("prod");
   const [envOpen, setEnvOpen] = useState(false);
   const activeItem = getActiveNavItem(pathname, base);
   const pageName = getPageTitle(pathname, base);
@@ -92,17 +96,23 @@ export function EvoTopbar({
             <div className="card" style={{ position: "absolute", right: 0, top: 34, width: 148, zIndex: 20 }}>
               <div className="card__body" style={{ display: "grid", gap: 6, padding: 8 }}>
                 {ENVIRONMENTS.map((env) => (
-                  <button
-                    key={env}
-                    type="button"
-                    className={`btn btn--sm${env === environment ? " btn--primary" : " btn--ghost"}`}
-                    onClick={() => {
-                      setEnvironment(env);
-                      setEnvOpen(false);
-                    }}
-                  >
-                    {env}
-                  </button>
+                  <form key={env} action={setEnvironmentAction} style={{ margin: 0 }}>
+                    <input type="hidden" name="org" value={org} />
+                    <input type="hidden" name="project" value={project} />
+                    <input type="hidden" name="environment" value={env} />
+                    <input
+                      type="hidden"
+                      name="current_path"
+                      value={pathname ?? `/o/${org}/p/${project}`}
+                    />
+                    <button
+                      type="submit"
+                      className={`btn btn--sm${env === environment ? " btn--primary" : " btn--ghost"}`}
+                      style={{ width: "100%" }}
+                    >
+                      {env}
+                    </button>
+                  </form>
                 ))}
               </div>
             </div>
@@ -112,7 +122,13 @@ export function EvoTopbar({
         {projects.length > 1 ? (
           <WorkspaceSwitcher current={`${org}/${project}`} projects={projects} />
         ) : null}
-        <NotificationsBell notifications={notifications} />
+        <NotificationsBell
+          notifications={notifications}
+          org={org}
+          project={project}
+          projectId={projectId}
+          currentPath={pathname ?? `/o/${org}/p/${project}`}
+        />
 
         <Link className="icon-btn" href="/docs" aria-label="Documentacao">
           <BookOpen size={15} />

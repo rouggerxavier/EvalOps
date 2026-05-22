@@ -9,6 +9,7 @@ implementacao verificaveis contra o codigo.
 ## Documentos atuais
 
 - [Auditoria front/back e backlog de produto](./audits/front-back-product-audit-2026-05-21.md)
+- [Bugs encontrados na implementação front-back-product](./audits/front-back-product-implementation-review-bugs.md)
 - [Planos de implementações](./implementações.md)
 
 ## Regras para novos docs
