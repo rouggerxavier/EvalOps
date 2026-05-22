@@ -60,3 +60,7 @@ def rate_limit_backend() -> str:
 
 def redis_timeout_ms() -> int:
     return _positive_int("EVALOPS_REDIS_TIMEOUT_MS", 200)
+
+
+def worker_concurrency() -> int:
+    return _positive_int("EVALOPS_WORKER_CONCURRENCY", 4)

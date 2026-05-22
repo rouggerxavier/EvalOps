@@ -35,6 +35,24 @@ services:
     ports:
       - "8001:8000"
 
+  worker:
+    image: python:3.12-slim
+    working_dir: /workspace
+    volumes:
+      - ./apps/api:/workspace
+    environment:
+      APP_ENV: local
+      LOG_LEVEL: INFO
+      DATABASE_URL: postgresql+asyncpg://evalops:evalops@postgres:5432/evalops
+      REDIS_URL: redis://redis:6379/0
+      EVALOPS_WORKER_CONCURRENCY: "4"
+    command: >
+      sh -c "pip install --no-cache-dir -e . &&
+             python -m arq app.workers.settings.WorkerSettings"
+    depends_on:
+      - postgres
+      - redis
+
   web:
     image: node:22-alpine
     working_dir: /workspace

@@ -111,7 +111,11 @@ class TraceRerunOut(BaseModel):
 
 ## 4. Plano de execução por fase
 
-### Fase A — Infraestrutura da fila
+### Fase A — Infraestrutura da fila — **✅ IMPLEMENTADO (2026-05-21)**
+
+Status: dependency `arq>=0.26,<1` adicionada; `worker_concurrency()` em `config.py`; módulo `app/workers/` criado com `settings.py` (functions=[], on_startup carrega `db_session_factory`, RedisSettings via `REDIS_URL`). Serviço `worker` adicionado em `docker-compose.yml` e `docker-compose.prod.yml` (prod ganhou também o serviço `redis` com healthcheck). Testes: `tests/test_worker_settings.py` valida import limpo, env override de concurrency, e parsing de `REDIS_URL`. Suite cheia: 310 passed. `python -m arq app.workers.settings.WorkerSettings --check` carrega settings sem erro e tenta conectar ao Redis (falha esperada sem container ativo).
+
+
 
 **Escopo:** adicionar `arq` como dependência, configurar worker settings, adicionar
 service `worker` no docker-compose. Sem lógica de negócio.
