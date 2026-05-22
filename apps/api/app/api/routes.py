@@ -640,15 +640,44 @@ def delete_trace(
     db.commit()
 
 
+_OVERVIEW_WINDOW_TO_TIMEDELTA: dict[str, timedelta] = {
+    "24h": timedelta(hours=24),
+    "7d": timedelta(days=7),
+    "30d": timedelta(days=30),
+}
+
+
+def _resolve_overview_cutoff(window: str | None, limit_days: int) -> tuple[datetime, int]:
+    """Resolve the overview cutoff timestamp and the equivalent day-count.
+
+    ``window`` takes precedence over ``limit_days``. Day-count is used to cap
+    ``cost_by_day`` after the cutoff is applied; ``24h`` collapses to a single
+    day so the chart shows one bucket.
+    """
+    if window in _OVERVIEW_WINDOW_TO_TIMEDELTA:
+        delta = _OVERVIEW_WINDOW_TO_TIMEDELTA[window]
+        days = max(1, delta.days or 1)
+    else:
+        days = max(1, min(limit_days, 90))
+        delta = timedelta(days=days)
+    return utcnow() - delta, days
+
+
 @router.get("/analytics/overview")
 def analytics_overview(
     environment: str | None = None,
     limit_days: int = 14,
+    window: str | None = Query(default=None, pattern="^(24h|7d|30d)$"),
     project: Project = Depends(get_owned_project),
     db: Session = Depends(get_db),
 ) -> dict:
     project_id = project.id
-    base_query = db.query(Trace).filter(Trace.project_id == project_id, Trace.deleted_at.is_(None))
+    cutoff, day_cap = _resolve_overview_cutoff(window, limit_days)
+    base_query = (
+        db.query(Trace)
+        .filter(Trace.project_id == project_id, Trace.deleted_at.is_(None))
+        .filter(Trace.created_at >= cutoff)
+    )
     if environment:
         base_query = base_query.filter(Trace.environment == environment)
     rows = base_query.all()
@@ -670,21 +699,28 @@ def analytics_overview(
     error_count = sum(1 for row in rows if row.status == "error")
     total_cost = float(sum(Decimal(str(row.total_cost_usd)) for row in rows))
 
-    day_rows = (
+    day_rows_query = (
         db.query(
             func.date(Trace.created_at).label("day"),
             func.sum(Trace.total_cost_usd).label("total_cost"),
             func.count(Trace.id).label("traces_count"),
         )
         .filter(Trace.project_id == project_id, Trace.deleted_at.is_(None))
-        .group_by(func.date(Trace.created_at))
-        .order_by(func.date(Trace.created_at).desc())
-        .limit(max(1, min(limit_days, 90)))
-        .all()
+        .filter(Trace.created_at >= cutoff)
     )
-    day_rows = list(reversed(day_rows))
+    if environment:
+        day_rows_query = day_rows_query.filter(Trace.environment == environment)
+    day_rows = list(
+        reversed(
+            day_rows_query
+            .group_by(func.date(Trace.created_at))
+            .order_by(func.date(Trace.created_at).desc())
+            .limit(day_cap)
+            .all()
+        )
+    )
 
-    model_rows = (
+    model_rows_query = (
         db.query(
             Span.provider.label("provider"),
             Span.model.label("model"),
@@ -695,19 +731,26 @@ def analytics_overview(
         )
         .join(Trace, Span.trace_id == Trace.id)
         .filter(Trace.project_id == project_id, Trace.deleted_at.is_(None), Span.type == "llm_call")
+        .filter(Trace.created_at >= cutoff)
+    )
+    if environment:
+        model_rows_query = model_rows_query.filter(Trace.environment == environment)
+    model_rows = (
+        model_rows_query
         .group_by(Span.provider, Span.model)
         .order_by(func.sum(Span.cost_usd).desc())
         .all()
     )
 
-    flagged = (
+    flagged_query = (
         db.query(Trace)
         .filter(Trace.project_id == project_id, Trace.deleted_at.is_(None))
+        .filter(Trace.created_at >= cutoff)
         .filter(Trace.status.in_(["error", "partial"]))
-        .order_by(Trace.created_at.desc())
-        .limit(10)
-        .all()
     )
+    if environment:
+        flagged_query = flagged_query.filter(Trace.environment == environment)
+    flagged = flagged_query.order_by(Trace.created_at.desc()).limit(10).all()
 
     return {
         "kpis": {
