@@ -316,7 +316,13 @@ def test_redis_backend_allows_up_to_limit_then_blocks() -> None:
     assert blocked.retry_after_seconds >= 1
 
 
-def test_redis_backend_ttl_is_set_on_first_hit() -> None:
+def test_redis_backend_ttl_is_set_on_first_hit(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Freeze time so the fixed-window TTL is deterministic. Without this the
+    # test flakes when check() lands in the last <1s of a 60s bucket: ttl_seconds
+    # gets set to 1, then int(remaining) on read floors to 0.
+    frozen = 1_700_000_000.0
+    monkeypatch.setattr(time, "time", lambda: frozen)
+
     fake = FakeRedis()
     limiter = _make_redis_backend(fake)
 
