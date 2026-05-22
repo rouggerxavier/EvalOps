@@ -380,9 +380,32 @@ Definition of done:
 
 ### Fase 7 - Copy e QA final
 
-- [ ] `Criar experimento A/B` renomeado ou implementado de verdade.
-- [ ] `Exportar dataset` removido ou implementado.
-- [ ] Botões auditados revisados.
-- [ ] Estados disabled justificados.
-- [ ] Auditoria atualizada com status.
-- [ ] Plano atualizado com checks finais.
+- [x] `Criar experimento A/B` renomeado para `Abrir experimentos` (link real
+      para a lista do projeto, sem prometer criação direta).
+- [x] `Exportar dataset` removido da página de datasets (não havia endpoint).
+- [x] Botões auditados revisados.
+- [x] Estados disabled justificados (placeholder de "Acoes nao disponiveis"
+      removido junto com o botão).
+- [x] Plano atualizado com checks finais.
+- [ ] Auditoria revisada de ponta a ponta (deixado para code review formal).
+
+## Status de implementação (branch `feat/front-back-product-implementation`)
+
+| Fase | Status | Commit principal |
+|------|--------|------------------|
+| 0 — Prep | ok | — |
+| 1 — Overview window | ok | `be68ec6` |
+| 2 — Lentas + RAG | parcial | `f7314b2` |
+| 3 — Delete API key | ok | PR #16 + `67bcccb` |
+| 4 — Multi-projeto | ok | `c6cba23` |
+| 5 — Notif + ambiente + /health | ok | `1f31e6a` |
+| 6 — Custo + exports | parcial | `698b6a3` |
+| 7 — Copy + QA | ok (com TODOs) | este commit |
+
+Pendências conhecidas (acompanhar em
+`docs/audits/front-back-product-implementation-review-bugs.md`):
+- Fase 1: `cost_by_day` pode divergir dos KPIs em `window=24h` cruzando
+  meia-noite.
+- Fase 2: contrato RAG ainda não cobre `response.finalize` e chaves de
+  metadata RAG na lista (cobertos só no detalhe).
+- Fase 6: origem do custo `provided` vs `priced` exige inspeção span-level.

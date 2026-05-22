@@ -186,8 +186,8 @@ export function OverviewSuggestions({ ctx }: { ctx: Context }) {
       />
       <Row
         icon={<GitCompare size={12} />}
-        title="Criar experimento A/B"
-        desc="Comparar variantes contra a baseline atual"
+        title="Abrir experimentos"
+        desc="Lista, executa e compara experimentos do projeto"
         href={`/o/${ctx.org}/p/${ctx.project}/experiments`}
       />
       <Row

@@ -522,19 +522,6 @@ export default async function DatasetsPage({ params, searchParams }: Props) {
                 </div>
               </section>
 
-              <section className="card">
-                <div className="card__header">
-                  <h3 className="card__title">Acoes nao disponiveis no contrato atual</h3>
-                </div>
-                <div className="card__body" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                  <button type="button" className="btn btn--sm" disabled style={{ justifyContent: "flex-start", opacity: 0.55 }}>
-                    Exportar dataset
-                  </button>
-                  <p style={{ margin: 0, color: "var(--text-faint)", fontSize: 12 }}>
-                    O backend atual nao expone endpoint para exportar ou remover datasets pelo dashboard.
-                  </p>
-                </div>
-              </section>
             </>
           ) : (
             <section className="card">
