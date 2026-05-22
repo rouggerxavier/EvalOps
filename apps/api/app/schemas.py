@@ -197,6 +197,7 @@ class TraceRerunIn(BaseModel):
 class TraceRerunOut(BaseModel):
     new_trace_id: str
     status: str
+    replay_status: str = "queued"
 
 
 class TraceCompareIn(BaseModel):
@@ -537,6 +538,7 @@ class PromptUsageTraceOut(BaseModel):
 class PromptUsageOut(BaseModel):
     prompt_id: str
     usage_count: int
+    usage_count_truncated: bool = False
     traces: list[PromptUsageTraceOut]
 
 
@@ -563,13 +565,16 @@ class RagClaimChunkOut(BaseModel):
 class RagConsolidatedOut(BaseModel):
     retrieved_docs: int
     avg_score: float | None = None
-    grounded_claims: int
-    ungrounded_claims: int
+    grounded_claims: int | None = None
+    ungrounded_claims: int | None = None
+    support_rate: float | None = None
+    claims_unavailable: bool = False
     hallucination_risk: str
     answer_preview: str | None = None
     citations: list[RagCitationOut]
     claims: list[RagClaimOut]
     claim_to_chunk: list[RagClaimChunkOut]
+    redacted: bool = False
 
 
 class SdkStatusOut(BaseModel):
@@ -597,4 +602,4 @@ class NotificationListResponse(BaseModel):
 
 
 class NotificationMarkReadIn(BaseModel):
-    ids: list[str] = Field(default_factory=list)
+    ids: list[str] = Field(min_length=1, max_length=200)

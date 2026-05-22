@@ -684,47 +684,6 @@ export default async function RubricsPage({ params, searchParams }: Props) {
         </>
       )}
 
-      {/* Endpoints reais — referência somente leitura */}
-      <section className="card" style={{ marginTop: 12 }}>
-        <div className="card__header">
-          <div>
-            <h3 className="card__title">Endpoints ativos</h3>
-            <div className="card__subtitle">Rotas reais do backend que servem este módulo.</div>
-          </div>
-        </div>
-        <div className="card__body">
-          <div className="endpoint-list" aria-label="Endpoints do módulo Rubrics">
-            <div className="endpoint-row">
-              <span className="endpoint-snippet__method method-GET">GET</span>
-              <span className="endpoint-row__path" title="/v1/projects/{project_id}/rubrics">
-                /projects/{"{project_id}"}/rubrics
-              </span>
-              <span className="endpoint-row__note">ativo</span>
-            </div>
-            <div className="endpoint-row">
-              <span className="endpoint-snippet__method method-POST">POST</span>
-              <span className="endpoint-row__path" title="/v1/projects/{project_id}/rubrics">
-                /projects/{"{project_id}"}/rubrics
-              </span>
-              <span className="endpoint-row__note">ativo · cria rubrica</span>
-            </div>
-            <div className="endpoint-row">
-              <span className="endpoint-snippet__method method-GET">GET</span>
-              <span className="endpoint-row__path" title="/v1/rubrics/{rubric_id}/versions">
-                /rubrics/{"{rubric_id}"}/versions
-              </span>
-              <span className="endpoint-row__note">ativo</span>
-            </div>
-            <div className="endpoint-row">
-              <span className="endpoint-snippet__method method-POST">POST</span>
-              <span className="endpoint-row__path" title="/v1/rubrics/{rubric_id}/versions">
-                /rubrics/{"{rubric_id}"}/versions
-              </span>
-              <span className="endpoint-row__note">ativo · nova versão</span>
-            </div>
-          </div>
-        </div>
-      </section>
     </div>
   );
 }

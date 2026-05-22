@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import base64
+from datetime import datetime
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import FileResponse
+from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
 from app.db import get_db
@@ -20,6 +23,21 @@ from app.schemas import ExportJobCreate, ExportJobOut, ExportListResponse, Human
 from app.security import new_id
 
 router = APIRouter(prefix="/v1")
+
+
+def _encode_export_cursor(created_at: datetime, export_id: str) -> str:
+    raw = f"{created_at.isoformat()}|{export_id}"
+    return base64.urlsafe_b64encode(raw.encode()).decode().rstrip("=")
+
+
+def _decode_export_cursor(cursor: str) -> tuple[datetime, str]:
+    try:
+        padded = cursor + "=" * (-len(cursor) % 4)
+        raw = base64.urlsafe_b64decode(padded.encode()).decode()
+        ca_str, export_id = raw.rsplit("|", 1)
+        return datetime.fromisoformat(ca_str), export_id
+    except Exception:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="invalid_cursor")
 
 
 @router.post("/traces/{trace_id}/feedback", status_code=status.HTTP_201_CREATED)
@@ -88,22 +106,31 @@ def create_export(
 def list_project_exports(
     project_id: str,
     limit: int = Query(default=50, ge=1, le=200),
+    cursor: str | None = Query(default=None),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
     project = load_project(db, user.id, project_id)
+    query = db.query(ExportJob).filter(ExportJob.project_id == project.id)
+    if cursor:
+        cursor_created_at, cursor_id = _decode_export_cursor(cursor)
+        query = query.filter(
+            or_(
+                ExportJob.created_at < cursor_created_at,
+                and_(ExportJob.created_at == cursor_created_at, ExportJob.id < cursor_id),
+            )
+        )
     rows = (
-        db.query(ExportJob)
-        .filter(ExportJob.project_id == project.id)
-        .order_by(ExportJob.created_at.desc(), ExportJob.id.desc())
+        query.order_by(ExportJob.created_at.desc(), ExportJob.id.desc())
         .limit(limit + 1)
         .all()
     )
     has_more = len(rows) > limit
     rows = rows[:limit]
+    next_cursor = _encode_export_cursor(rows[-1].created_at, rows[-1].id) if has_more and rows else None
     return {
         "data": [ExportJobOut.model_validate(row).model_dump() for row in rows],
-        "next_cursor": rows[-1].id if has_more and rows else None,
+        "next_cursor": next_cursor,
     }
 
 

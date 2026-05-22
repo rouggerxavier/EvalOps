@@ -6,7 +6,6 @@ export * from "./Copyable";
 export * from "./DataTable";
 export * from "./DistBars";
 export * from "./EmptyState";
-export * from "./EndpointSnippet";
 export * from "./FiltersBar";
 export * from "./JsonBlock";
 export * from "./Metric";

@@ -548,54 +548,6 @@ export default async function DatasetsPage({ params, searchParams }: Props) {
         </div>
       </div>
 
-      {/* Endpoints reais — referência somente leitura */}
-      <section className="card" style={{ marginTop: 12 }}>
-        <div className="card__header">
-          <div>
-            <h3 className="card__title">Endpoints ativos</h3>
-            <div className="card__subtitle">Rotas reais do backend que servem este módulo.</div>
-          </div>
-        </div>
-        <div className="card__body">
-          <div className="endpoint-list" aria-label="Endpoints do módulo Datasets">
-            <div className="endpoint-row">
-              <span className="endpoint-snippet__method method-GET">GET</span>
-              <span className="endpoint-row__path" title="/v1/projects/{project_id}/datasets">
-                /projects/{"{project_id}"}/datasets
-              </span>
-              <span className="endpoint-row__note">ativo</span>
-            </div>
-            <div className="endpoint-row">
-              <span className="endpoint-snippet__method method-POST">POST</span>
-              <span className="endpoint-row__path" title="/v1/projects/{project_id}/datasets">
-                /projects/{"{project_id}"}/datasets
-              </span>
-              <span className="endpoint-row__note">ativo · cria dataset</span>
-            </div>
-            <div className="endpoint-row">
-              <span className="endpoint-snippet__method method-GET">GET</span>
-              <span className="endpoint-row__path" title="/v1/datasets/{dataset_id}/items">
-                /datasets/{"{dataset_id}"}/items
-              </span>
-              <span className="endpoint-row__note">ativo</span>
-            </div>
-            <div className="endpoint-row">
-              <span className="endpoint-snippet__method method-POST">POST</span>
-              <span className="endpoint-row__path" title="/v1/datasets/{dataset_id}/items">
-                /datasets/{"{dataset_id}"}/items
-              </span>
-              <span className="endpoint-row__note">ativo · adiciona item</span>
-            </div>
-            <div className="endpoint-row">
-              <span className="endpoint-snippet__method method-POST">POST</span>
-              <span className="endpoint-row__path" title="/v1/datasets/{dataset_id}/build-from-traces">
-                /datasets/{"{dataset_id}"}/build-from-traces
-              </span>
-              <span className="endpoint-row__note">ativo · ingere traces</span>
-            </div>
-          </div>
-        </div>
-      </section>
     </div>
   );
 }

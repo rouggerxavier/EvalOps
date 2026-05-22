@@ -195,22 +195,6 @@ export default async function SettingsPage({ params, searchParams }: Props) {
             </Link>
           </Card>
 
-          <Card title="Ações reais" subtitle="endpoints que esta tela usa">
-            <div className="endpoint-list">
-              {[
-                { method: "GET", path: "/projects?organization_id=", note: "ativo" },
-                { method: "PATCH", path: "/projects/{id}", note: "ativo" },
-                { method: "GET", path: "/organizations/{id}/members", note: "ativo" },
-                { method: "GET", path: "/organizations/{id}/usage", note: "link → /usage" },
-              ].map((ep) => (
-                <div className="endpoint-row" key={ep.path}>
-                  <span className={`endpoint-snippet__method method-${ep.method}`}>{ep.method}</span>
-                  <span className="endpoint-row__path">{ep.path}</span>
-                  <span className="endpoint-row__note">{ep.note}</span>
-                </div>
-              ))}
-            </div>
-          </Card>
         </div>
       </section>
     </div>

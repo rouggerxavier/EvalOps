@@ -2,11 +2,16 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { Bell, BookOpen, ChevronRight, Search, Settings } from "lucide-react";
+import { BookOpen, ChevronRight, Search, Settings } from "lucide-react";
 import { usePathname } from "next/navigation";
 
 import { getActiveNavItem, getPageTitle, projectHref } from "@/components/app-shell-nav";
+import { NotificationsBell } from "@/components/ui/NotificationsBell";
+import { WorkspaceSwitcher } from "@/components/ui/WorkspaceSwitcher";
 import { logoutAction } from "@/lib/auth-actions";
+import type { NotificationItem } from "@/lib/types";
+
+type WorkspaceProject = { org: string; project: string; label: string };
 
 const ENVIRONMENTS = ["prod", "staging", "dev"] as const;
 
@@ -14,17 +19,20 @@ export function EvoTopbar({
   org,
   project,
   initials,
+  notifications = [],
+  projects = [],
 }: {
   org: string;
   project: string;
   initials: string;
+  notifications?: NotificationItem[];
+  projects?: WorkspaceProject[];
 }) {
   const pathname = usePathname();
   const base = `/o/${org}/p/${project}`;
   const searchRef = useRef<HTMLInputElement>(null);
   const [environment, setEnvironment] = useState<(typeof ENVIRONMENTS)[number]>("prod");
   const [envOpen, setEnvOpen] = useState(false);
-  const [notificationsOpen, setNotificationsOpen] = useState(false);
   const activeItem = getActiveNavItem(pathname, base);
   const pageName = getPageTitle(pathname, base);
   const isDetailPage = pageName !== activeItem.label;
@@ -101,25 +109,10 @@ export function EvoTopbar({
           ) : null}
         </div>
 
-        <button
-          type="button"
-          className="icon-btn"
-          onClick={() => setNotificationsOpen((value) => !value)}
-          aria-label="Notificacoes"
-          aria-expanded={notificationsOpen}
-        >
-          <Bell size={15} />
-        </button>
-        {notificationsOpen ? (
-          <div className="card" style={{ position: "absolute", right: 74, top: 42, width: 300, zIndex: 20 }}>
-            <div className="card__header">
-              <h3 className="card__title">Notificacoes</h3>
-            </div>
-            <div className="card__body">
-              <div className="faint">Sem notificacoes novas.</div>
-            </div>
-          </div>
+        {projects.length > 1 ? (
+          <WorkspaceSwitcher current={`${org}/${project}`} projects={projects} />
         ) : null}
+        <NotificationsBell notifications={notifications} />
 
         <Link className="icon-btn" href="/docs" aria-label="Documentacao">
           <BookOpen size={15} />

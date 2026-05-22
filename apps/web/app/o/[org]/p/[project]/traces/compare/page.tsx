@@ -381,22 +381,6 @@ export default async function TraceComparePage({ params, searchParams }: Props) 
         </Card>
       ) : null}
 
-      {leftDetail && rightDetail ? (
-        <Card title="Ações reais" subtitle="endpoints que esta tela usa">
-          <div className="endpoint-list">
-            {[
-              { method: "GET", path: "/traces/{id}", note: "ativo" },
-              { method: "POST", path: "/traces/compare", note: "ativo" },
-            ].map((ep) => (
-              <div className="endpoint-row" key={ep.path}>
-                <span className={`endpoint-snippet__method method-${ep.method}`}>{ep.method}</span>
-                <span className="endpoint-row__path">{ep.path}</span>
-                <span className="endpoint-row__note">{ep.note}</span>
-              </div>
-            ))}
-          </div>
-        </Card>
-      ) : null}
     </div>
   );
 }

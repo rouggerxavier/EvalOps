@@ -69,6 +69,22 @@ export default async function TraceDetailPage({ params, searchParams }: Props) {
   const traceCause = getTraceCauseLabel(t);
   const traceModel = getTraceModelLabel(t);
 
+  const replayOf = typeof t.metadata?.replay_of === "string" ? (t.metadata.replay_of as string) : null;
+  const replayStatusRaw = typeof t.metadata?.replay_status === "string" ? (t.metadata.replay_status as string) : null;
+  const replayStatus: "queued" | "running" | "completed" | "failed" | null =
+    replayStatusRaw === "queued" || replayStatusRaw === "running" || replayStatusRaw === "completed" || replayStatusRaw === "failed"
+      ? replayStatusRaw
+      : null;
+  const replayError = typeof t.metadata?.replay_error === "string" ? (t.metadata.replay_error as string) : null;
+  const replayBadgeVariant: "info" | "warn" | "ok" | "err" =
+    replayStatus === "completed"
+      ? "ok"
+      : replayStatus === "failed"
+      ? "err"
+      : replayStatus === "running"
+      ? "warn"
+      : "info";
+
   const tabBase = `/o/${org}/p/${project}/traces/${t.id}`;
   const tabHref = (next: Tab) => `${tabBase}?tab=${next}`;
 
@@ -87,6 +103,9 @@ export default async function TraceDetailPage({ params, searchParams }: Props) {
             <span className="tag">{t.environment}</span>
             {ragEnabled ? <Badge variant="rag">RAG</Badge> : null}
             {t.redacted ? <span className="tag">redigido</span> : null}
+            {replayStatus ? (
+              <Badge variant={replayBadgeVariant}>replay · {replayStatus}</Badge>
+            ) : null}
           </h1>
           <div
             className="page-header__subtitle row"
@@ -130,6 +149,42 @@ export default async function TraceDetailPage({ params, searchParams }: Props) {
               <Link href={`/o/${org}/p/${project}/traces/${qp.new_trace_id}`} className="mono">
                 {qp.new_trace_id}
               </Link>
+              . Worker processa em background — recarregue para ver o status.
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {replayOf ? (
+        <div
+          className="attention"
+          style={{
+            borderColor:
+              replayStatus === "failed"
+                ? "rgba(255,99,99,0.4)"
+                : replayStatus === "completed"
+                ? "rgba(120,200,120,0.4)"
+                : "rgba(90,212,212,0.4)",
+          }}
+        >
+          <div className="attention__icon">
+            {replayStatus === "failed" ? <AlertCircle size={14} /> : <Activity size={14} />}
+          </div>
+          <div>
+            <div className="attention__title">
+              Replay de{" "}
+              <Link href={`/o/${org}/p/${project}/traces/${replayOf}`} className="mono">
+                {replayOf}
+              </Link>
+              {replayStatus ? <> · status: <span className="mono">{replayStatus}</span></> : null}
+            </div>
+            <div className="attention__desc">
+              {replayStatus === "queued" || replayStatus === "running"
+                ? "Worker em execução. Recarregue para atualizar."
+                : replayStatus === "failed"
+                ? `Falha no worker${replayError ? `: ${replayError}` : "."}`
+                : replayStatus === "completed"
+                ? "Replay concluído — métricas refletem a nova execução."
+                : "Status do replay não disponível."}
             </div>
           </div>
         </div>
@@ -333,25 +388,6 @@ export default async function TraceDetailPage({ params, searchParams }: Props) {
             }
           >
             <JsonBlock value={t.metadata} />
-          </Card>
-          <Card title="Ações reais" subtitle="endpoints que esta tela usa">
-            <div className="endpoint-list">
-              {[
-                { method: "GET", path: "/traces/{id}", note: "ativo" },
-                { method: "GET", path: "/traces/{id}/rag", note: ragEnabled ? "ativo" : "não-RAG" },
-                { method: "POST", path: "/traces/{id}/flags", note: "ativo" },
-                { method: "POST", path: "/traces/{id}/rerun", note: "ativo" },
-                { method: "POST", path: "/traces/compare", note: "ativo" },
-                { method: "POST", path: "/evaluations/run", note: "ativo" },
-                { method: "POST", path: "/traces/{id}/feedback", note: "ativo" },
-              ].map((ep) => (
-                <div className="endpoint-row" key={ep.path}>
-                  <span className={`endpoint-snippet__method method-${ep.method}`}>{ep.method}</span>
-                  <span className="endpoint-row__path">{ep.path}</span>
-                  <span className="endpoint-row__note">{ep.note}</span>
-                </div>
-              ))}
-            </div>
           </Card>
         </div>
       ) : null}

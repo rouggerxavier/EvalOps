@@ -1,0 +1,252 @@
+"""Worker function: replay_trace (Fase B).
+
+Reads the primary LLM span from an original trace, calls the provider via the
+existing sync `call_llm` hook (wrapped in `asyncio.to_thread`), and ingests the
+response into the placeholder trace created by `rerun_trace`.
+
+State machine on placeholder `metadata_json`:
+    queued → running → completed | failed
+
+Decision §B-1: if the original trace has no LLM span, the worker marks
+`failed` with `reason="no_llm_span_found"` and returns — never re-raises.
+Decision §B-2: variable substitution uses `{{var_name}}` (jinja2).
+"""
+from __future__ import annotations
+
+import asyncio
+import logging
+import time
+from datetime import datetime, timezone
+from decimal import Decimal
+from typing import Any
+
+from app.domain.evaluators import llm_judge
+from app.infra.llm.pricing import compute_cost_usd, estimate_tokens
+from app.models import Span, Trace
+from app.security import new_id
+
+logger = logging.getLogger("evalops.worker.replay")
+
+
+class _ReplayResult:
+    __slots__ = ("messages_out_text", "tokens_in", "tokens_out", "cost_usd", "duration_ms", "provider", "model")
+
+    def __init__(
+        self,
+        *,
+        messages_out_text: str,
+        tokens_in: int,
+        tokens_out: int,
+        cost_usd: Decimal,
+        duration_ms: int,
+        provider: str | None,
+        model: str | None,
+    ) -> None:
+        self.messages_out_text = messages_out_text
+        self.tokens_in = tokens_in
+        self.tokens_out = tokens_out
+        self.cost_usd = cost_usd
+        self.duration_ms = duration_ms
+        self.provider = provider
+        self.model = model
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _load_trace_or_fail(db, trace_id: str) -> Trace:
+    trace = db.get(Trace, trace_id)
+    if trace is None:
+        raise ValueError(f"trace_not_found:{trace_id}")
+    return trace
+
+
+def _find_primary_llm_span(db, trace_id: str) -> Span | None:
+    return (
+        db.query(Span)
+        .filter(Span.trace_id == trace_id)
+        .filter((Span.type.in_(("llm_call", "llm"))) | (Span.name.ilike("llm.%")))
+        .order_by(Span.started_at.asc())
+        .first()
+    )
+
+
+def _render(text: str, variables: dict[str, Any]) -> str:
+    if not variables:
+        return text
+    try:
+        from jinja2 import Template
+
+        return Template(text).render(**variables)
+    except Exception:
+        return text
+
+
+def _build_messages(span: Span, variables: dict[str, Any]) -> list[dict]:
+    raw = span.messages_in or []
+    rendered: list[dict] = []
+    for msg in raw:
+        if not isinstance(msg, dict):
+            continue
+        content = msg.get("content", "")
+        if isinstance(content, str):
+            content = _render(content, variables)
+        rendered.append({**msg, "content": content})
+    return rendered
+
+
+def _set_replay_status(
+    db,
+    trace: Trace,
+    status: str,
+    *,
+    error: str | None = None,
+) -> None:
+    metadata = dict(trace.metadata_json or {})
+    metadata["replay_status"] = status
+    if status == "running" and "replay_started_at" not in metadata:
+        metadata["replay_started_at"] = _utcnow().isoformat()
+    if status in {"completed", "failed"}:
+        metadata["replay_finished_at"] = _utcnow().isoformat()
+    if error is not None:
+        metadata["replay_error"] = error
+    elif status != "failed":
+        metadata.pop("replay_error", None)
+    trace.metadata_json = metadata
+    db.add(trace)
+    db.commit()
+
+
+async def _call_provider(
+    provider: str | None,
+    model: str | None,
+    messages: list[dict],
+) -> _ReplayResult:
+    t0 = time.monotonic()
+
+    def _sync() -> str:
+        return llm_judge.call_llm(model or "", messages, 0.0)
+
+    text = await asyncio.to_thread(_sync)
+    duration_ms = int((time.monotonic() - t0) * 1000)
+
+    prompt_text = "".join(
+        (m.get("content") or "") for m in messages if isinstance(m, dict) and isinstance(m.get("content"), str)
+    )
+    tokens_in = estimate_tokens(prompt_text)
+    tokens_out = estimate_tokens(text)
+    cost = compute_cost_usd(provider, model, tokens_in, tokens_out)
+    return _ReplayResult(
+        messages_out_text=text,
+        tokens_in=tokens_in,
+        tokens_out=tokens_out,
+        cost_usd=cost,
+        duration_ms=duration_ms,
+        provider=provider,
+        model=model,
+    )
+
+
+def _ingest_replay_result(
+    db,
+    placeholder: Trace,
+    original_span: Span,
+    messages: list[dict],
+    result: _ReplayResult,
+) -> Span:
+    now = _utcnow()
+    span = Span(
+        id=new_id("sp"),
+        trace_id=placeholder.id,
+        parent_span_id=None,
+        type=original_span.type or "llm_call",
+        name=original_span.name or "llm.replay",
+        status="ok",
+        started_at=now,
+        ended_at=now,
+        duration_ms=result.duration_ms,
+        provider=result.provider,
+        model=result.model,
+        prompt_version_ref=original_span.prompt_version_ref,
+        messages_in=messages,
+        messages_out=[{"role": "assistant", "content": result.messages_out_text}],
+        tools=None,
+        tokens_in=result.tokens_in,
+        tokens_out=result.tokens_out,
+        cost_usd=float(result.cost_usd),
+        fallback_from_span_id=None,
+        input=None,
+        output={"text": result.messages_out_text},
+        error=None,
+        metadata_json={"replay": True, "replay_of_span_id": original_span.id},
+    )
+    db.add(span)
+
+    placeholder.status = "ok"
+    placeholder.duration_ms = result.duration_ms
+    placeholder.total_tokens_in = result.tokens_in
+    placeholder.total_tokens_out = result.tokens_out
+    placeholder.total_cost_usd = float(result.cost_usd)
+    placeholder.ended_at = now
+    db.add(placeholder)
+    db.commit()
+    return span
+
+
+async def replay_trace(ctx: dict, original_trace_id: str, new_trace_id: str) -> dict:
+    db_factory = ctx["db_session_factory"]
+    logger.info(
+        "replay.started",
+        extra={"trace_id": new_trace_id, "original": original_trace_id},
+    )
+
+    with db_factory() as db:
+        try:
+            original = _load_trace_or_fail(db, original_trace_id)
+            placeholder = _load_trace_or_fail(db, new_trace_id)
+        except ValueError as exc:
+            logger.error("replay.failed", extra={"trace_id": new_trace_id, "reason": str(exc)})
+            return {"status": "failed", "reason": str(exc)}
+
+        _set_replay_status(db, placeholder, "running")
+
+        llm_span = _find_primary_llm_span(db, original.id)
+        if llm_span is None:
+            _set_replay_status(db, placeholder, "failed", error="no_llm_span_found")
+            logger.error(
+                "replay.failed",
+                extra={"trace_id": new_trace_id, "reason": "no_llm_span_found"},
+            )
+            return {"status": "failed", "reason": "no_llm_span_found"}
+
+        metadata = dict(placeholder.metadata_json or {})
+        override_model = metadata.get("rerun_model")
+        variables = metadata.get("rerun_variables") or {}
+        model = override_model or llm_span.model
+        messages = _build_messages(llm_span, variables if isinstance(variables, dict) else {})
+
+        try:
+            result = await _call_provider(llm_span.provider, model, messages)
+        except Exception as exc:  # noqa: BLE001
+            _set_replay_status(db, placeholder, "failed", error=type(exc).__name__)
+            logger.error(
+                "replay.failed",
+                extra={"trace_id": new_trace_id, "reason": type(exc).__name__},
+            )
+            return {"status": "failed", "reason": type(exc).__name__}
+
+        _ingest_replay_result(db, placeholder, llm_span, messages, result)
+        _set_replay_status(db, placeholder, "completed")
+
+    logger.info(
+        "replay.completed",
+        extra={"trace_id": new_trace_id, "duration_ms": result.duration_ms},
+    )
+    return {
+        "status": "completed",
+        "new_trace_id": new_trace_id,
+        "duration_ms": result.duration_ms,
+        "tokens_in": result.tokens_in,
+        "tokens_out": result.tokens_out,
+    }

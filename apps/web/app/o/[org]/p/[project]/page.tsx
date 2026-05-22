@@ -118,7 +118,7 @@ export default async function ProjectOverviewPage({ params, searchParams }: Prop
     getCoverage(projectId, window_).catch(() => ({ data: [] as const })),
     getSdkStatus(projectId).catch(() => null),
     getRubrics(projectId).catch(() => ({ data: [] })),
-    getTraces({ projectId, limit: 4, status: "error", environment }).catch(() => ({ data: [] as Trace[], next_cursor: null })),
+    getTraces({ projectId, limit: 4, status: "error,partial", environment }).catch(() => ({ data: [] as Trace[], next_cursor: null })),
   ]);
 
   const { kpis, cost_by_day, model_breakdown, recent_flagged } = overview;

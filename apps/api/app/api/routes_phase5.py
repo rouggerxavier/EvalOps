@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
@@ -183,61 +184,62 @@ def get_prompt_usage(
         .order_by(PromptVersion.version.asc())
         .all()
     )
-    refs = {prompt.id, prompt.slug}
-    refs.update({version.id for version in versions})
-    refs.update({f"{prompt.slug}@{version.version}" for version in versions})
+    refs_list = sorted({prompt.id, prompt.slug, *(v.id for v in versions), *(f"{prompt.slug}@{v.version}" for v in versions)})
 
-    rows_by_trace: dict[str, dict] = {}
-    span_rows = (
-        db.query(Trace, Span)
-        .join(Span, Span.trace_id == Trace.id)
-        .filter(
-            Trace.project_id == prompt.project_id,
-            Trace.deleted_at.is_(None),
-            Span.prompt_version_ref.in_(refs),
-        )
+    meta_ref_expr = func.coalesce(
+        Trace.metadata_json["prompt_ref"].as_string(),
+        Trace.metadata_json["prompt_version_ref"].as_string(),
+        Trace.metadata_json["prompt_id"].as_string(),
+    )
+    span_trace_ids = select(Span.trace_id).where(Span.prompt_version_ref.in_(refs_list))
+    base_filter = and_(
+        Trace.project_id == prompt.project_id,
+        Trace.deleted_at.is_(None),
+        or_(
+            Trace.id.in_(span_trace_ids),
+            meta_ref_expr.in_(refs_list),
+        ),
+    )
+
+    usage_count = db.query(func.count(Trace.id)).filter(base_filter).scalar() or 0
+
+    trace_rows = (
+        db.query(Trace, meta_ref_expr.label("meta_ref"))
+        .filter(base_filter)
         .order_by(Trace.created_at.desc())
         .limit(limit)
         .all()
     )
-    for trace, span in span_rows:
-        rows_by_trace[trace.id] = {
+    trace_ids = [trace.id for trace, _ in trace_rows]
+
+    span_refs: dict[str, str] = {}
+    if trace_ids:
+        span_pairs = (
+            db.query(Span.trace_id, Span.prompt_version_ref)
+            .filter(Span.trace_id.in_(trace_ids), Span.prompt_version_ref.in_(refs_list))
+            .all()
+        )
+        for trace_id, ref in span_pairs:
+            span_refs.setdefault(trace_id, ref)
+
+    traces = [
+        {
             "trace_id": trace.id,
             "name": trace.name,
             "service": trace.service,
             "environment": trace.environment,
             "status": trace.status,
-            "prompt_version_ref": span.prompt_version_ref,
+            "prompt_version_ref": span_refs.get(trace.id) or meta_ref,
             "used_at": trace.created_at,
         }
-
-    metadata_matches = (
-        db.query(Trace)
-        .filter(Trace.project_id == prompt.project_id, Trace.deleted_at.is_(None))
-        .order_by(Trace.created_at.desc())
-        .all()
-    )
-    for trace in metadata_matches:
-        if len(rows_by_trace) >= limit and trace.id not in rows_by_trace:
-            continue
-        meta = trace.metadata_json or {}
-        meta_ref = meta.get("prompt_ref") or meta.get("prompt_version_ref") or meta.get("prompt_id")
-        if isinstance(meta_ref, str) and meta_ref in refs:
-            rows_by_trace.setdefault(
-                trace.id,
-                {
-                    "trace_id": trace.id,
-                    "name": trace.name,
-                    "service": trace.service,
-                    "environment": trace.environment,
-                    "status": trace.status,
-                    "prompt_version_ref": meta_ref,
-                    "used_at": trace.created_at,
-                },
-            )
-
-    traces = sorted(rows_by_trace.values(), key=lambda row: row["used_at"], reverse=True)[:limit]
-    return {"prompt_id": prompt.id, "usage_count": len(rows_by_trace), "traces": traces}
+        for trace, meta_ref in trace_rows
+    ]
+    return {
+        "prompt_id": prompt.id,
+        "usage_count": int(usage_count),
+        "usage_count_truncated": len(traces) < int(usage_count),
+        "traces": traces,
+    }
 
 
 @router.post("/prompts/{prompt_id}/versions", status_code=status.HTTP_201_CREATED)

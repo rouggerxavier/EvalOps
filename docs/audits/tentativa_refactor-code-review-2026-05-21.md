@@ -10,8 +10,8 @@
 
 | # | Severidade | Tema | Arquivo principal |
 |---|---|---|---|
-| 1 | 🔴 quebra feature | `POST /traces/{id}/rerun` não enfileira nada | `apps/api/app/api/routes_trace_actions.py` |
-| 2 | 🔴 quebra feature | Página de Exports não usa `listExports` | `apps/web/app/o/[org]/p/[project]/exports/page.tsx` |
+| 1 | 🔴 quebra feature | `POST /traces/{id}/rerun` não enfileira nada — **adiado** (spec em `docs/plans/evalops-async-worker-replay-spec.md`) | `apps/api/app/api/routes_trace_actions.py` |
+| 2 | ✅ corrigido | Página de Exports integra `listExports` do servidor | `apps/web/app/o/[org]/p/[project]/exports/page.tsx` |
 | 3 | 🔴 quebra feature | Topbar bell + workspace switcher não montados | `apps/web/components/EvoTopbar.tsx` |
 | 4 | 🔴 quebra feature | Tabs "Lentos" e "RAG" filtram só página atual | `apps/web/app/o/[org]/p/[project]/traces/page.tsx` |
 | 5 | 🟠 perf / scalability | `GET /prompts/{id}/usage` faz full-table-scan | `apps/api/app/api/routes_phase5.py` |
@@ -75,76 +75,57 @@ Plan §4.6 explícito:
 Só a parte do `replay_of` foi feita.
 
 ### Como corrigir
-Três caminhos, em ordem de preferência:
 
-**A. Implementar de verdade (preferido):**
-1. Criar `apps/api/app/domain/services/trace_replay_service.py` com função `enqueue_replay(db, original_trace, payload)`.
-2. Reusar a infra do `experiment_runner` (provavelmente em `apps/api/app/workers/`). Identificar o `Celery`/`RQ`/`apscheduler` task e adicionar `replay_trace(original_trace_id, model_override, variables)`.
-3. O worker:
-   - Lê `prompt_version_ref` do span LLM original (`spans[].name == "llm.generate"` ou similar).
-   - Lê `metadata.input` ou reconstrói do span `request.input`.
-   - Chama provider via mesmo cliente que ingest usa.
-   - Faz ingest do novo trace com `metadata.replay_of` e `metadata.replay_status = "completed"|"failed"`.
-4. `rerun_trace` route apenas:
-   - Valida payload (já faz).
-   - Cria `Trace` placeholder.
-   - Submete task ao worker.
-   - Devolve `new_trace_id` + `status="queued"`.
-5. Adicionar `metadata.replay_status` no schema (transition `queued → running → completed|failed`).
-6. Teste: `test_rerun_trace_actually_enqueues_worker` — mockar o worker submit, asserir que foi chamado com os args certos.
+> **Caminho escolhido: Opção A — implementar via `arq` + Redis (já disponível no projeto).**
+>
+> Spec completa com plano de execução por fase em:
+> `docs/plans/evalops-async-worker-replay-spec.md`
+>
+> Resumo das fases:
+> - **Fase A** (~2h): adicionar `arq>=0.26` ao `pyproject.toml`, criar `apps/api/app/workers/settings.py`, adicionar service `worker` no `docker-compose.yml`.
+> - **Fase B** (~4h): implementar `apps/api/app/workers/replay_worker.py` — lê span LLM original, reexecuta no provider, ingesta resultado no placeholder.
+> - **Fase C** (~2h): modificar `rerun_trace` em `routes_trace_actions.py:291-330` para enfileirar job via `arq` após criar placeholder. Se Redis indisponível → `503`, não cria trace fantasma.
+> - **Fase D** (~1h): atualizar badge de `metadata.replay_status` no detalhe do trace (pode ser adiada).
+> - **Fase E** (~2h): testes e2e + logging estruturado.
+>
+> Total estimado: ~11h. Redis já está disponível em `docker-compose.yml` e em uso no projeto (`rate_limit_service.py`). Tracking de estado via `metadata.replay_status` no próprio `Trace` — sem nova tabela.
+
+**A. (Não usar) Implementação ad-hoc sem spec:**
+Descartada — sem plano de lifecycle do pool arq, sem decisão de fail policy se Redis cair.
 
 **B. Marcar como dev-only e esconder no UI:**
-- Ocultar o botão "Reexecutar" se `process.env.NEXT_PUBLIC_FEATURE_RERUN !== "1"`.
-- Documentar no plan §11 (Definition of Done) que rerun fica fora do MVP da fase.
+Descartada — mantém o stub no banco, polui métricas se alguém habilitar.
 
 **C. Remover a feature:**
-- Drop da rota, do action, do botão. Remove confusão.
+Alternativa válida se a spec A for adiada indefinidamente. Drop da rota, do action, do botão.
 
 ### Como evitar regressão
 Adicionar teste de integração que verifica que `metadata.replay_status` chega em `"completed"` ou `"failed"` em até X segundos, ou que o worker `replay_trace` foi chamado (mock).
 
 ---
 
-## 🔴 2. Página de Exports não usa o endpoint `GET /projects/{id}/exports`
+## ✅ 2. Página de Exports não usa o endpoint `GET /projects/{id}/exports` — **CORRIGIDO**
+
+> **Status:** corrigido em `4fc50f3` → commit `<próximo>` (branch `claude/repository-access-X2Zcv`)
 
 ### Onde
-- Frontend: `apps/web/app/o/[org]/p/[project]/exports/page.tsx:163,190-207`
-- Backend pronto: `apps/api/app/api/routes_phase6.py` (commit `1fb86fe`)
-- Wrapper pronto: `apps/web/lib/api.ts:422` (`listExports`)
+- Frontend: `apps/web/app/o/[org]/p/[project]/exports/page.tsx`
+- Backend: `apps/api/app/api/routes_phase6.py`
+- Wrapper: `apps/web/lib/api.ts:422` (`listExports`)
 
-### O que está errado
-A página constrói a lista visível a partir de:
-```ts
-const knownIds = parseExportIds(qp.export_id, qp.ids);
-```
-ou seja, apenas IDs presentes no query string da URL. O wrapper `listExports(projectId)` existe mas **não é chamado em nenhum lugar do front**.
+### O que estava errado
+A página construía a lista apenas com IDs presentes no query string da URL. O wrapper `listExports(projectId)` existia mas **não era chamado**.
 
-### Impacto no usuário
-- Recarregar a página com URL limpa → lista vazia.
-- Trocar de browser ou aba → lista vazia.
-- Membros diferentes da mesma org **não veem** os exports criados pelos colegas.
-- Histórico não persiste entre sessões.
-- Coluna "Tamanho" (linha 398) é literal `"nao disponivel"` hardcoded.
+### O que foi corrigido
+1. `listExports(resolvedProject.project_id)` adicionado no `Promise.all` da página.
+2. Resultado do servidor mesclado com `knownIds` (dedup por `id`): server é fonte primária, `knownIds` complementa com IDs recém-criados ainda não listados.
+3. Coluna "Tamanho" marcada como `—` (sem `file_size_bytes` no model atual — campo pode ser adicionado em migration futura).
+4. Card "Contrato atual" removido (dizia que não existia endpoint de listagem — desatualizado).
+5. Empty state e summary card atualizados para refletir listagem real do servidor.
 
-### Quebra do plano
-Plan §3.6.10 / §4.11 / §14 carry-over reconhece: *"integração `listExports` no listing de Exports"* — pendência registrada mas não fechada.
-
-### Como corrigir
-1. Em `apps/web/app/o/[org]/p/[project]/exports/page.tsx`, dentro do `Promise.all` da linha 190, adicionar:
-   ```ts
-   listExports(resolvedProject.project_id)
-     .then((res) => ({ exports: res.data, error: null as string | null }))
-     .catch((error) => ({ exports: [], error: safeErrorMessage(error, "Falha ao listar exports.") })),
-   ```
-2. Mesclar com `knownIds` (deduplicar por `id`), priorizando o resultado do servidor.
-3. Para a coluna "Tamanho", expor `file_size_bytes` no schema `ExportJobOut` (existe no model? checar `apps/api/app/models.py`). Se não existe, criar em migration próxima ou marcar a coluna como `—` em vez de string ruim.
-4. Remover o card "Contrato atual" que diz "O backend atual nao expoe endpoint para listar historico global" — desatualizado.
-
-### Como evitar regressão
-Adicionar teste e2e em `apps/web/e2e/smoke.spec.ts` que:
-1. Cria 2 exports via API direta.
-2. Acessa `/o/{org}/p/{project}/exports`.
-3. Asserta que ambos aparecem na tabela.
+### Pendências deixadas para depois
+- Coluna "Tamanho" mostra `—` — `file_size_bytes` não existe no model `ExportJob`. Requer migration.
+- Teste e2e (criar 2 exports via API, verificar que aparecem na tabela) não foi adicionado nesta rodada.
 
 ---
 
@@ -242,7 +223,18 @@ Teste backend: criar 60 traces lentos, paginar com `limit=10`, conferir que tab 
 
 ---
 
-## 🟠 5. `GET /v1/prompts/{id}/usage` faz full-table-scan + sub-conta
+## ✅ 5. `GET /v1/prompts/{id}/usage` faz full-table-scan + sub-conta — **CORRIGIDO**
+
+> **Status:** corrigido em `<este commit>` (branch `claude/repository-access-X2Zcv`)
+>
+> - Query refatorada usa `or_(Trace.id.in_(span_trace_ids), meta_ref_expr.in_(refs))` direto em SQL com `LIMIT` (sem full-table-scan).
+> - `usage_count` agora vem de `db.query(func.count(Trace.id)).filter(base_filter).scalar()` — contagem real.
+> - `PromptUsageOut.usage_count_truncated: bool` adicionado: `True` quando `len(traces) < usage_count`.
+> - Migration `0006_prompt_ref_index.py` cria índices em `metadata->>'prompt_ref'` e `metadata->>'prompt_version_ref'` (Postgres-only via `bind.dialect.name`; SQLite no-op).
+> - `meta_ref_expr` usa `func.coalesce(Trace.metadata_json["prompt_ref"].as_string(), ...)` — portátil SQLite + Postgres.
+> - Teste regressão `test_prompt_usage_counts_metadata_only_traces_and_signals_truncation` adicionado em `tests/test_refactor_endpoints_edge_cases.py`.
+
+
 
 ### Onde
 `apps/api/app/api/routes_phase5.py:200-219`
@@ -319,7 +311,15 @@ Teste de carga: criar 5k traces com `metadata.prompt_ref` apontando para o mesmo
 
 ---
 
-## 🟠 6. `list_traces` carrega todos `EvaluationRun`s para popular `last_score`
+## ✅ 6. `list_traces` carrega todos `EvaluationRun`s para popular `last_score` — **CORRIGIDO**
+
+> **Status:** corrigido em `<este commit>` (branch `claude/repository-access-X2Zcv`)
+>
+> - `routes.py:list_traces` agora usa SQL window function (`row_number() OVER (PARTITION BY trace_id ORDER BY created_at DESC)`) e filtra `rn = 1`. Apenas a linha mais recente por trace é trazida do DB.
+> - Migration `0007_evaluation_runs_trace_created_index.py` cria índice composto `evaluation_runs (trace_id, created_at)` (Postgres usa `DESC`, SQLite ignora).
+> - Teste regressão `test_list_traces_last_score_picks_most_recent_run` em `tests/test_refactor_endpoints_edge_cases.py` cria runs `0.2` (antigo) + `0.91` (novo) → asserta `last_score == 0.91`.
+
+
 
 ### Onde
 `apps/api/app/api/routes.py:443-458` (commit `3083e31`)
@@ -398,7 +398,13 @@ Teste: criar trace com 100 runs; conferir que `GET /v1/traces?project_id=...` fa
 
 ---
 
-## 🟠 7. p95 de ingestão off-by-one (sub-reporta)
+## ✅ 7. p95 de ingestão off-by-one (sub-reporta) — **CORRIGIDO**
+
+> Status (2026-05-21): helper `_p95_nearest_rank` em `routes.py:38-44` substitui ambos os call-sites (sdk-status e overview). Teste `test_sdk_status_p95_uses_nearest_rank` insere 10 traces com latências 10..100ms e exige p95 ≥ 95 (ceil(0.95·n)-1 = 9 → 100ms vs. fórmula antiga = 90ms). Suite cheia: 297 passed.
+
+---
+
+## 🟠 7. p95 de ingestão off-by-one (sub-reporta) — original
 
 ### Onde
 `apps/api/app/api/routes.py:328-334`
@@ -431,7 +437,13 @@ Teste com lista determinística `[1..100]`: p95 deve ser ≥95.
 
 ---
 
-## 🟡 8. `POST /notifications/mark-read` com `ids: []` marca TODAS
+## ✅ 8. `POST /notifications/mark-read` com `ids: []` marca TODAS — **CORRIGIDO**
+
+> Status (2026-05-21): `NotificationMarkReadIn.ids = Field(min_length=1, max_length=200)` rejeita `[]` no Pydantic (422). Rota agora aplica `Notification.id.in_(payload.ids)` incondicionalmente (defesa em profundidade). `markNotificationsRead` no frontend retorna `{updated: 0}` para `ids=[]` sem chamar API. Teste `test_mark_read_empty_ids_is_rejected_with_422` cobre. Suite cheia: 298 passed.
+
+---
+
+## 🟡 8. `POST /notifications/mark-read` com `ids: []` marca TODAS — original
 
 ### Onde
 `apps/api/app/api/routes.py:280-296`
@@ -488,7 +500,13 @@ Teste `test_mark_read_empty_ids_is_rejected_with_422`.
 
 ---
 
-## 🟡 9. PATCH `/projects/{id}` muta `description` mesmo sem mudança real
+## ✅ 9. PATCH `/projects/{id}` muta `description` — **CORRIGIDO**
+
+> Status (2026-05-21): backend normaliza `""`/whitespace → `None` antes de comparar; só audita se valor mudou de verdade. Frontend `patchProjectAction` converte descrição vazia em `null`. Teste `test_patch_project_empty_description_normalized_to_null_no_op` cobre.
+
+---
+
+## 🟡 9. PATCH `/projects/{id}` muta `description` mesmo sem mudança real — original
 
 ### Onde
 - Frontend: `apps/web/lib/actions.ts:571-593`
@@ -550,7 +568,13 @@ Teste `test_patch_project_no_change_does_not_audit`.
 
 ---
 
-## 🟡 10. Overview perde traces `partial` no card "Últimos com problema"
+## ✅ 10. Overview perde traces `partial` — **CORRIGIDO**
+
+> Status (2026-05-21): `list_traces` aceita `status` CSV (split + `in_()` para múltiplos). Overview pede `status="error,partial"`. Teste `test_list_traces_status_csv_filters_multiple_statuses` cobre.
+
+---
+
+## 🟡 10. Overview perde traces `partial` no card "Últimos com problema" — original
 
 ### Onde
 `apps/web/app/o/[org]/p/[project]/page.tsx:121`
@@ -600,7 +624,13 @@ Teste e2e que cria 1 partial + 1 error e verifica que ambos aparecem no card.
 
 ---
 
-## 🟡 11. Lista de traces sem botão "página anterior"
+## ✅ 11. Lista de traces sem botão "página anterior" — **CORRIGIDO (quick fix C)**
+
+> Status (2026-05-21): botão `‹` ativo quando `?cursor=` está presente — link para a mesma página sem cursor (volta a página 1). Cursor bidirecional fica como melhoria futura.
+
+---
+
+## 🟡 11. Lista de traces sem botão "página anterior" — original
 
 ### Onde
 `apps/web/app/o/[org]/p/[project]/traces/page.tsx:197-209`
@@ -635,7 +665,13 @@ Smoke test que navega ›, ›, ‹, ‹, ‹ e verifica que termina na primeira
 
 ---
 
-## 🟡 12. Compare-spans com fallback de timezone frágil
+## ✅ 12. Compare-spans com fallback de timezone frágil — **CORRIGIDO**
+
+> Status (2026-05-21): helper `_to_utc` em `routes_trace_actions.py` converte naive→UTC e aware→UTC via `astimezone`. Aplicado em `started_delta_seconds`. Teste unitário `test_to_utc_helper_handles_mixed_tz_offsets` cobre offsets `-03:00`, UTC e naive.
+
+---
+
+## 🟡 12. Compare-spans com fallback de timezone frágil — original
 
 ### Onde
 `apps/api/app/api/routes_trace_actions.py:352-354`
@@ -669,7 +705,13 @@ Teste com dois traces criados em sessions com `tzinfo` diferentes.
 
 ---
 
-## 🟡 13. RAG endpoint fabrica claim counts via `support_rate * 10`
+## ✅ 13. RAG endpoint fabrica claim counts — **CORRIGIDO**
+
+> Status (2026-05-21): `grounded_claims`/`ungrounded_claims` viram `None` quando não há claims; `support_rate` exposto separadamente; `claims_unavailable=True` sinaliza ausência. Risco calculado por `_risk_from_support_rate` (sem inventar denominador 10). Schema `RagConsolidatedOut` atualizado. Teste `test_rag_does_not_fabricate_claim_totals_when_only_support_rate` cobre. UI ajustada em iteração futura — endpoint já não mente.
+
+---
+
+## 🟡 13. RAG endpoint fabrica claim counts via `support_rate * 10` — original
 
 ### Onde
 `apps/api/app/api/routes_trace_actions.py:236-245`
@@ -716,7 +758,13 @@ Teste com trace que tem `support_rate=0.4` e sem claims → asserir que response
 
 ---
 
-## 🟡 14. `next_cursor` em `list_project_exports` sem consumidor
+## ✅ 14. `next_cursor` em `list_project_exports` sem consumidor — **CORRIGIDO**
+
+> Status (2026-05-21): cursor base64 `created_at|id` com filtro `(created_at, id)` < cursor. `listExports` wrapper aceita 3º arg `cursor`. Teste `test_list_exports_paginates_with_cursor` insere 5 exports, pagina com `limit=2` e valida disjunção entre páginas.
+
+---
+
+## 🟡 14. `next_cursor` em `list_project_exports` sem consumidor — original
 
 ### Onde
 `apps/api/app/api/routes_phase6.py` (commit `1fb86fe`)
@@ -736,7 +784,13 @@ Teste que cria 60 exports, pagina com `limit=20`, espera 3 páginas distintas vi
 
 ---
 
-## 🔵 15. Ações de mutação de trace sem audit log
+## ✅ 15. Ações de mutação de trace sem audit log — **CORRIGIDO**
+
+> Status (2026-05-21): `flag_trace` → `trace.flagged`; `bulk_flag_traces` → `trace.bulk_flagged` (com `skipped_dedup` listado); `rerun_trace` → `trace.rerun_requested`. Testes `test_flag_trace_creates_audit_log_and_dedups` e `test_rerun_trace_writes_audit` cobrem.
+
+---
+
+## 🔵 15. Ações de mutação de trace sem audit log — original
 
 ### Onde
 `apps/api/app/api/routes_trace_actions.py:178-189, 269-288, 291-330`
@@ -782,7 +836,13 @@ Teste `test_flag_trace_creates_audit_log` para cada ação.
 
 ---
 
-## 🔵 16. `GET /traces/{id}/rag` ignora `trace.redacted`
+## ✅ 16. `GET /traces/{id}/rag` ignora `trace.redacted` — **CORRIGIDO**
+
+> Status (2026-05-21): primeiro check no handler retorna payload vazio + `redacted=True` quando `trace.redacted`. Sem ler spans nem metadata. Schema `RagConsolidatedOut.redacted: bool = False`. Teste `test_rag_returns_redacted_payload_when_trace_redacted` cobre.
+
+---
+
+## 🔵 16. `GET /traces/{id}/rag` ignora `trace.redacted` — original
 
 ### Onde
 `apps/api/app/api/routes_trace_actions.py:192-266`
@@ -820,7 +880,13 @@ Teste com `trace.redacted=True` retornando RAG vazio + `redacted=True`.
 
 ---
 
-## 🔵 17. `list_organization_members` sem paginação
+## ✅ 17. `list_organization_members` sem paginação — **CORRIGIDO**
+
+> Status (2026-05-21): `limit: int = Query(50, ge=1, le=200)` + `cursor: str | None` (base64 `created_at|user_id`). Order ascendente estável por `(created_at, user_id)`. Teste `test_members_listing_paginates_with_cursor` cobre.
+
+---
+
+## 🔵 17. `list_organization_members` sem paginação — original
 
 ### Onde
 `apps/api/app/api/routes.py` (commit `3083e31`)
@@ -838,7 +904,13 @@ Teste com 250 memberships verifica que default page traz 50 e cursor funciona.
 
 ---
 
-## 🟡 18. `bulk_flag_traces` permite duplo-flag
+## ✅ 18. `bulk_flag_traces` permite duplo-flag — **CORRIGIDO**
+
+> Status (2026-05-21): `_find_recent_flag` em janela de 10s dedupa por `(trace_id, user_id, reason)`. `flag_trace` e `bulk_flag_traces` idempotentes — retornam flag existente. `created` agora reflete apenas inserts reais; `skipped_dedup` listado no audit. Teste `test_flag_trace_creates_audit_log_and_dedups` valida que duplo POST retorna mesmo flag_id e 1 row em `trace_flags`.
+
+---
+
+## 🟡 18. `bulk_flag_traces` permite duplo-flag — original
 
 ### Onde
 `apps/api/app/api/routes_trace_actions.py:269-288`
@@ -883,24 +955,24 @@ Teste `test_double_flag_same_reason_returns_existing`.
 
 Antes de marcar como pronto:
 
-- [ ] Bug #1: rerun enfileira worker **ou** botão escondido **ou** rota removida.
-- [ ] Bug #2: `listExports` chamado em `exports/page.tsx`.
-- [ ] Bug #3: Bell e WorkspaceSwitcher montados em `EvoTopbar.tsx`/`Sidebar.tsx`.
-- [ ] Bug #4: backend aceita `duration_gt` / `rag=true`, frontend não filtra em JS.
-- [ ] Bug #5: migration `0006_prompt_ref_index.py` + LIMIT na query + `usage_count` honesto.
-- [ ] Bug #6: subquery/window function para `last_score` + índice composto.
-- [ ] Bug #7: cálculo de p95 corrigido.
-- [ ] Bug #8: schema `min_length=1` em `NotificationMarkReadIn.ids`.
-- [ ] Bug #9: action normaliza `""` → `null`.
-- [ ] Bug #10: status CSV no `list_traces` + overview pede `error,partial`.
-- [ ] Bug #11: pelo menos botão "voltar à página 1" ativo.
-- [ ] Bug #12: `_to_utc` helper aplicado em todos os subtractions.
-- [ ] Bug #13: RAG endpoint não inventa totais; UI exibe `—`.
-- [ ] Bug #14: `cursor` query param no exports listing **ou** remover `next_cursor` da response.
-- [ ] Bug #15: `record_audit` em flag/bulk-flag/rerun.
-- [ ] Bug #16: `trace.redacted` honrado em `GET /traces/{id}/rag`.
-- [ ] Bug #17: paginação em members.
-- [ ] Bug #18: dedup em flag_trace.
+- [x] Bug #1: **CORRIGIDO** — Fases A-E da spec `docs/plans/evalops-async-worker-replay-spec.md` implementadas: arq dep + worker container (A); `replay_trace` chama provider e ingere span (B); rota `rerun_trace` enfileira job real e falha 503 se Redis down (C); badge dinâmico de `replay_status` no detalhe do trace (D); testes de integração + Playwright e2e + logging estruturado (E). Suite 321 passed.
+- [x] Bug #2: `listExports` integrado em `exports/page.tsx` — lista vem do servidor, mesclada com `knownIds`. Card "Contrato atual" removido. Coluna "Tamanho" mostra `—` (sem `file_size_bytes` no model — migration futura).
+- [x] Bug #3: Bell e WorkspaceSwitcher montados em `EvoTopbar.tsx`/`AppShell.tsx`. **Pendência:** `markRead` Server Action e fechar Bug #8 antes de adicionar.
+- [x] Bug #4: backend aceita `duration_gt` / `rag=true`, frontend não filtra em JS. Filtro RAG portátil SQLite (`("true","1")`). **Pendência:** endpoint global `/traces/segments` para counts cross-tab.
+- [x] Bug #5: migration `0006_prompt_ref_index.py` + LIMIT na query + `usage_count` honesto + `usage_count_truncated`.
+- [x] Bug #6: window function para `last_score` + índice composto `(trace_id, created_at)`.
+- [x] Bug #7: helper `_p95_nearest_rank` aplicado em `sdk-status` e `overview`; teste com lista determinística 10..100 confirma p95 ≥ 95.
+- [x] Bug #8: `min_length=1, max_length=200` em `NotificationMarkReadIn.ids` + filtro `in_` incondicional + guarda no `markNotificationsRead` (frontend).
+- [x] Bug #9: backend normaliza `""`/whitespace → `null` no PATCH `/projects/{id}`; frontend `patchProjectAction` envia `null` quando description vazia.
+- [x] Bug #10: `list_traces` aceita status CSV (`"error,partial"`); overview card "Últimos com problema" pede ambos.
+- [x] Bug #11: botão `‹` ativo quando `cursor` na URL — volta para página 1 (quick fix, cursor bidirecional fica para iteração futura).
+- [x] Bug #12: `_to_utc` helper em `routes_trace_actions.py`; aplicado em `started_delta_seconds` do compare. Teste unitário cobre offsets mistos.
+- [x] Bug #13: `support_rate` exposto separadamente; `grounded_claims`/`ungrounded_claims` → `None` quando não há claims; `claims_unavailable` flag; `_risk_from_support_rate` calcula risco sem fabricar totais.
+- [x] Bug #14: `cursor` (base64 `created_at|id`) adicionado em `list_project_exports`; `listExports` wrapper aceita cursor.
+- [x] Bug #15: `record_audit` em `flag_trace` (`trace.flagged`), `bulk_flag_traces` (`trace.bulk_flagged`) e `rerun_trace` (`trace.rerun_requested`).
+- [x] Bug #16: `trace.redacted` retorna payload vazio + `redacted=True` em `GET /traces/{id}/rag` antes de carregar spans.
+- [x] Bug #17: `list_organization_members` com `limit` (1..200, default 50) e `cursor` (base64).
+- [x] Bug #18: `_find_recent_flag` em janela de 10s dedupa por `(trace_id, user_id, reason)`; flag/bulk-flag idempotentes.
 - [ ] Teste e2e cobrindo ações reais (não só render).
 - [ ] `pytest` 100% verde.
 - [ ] `tsc --noEmit` limpo.

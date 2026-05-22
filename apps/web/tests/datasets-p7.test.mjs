@@ -60,13 +60,10 @@ test("P7.3 datasets: tabs + table + item preview preserved", () => {
   assert.match(page, /function shortJson\(/);
 });
 
-test("P7.3 datasets: endpoints reference card is read-only (no modal preview)", () => {
-  assert.match(page, /<h3 className="evo-card__title">Endpoints ativos<\/h3>/);
-  assert.match(page, /aria-label="Endpoints do módulo Datasets"/);
-  assert.match(page, /evo-endpoint-row__method--get/);
-  assert.match(page, /evo-endpoint-row__method--post/);
-  assert.match(page, /build-from-traces/);
-  // No preview-modal pattern, no placeholder banner from ZIP
+test("P7.3 datasets: internal endpoints card removed from UI", () => {
+  assert.doesNotMatch(page, /Endpoints ativos/);
+  assert.doesNotMatch(page, /endpoint-list/);
+  assert.doesNotMatch(page, /endpoint-row/);
   assert.doesNotMatch(page, /Funcionalidade preservada/);
   assert.doesNotMatch(page, /módulo preservado/);
   assert.doesNotMatch(page, /PreviewActionModal/);

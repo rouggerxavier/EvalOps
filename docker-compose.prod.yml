@@ -25,15 +25,26 @@ x-api-base: &api-base
     LOG_LEVEL: INFO
     # Sync SQLAlchemy with psycopg driver — see app/db.py
     DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-evalops}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-evalops}
+    REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
     EVALOPS_USE_ALEMBIC: "1"
     EVALOPS_EXPORTS_DIR: ${EVALOPS_EXPORTS_DIR:-/workspace/storage/exports}
     EVALOPS_MAX_BODY_BYTES: ${EVALOPS_MAX_BODY_BYTES:-8388608}
     EVALOPS_MAX_SPANS_PER_TRACE: ${EVALOPS_MAX_SPANS_PER_TRACE:-500}
+    EVALOPS_WORKER_CONCURRENCY: ${EVALOPS_WORKER_CONCURRENCY:-4}
     JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET}
     API_HOST: 0.0.0.0
     API_PORT: 8000
 
 services:
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
@@ -70,10 +81,27 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_healthy
       migrate:
         condition: service_completed_successfully
     ports:
       - "8000:8000"
+
+  worker:
+    <<: *api-base
+    restart: unless-stopped
+    command: >
+      sh -c "pip install --no-cache-dir -e '.' &&
+             pip install --no-cache-dir 'psycopg[binary]>=3.2' &&
+             python -m arq app.workers.settings.WorkerSettings"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
 
 volumes:
   pgdata:

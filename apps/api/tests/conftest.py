@@ -71,6 +71,36 @@ _db.SessionLocal = _TestSessionLocal
 # SessionLocal`` and picks up the rebound objects above.
 from app.db import Base  # noqa: E402
 from app.main import app as _app  # noqa: E402
+from app.workers.queue import get_arq_pool as _get_arq_pool  # noqa: E402
+
+
+class _FakeArqPool:
+    """In-memory stub of arq pool for tests. Records enqueue_job calls."""
+
+    def __init__(self) -> None:
+        self.jobs: list[tuple[str, tuple, dict]] = []
+
+    async def enqueue_job(self, function_name: str, *args, **kwargs):
+        self.jobs.append((function_name, args, kwargs))
+        return type("Job", (), {"job_id": f"job_{len(self.jobs)}"})()
+
+
+_fake_arq_pool = _FakeArqPool()
+
+
+def _fake_get_arq_pool():
+    return _fake_arq_pool
+
+
+_app.dependency_overrides[_get_arq_pool] = _fake_get_arq_pool
+
+
+@pytest.fixture
+def fake_arq_pool():
+    """Expose the conftest-owned fake pool to tests as a fixture so they
+    do not need to import ``conftest`` (which would re-execute the
+    module-level rebind of ``app.db`` and break the schema)."""
+    return _fake_arq_pool
 
 
 @pytest.fixture(autouse=True)
@@ -87,11 +117,16 @@ def _isolated_sqlite_schema():
     # Snapshot, not clear(): some suites (e.g. test_phase11) install a
     # module-scoped get_db override that must survive across the function
     # tests in that module. Restoring the snapshot still drops any
-    # per-test override while preserving wider-scoped ones.
+    # per-test override while preserving wider-scoped ones. Always
+    # re-install the arq pool stub — some module-scoped fixtures call
+    # ``dependency_overrides.clear()`` on teardown which would otherwise
+    # leak a missing override into later tests.
     saved_overrides = dict(_app.dependency_overrides)
+    saved_overrides[_get_arq_pool] = _fake_get_arq_pool
     yield
     _app.dependency_overrides.clear()
     _app.dependency_overrides.update(saved_overrides)
+    _app.dependency_overrides[_get_arq_pool] = _fake_get_arq_pool
     Base.metadata.drop_all(bind=_test_engine)
     _test_engine.dispose()
 

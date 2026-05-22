@@ -3,7 +3,6 @@ import { AlertCircle, Clock, Download, Flag, Layers, Search } from "lucide-react
 
 import { AuthRequiredPanel } from "@/components/AuthRequiredPanel";
 import { getTraces, hasAuthToken, resolveProject } from "@/lib/api";
-import { isTraceRagCandidate } from "@/lib/trace-display";
 
 import { TracesAutoRefresh } from "./traces-auto-refresh";
 import { TracesEmpty, TracesTable } from "./traces-table";
@@ -40,26 +39,17 @@ export default async function TracesListPage({ params, searchParams }: Props) {
     projectId: resolved.project_id,
     status: tabStatus,
     environment: qp.environment,
-    name: tab === "rag" ? "rag." : qp.name,
+    name: tab !== "rag" ? qp.name : undefined,
     limit: 50,
     cursor: qp.cursor,
+    duration_gt: tab === "slow" ? 2000 : undefined,
+    rag: tab === "rag" ? true : undefined,
   });
 
   const rows = traces.data;
-  const displayRows =
-    tab === "slow"
-      ? rows.filter((t) => t.duration_ms > 2000)
-      : tab === "rag"
-      ? rows.filter(isTraceRagCandidate)
-      : rows;
+  const displayRows = rows;
 
-  const counts = {
-    all: rows.length,
-    errors: rows.filter((t) => t.status === "error").length,
-    partial: rows.filter((t) => t.status === "partial").length,
-    slow: rows.filter((t) => t.duration_ms > 2000).length,
-    rag: rows.filter(isTraceRagCandidate).length,
-  };
+  const activeCount = rows.length;
 
   const tabBase = `/o/${org}/p/${project}/traces`;
   const baseParams = new URLSearchParams();
@@ -80,6 +70,15 @@ export default async function TracesListPage({ params, searchParams }: Props) {
         if (tab !== "all") p.set("tab", tab);
         p.set("cursor", traces.next_cursor);
         return `${tabBase}?${p.toString()}`;
+      })()
+    : null;
+
+  const firstPageHref = qp.cursor
+    ? (() => {
+        const p = new URLSearchParams(baseParams);
+        if (tab !== "all") p.set("tab", tab);
+        const s = p.toString();
+        return s ? `${tabBase}?${s}` : tabBase;
       })()
     : null;
 
@@ -119,19 +118,19 @@ export default async function TracesListPage({ params, searchParams }: Props) {
       <nav className="tabs" aria-label="Segmentos de traces">
         <Link href={tabHref("all")} className={`tab${tab === "all" ? " is-active" : ""}`}>
           Todos
-          <span className="tab__count">{counts.all}</span>
+          {tab === "all" ? <span className="tab__count">{activeCount}</span> : null}
         </Link>
         <Link href={tabHref("errors")} className={`tab${tab === "errors" ? " is-active" : ""}`}>
           <AlertCircle size={11} /> Erros
-          <span className="tab__count">{counts.errors}</span>
+          {tab === "errors" ? <span className="tab__count">{activeCount}</span> : null}
         </Link>
         <Link href={tabHref("partial")} className={`tab${tab === "partial" ? " is-active" : ""}`}>
           <Flag size={11} /> Parciais
-          <span className="tab__count">{counts.partial}</span>
+          {tab === "partial" ? <span className="tab__count">{activeCount}</span> : null}
         </Link>
         <Link href={tabHref("slow")} className={`tab${tab === "slow" ? " is-active" : ""}`}>
           <Clock size={11} /> Lentos
-          <span className="tab__count">{counts.slow}</span>
+          {tab === "slow" ? <span className="tab__count">{activeCount}</span> : null}
         </Link>
         <Link
           href={tabHref("rag")}
@@ -139,7 +138,7 @@ export default async function TracesListPage({ params, searchParams }: Props) {
           data-testid="trace-list-rag-tab"
         >
           <Layers size={11} /> RAG
-          <span className="tab__count">{counts.rag}</span>
+          {tab === "rag" ? <span className="tab__count">{activeCount}</span> : null}
         </Link>
       </nav>
 
@@ -195,9 +194,15 @@ export default async function TracesListPage({ params, searchParams }: Props) {
           {hasCursor ? " (próxima página)" : ""}
         </span>
         <div className="row" style={{ gap: 6 }}>
-          <button type="button" className="btn btn--sm btn--ghost" disabled>
-            ‹
-          </button>
+          {firstPageHref ? (
+            <Link href={firstPageHref} className="btn btn--sm btn--ghost" title="Voltar à primeira página">
+              ‹
+            </Link>
+          ) : (
+            <button type="button" className="btn btn--sm btn--ghost" disabled>
+              ‹
+            </button>
+          )}
           {nextPageHref ? (
             <Link href={nextPageHref} className="btn btn--sm btn--ghost">
               ›

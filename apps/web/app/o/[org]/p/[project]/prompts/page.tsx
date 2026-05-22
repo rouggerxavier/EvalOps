@@ -443,48 +443,6 @@ export default async function PromptsPage({ params, searchParams }: Props) {
         </div>
       )}
 
-      {/* Endpoints reais — referência somente leitura */}
-      <section className="card" style={{ marginTop: 12 }}>
-        <div className="card__header">
-          <div>
-            <h3 className="card__title">Endpoints ativos</h3>
-            <div className="card__subtitle">Rotas reais do backend que servem este módulo.</div>
-          </div>
-        </div>
-        <div className="card__body">
-          <div className="endpoint-list" aria-label="Endpoints do módulo Prompts">
-            <div className="endpoint-row">
-              <span className="endpoint-snippet__method method-GET">GET</span>
-              <span className="endpoint-row__path" title="/v1/projects/{project_id}/prompts">
-                /projects/{"{project_id}"}/prompts
-              </span>
-              <span className="endpoint-row__note">ativo</span>
-            </div>
-            <div className="endpoint-row">
-              <span className="endpoint-snippet__method method-POST">POST</span>
-              <span className="endpoint-row__path" title="/v1/projects/{project_id}/prompts">
-                /projects/{"{project_id}"}/prompts
-              </span>
-              <span className="endpoint-row__note">ativo · cria prompt</span>
-            </div>
-            <div className="endpoint-row">
-              <span className="endpoint-snippet__method method-GET">GET</span>
-              <span className="endpoint-row__path" title="/v1/prompts/{prompt_id}/versions">
-                /prompts/{"{prompt_id}"}/versions
-              </span>
-              <span className="endpoint-row__note">ativo</span>
-            </div>
-            <div className="endpoint-row">
-              <span className="endpoint-snippet__method method-POST">POST</span>
-              <span className="endpoint-row__path" title="/v1/prompts/{prompt_id}/versions">
-                /prompts/{"{prompt_id}"}/versions
-              </span>
-              <span className="endpoint-row__note">ativo · nova versão</span>
-            </div>
-          </div>
-        </div>
-      </section>
-
       {/* Create new version (collapsible) — only when prompts exist */}
       {prompts.length > 0 && (
         <details

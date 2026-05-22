@@ -1,9 +1,10 @@
 import base64
+import math
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from sqlalchemy import func, or_, and_
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
@@ -33,6 +34,15 @@ from app.schemas import (
 from app.security import new_id
 
 router = APIRouter(prefix="/v1")
+
+
+def _p95_nearest_rank(values: list[int | float]) -> int | float:
+    if not values:
+        return 0
+    sorted_values = sorted(values)
+    n = len(sorted_values)
+    index = min(n - 1, max(0, math.ceil(0.95 * n) - 1))
+    return sorted_values[index]
 
 
 def _encode_cursor(created_at: datetime, trace_id: str) -> str:
@@ -169,9 +179,13 @@ def update_project(
     if payload.name is not None and payload.name != project.name:
         changes["name"] = {"from": project.name, "to": payload.name}
         project.name = payload.name
-    if "description" in payload.model_fields_set and payload.description != project.description:
-        changes["description"] = {"from": project.description, "to": payload.description}
-        project.description = payload.description
+    if "description" in payload.model_fields_set:
+        new_description = payload.description
+        if isinstance(new_description, str) and new_description.strip() == "":
+            new_description = None
+        if new_description != project.description:
+            changes["description"] = {"from": project.description, "to": new_description}
+            project.description = new_description
     if payload.default_environment is not None and payload.default_environment != project.default_environment:
         changes["default_environment"] = {
             "from": project.default_environment,
@@ -193,19 +207,52 @@ def update_project(
     return project
 
 
+def _encode_member_cursor(created_at: datetime, user_id: str) -> str:
+    raw = f"{created_at.isoformat()}|{user_id}"
+    return base64.urlsafe_b64encode(raw.encode()).decode().rstrip("=")
+
+
+def _decode_member_cursor(cursor: str) -> tuple[datetime, str]:
+    try:
+        padded = cursor + "=" * (-len(cursor) % 4)
+        raw = base64.urlsafe_b64decode(padded.encode()).decode()
+        ca_str, user_id = raw.rsplit("|", 1)
+        return datetime.fromisoformat(ca_str), user_id
+    except Exception:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="invalid_cursor")
+
+
 @router.get("/organizations/{org_id}/members")
 def list_organization_members(
     org_id: str,
+    limit: int = Query(50, ge=1, le=200),
+    cursor: str | None = Query(None),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
     ensure_org_membership(db, user.id, org_id)
-    rows = (
+    query = (
         db.query(Membership, User)
         .join(User, User.id == Membership.user_id)
         .filter(Membership.organization_id == org_id)
-        .order_by(Membership.created_at.asc(), User.email.asc())
+    )
+    if cursor:
+        cursor_created_at, cursor_user_id = _decode_member_cursor(cursor)
+        query = query.filter(
+            or_(
+                Membership.created_at > cursor_created_at,
+                and_(Membership.created_at == cursor_created_at, Membership.user_id > cursor_user_id),
+            )
+        )
+    rows = (
+        query.order_by(Membership.created_at.asc(), Membership.user_id.asc())
+        .limit(limit + 1)
         .all()
+    )
+    has_more = len(rows) > limit
+    rows = rows[:limit]
+    next_cursor = (
+        _encode_member_cursor(rows[-1][0].created_at, rows[-1][0].user_id) if has_more and rows else None
     )
     return {
         "data": [
@@ -217,7 +264,8 @@ def list_organization_members(
                 joined_at=member.created_at,
             ).model_dump()
             for member, row_user in rows
-        ]
+        ],
+        "next_cursor": next_cursor,
     }
 
 
@@ -338,12 +386,7 @@ def get_project_sdk_status(
     for trace in traces:
         if trace.created_at and trace.ended_at:
             ingestion_latencies.append(_delta_ms(trace.created_at, trace.ended_at))
-    ingestion_latencies.sort()
-    if ingestion_latencies:
-        p95_index = max(0, min(len(ingestion_latencies) - 1, int(0.95 * (len(ingestion_latencies) - 1))))
-        p95 = ingestion_latencies[p95_index]
-    else:
-        p95 = 0
+    p95 = _p95_nearest_rank(ingestion_latencies)
     last_trace_at = max((trace.created_at for trace in traces), default=None)
     last_event_at = max((event.occurred_at for event in events), default=None)
     candidates = [value for value in [last_trace_at, last_event_at] if value is not None]
@@ -388,9 +431,11 @@ def mark_project_notifications_read(
     db: Session = Depends(get_db),
 ) -> dict:
     now = utcnow()
-    query = db.query(Notification).filter(Notification.project_id == project.id, Notification.read_at.is_(None))
-    if payload.ids:
-        query = query.filter(Notification.id.in_(payload.ids))
+    query = (
+        db.query(Notification)
+        .filter(Notification.project_id == project.id, Notification.read_at.is_(None))
+        .filter(Notification.id.in_(payload.ids))
+    )
     rows = query.all()
     for row in rows:
         row.read_at = now
@@ -417,17 +462,32 @@ def list_traces(
     name: str | None = None,
     limit: int = 50,
     cursor: str | None = None,
+    duration_gt: int | None = Query(None, ge=0),
+    rag: bool | None = Query(None),
     project: Project = Depends(get_owned_project),
     db: Session = Depends(get_db),
 ) -> dict:
     project_id = project.id
     query = db.query(Trace).filter(Trace.project_id == project_id, Trace.deleted_at.is_(None))
     if trace_status:
-        query = query.filter(Trace.status == trace_status)
+        status_values = [s.strip() for s in trace_status.split(",") if s.strip()]
+        if len(status_values) == 1:
+            query = query.filter(Trace.status == status_values[0])
+        elif status_values:
+            query = query.filter(Trace.status.in_(status_values))
     if environment:
         query = query.filter(Trace.environment == environment)
     if name:
         query = query.filter(Trace.name.ilike(f"%{name}%"))
+    if duration_gt is not None:
+        query = query.filter(Trace.duration_ms > duration_gt)
+    if rag is True:
+        query = query.filter(
+            or_(
+                Trace.name.ilike("rag.%"),
+                Trace.metadata_json["is_rag"].as_string().in_(("true", "1")),
+            )
+        )
     if cursor:
         cursor_created_at, cursor_id = _decode_cursor(cursor)
         query = query.filter(
@@ -443,15 +503,23 @@ def list_traces(
     trace_ids = [row.id for row in rows]
     last_scores: dict[str, float | None] = {}
     if trace_ids:
-        runs = (
-            db.query(EvaluationRun)
-            .filter(EvaluationRun.trace_id.in_(trace_ids))
-            .order_by(EvaluationRun.trace_id.asc(), EvaluationRun.created_at.desc())
-            .all()
+        ranked = (
+            select(
+                EvaluationRun.trace_id.label("trace_id"),
+                EvaluationRun.aggregate_score.label("aggregate_score"),
+                func.row_number()
+                .over(
+                    partition_by=EvaluationRun.trace_id,
+                    order_by=EvaluationRun.created_at.desc(),
+                )
+                .label("rn"),
+            )
+            .where(EvaluationRun.trace_id.in_(trace_ids))
+            .subquery()
         )
-        for run in runs:
-            if run.trace_id not in last_scores:
-                last_scores[run.trace_id] = float(run.aggregate_score) if run.aggregate_score is not None else None
+        latest_q = select(ranked.c.trace_id, ranked.c.aggregate_score).where(ranked.c.rn == 1)
+        for row in db.execute(latest_q):
+            last_scores[row.trace_id] = float(row.aggregate_score) if row.aggregate_score is not None else None
     data = []
     for row in rows:
         item = TraceOut.model_validate(row).model_dump()
@@ -580,9 +648,7 @@ def analytics_overview(
             "recent_flagged": [],
         }
 
-    durations = sorted([row.duration_ms for row in rows])
-    p95_index = max(0, min(len(durations) - 1, int(0.95 * (len(durations) - 1))))
-    p95 = durations[p95_index]
+    p95 = _p95_nearest_rank([row.duration_ms for row in rows])
     error_count = sum(1 for row in rows if row.status == "error")
     total_cost = float(sum(Decimal(str(row.total_cost_usd)) for row in rows))
 

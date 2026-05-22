@@ -590,47 +590,6 @@ export default async function ExperimentosPage({ params, searchParams }: Props) 
         </div>
       )}
 
-      {/* Endpoints reais — referência somente leitura */}
-      <section className="card" style={{ marginTop: 12 }}>
-        <div className="card__header">
-          <div>
-            <h3 className="card__title">Endpoints ativos</h3>
-            <div className="card__subtitle">Rotas reais do backend que servem este módulo.</div>
-          </div>
-        </div>
-        <div className="card__body">
-          <div className="endpoint-list" aria-label="Endpoints do módulo Experiments">
-            <div className="endpoint-row">
-              <span className="endpoint-snippet__method method-GET">GET</span>
-              <span className="endpoint-row__path" title="/v1/projects/{project_id}/experiments">
-                /projects/{"{project_id}"}/experiments
-              </span>
-              <span className="endpoint-row__note">ativo</span>
-            </div>
-            <div className="endpoint-row">
-              <span className="endpoint-snippet__method method-POST">POST</span>
-              <span className="endpoint-row__path" title="/v1/projects/{project_id}/experiments">
-                /projects/{"{project_id}"}/experiments
-              </span>
-              <span className="endpoint-row__note">ativo · cria experimento</span>
-            </div>
-            <div className="endpoint-row">
-              <span className="endpoint-snippet__method method-POST">POST</span>
-              <span className="endpoint-row__path" title="/v1/experiments/{experiment_id}/run">
-                /experiments/{"{experiment_id}"}/run
-              </span>
-              <span className="endpoint-row__note">ativo · dispara run</span>
-            </div>
-            <div className="endpoint-row">
-              <span className="endpoint-snippet__method method-GET">GET</span>
-              <span className="endpoint-row__path" title="/v1/experiments/{experiment_id}/runs/{run_id}">
-                /experiments/{"{experiment_id}"}/runs/{"{run_id}"}
-              </span>
-              <span className="endpoint-row__note">ativo · detalhe da run</span>
-            </div>
-          </div>
-        </div>
-      </section>
     </div>
   );
 }

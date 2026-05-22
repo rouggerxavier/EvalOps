@@ -33,6 +33,8 @@ import type {
   TraceListResponse,
   TraceRerunResponse,
 } from "./types";
+import { cache } from "react";
+
 import { getAuthToken, getSession, hasFallbackToken } from "./auth";
 import { getApiBaseUrl } from "./config";
 
@@ -64,10 +66,12 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
   return (await res.json()) as T;
 }
 
-export async function resolveProject(orgSlug: string, projectSlug: string): Promise<ResolvedProject> {
-  const params = new URLSearchParams({ org_slug: orgSlug, project_slug: projectSlug });
-  return fetchJson<ResolvedProject>(`/resolve?${params.toString()}`);
-}
+export const resolveProject = cache(
+  async (orgSlug: string, projectSlug: string): Promise<ResolvedProject> => {
+    const params = new URLSearchParams({ org_slug: orgSlug, project_slug: projectSlug });
+    return fetchJson<ResolvedProject>(`/resolve?${params.toString()}`);
+  },
+);
 
 export function hasDashboardToken(): boolean {
   return hasFallbackToken();
@@ -113,6 +117,9 @@ export async function getNotifications(projectId: string, limit = 20): Promise<N
 }
 
 export async function markNotificationsRead(projectId: string, ids: string[]): Promise<{ updated: number }> {
+  if (ids.length === 0) {
+    return { updated: 0 };
+  }
   return requestJson<{ updated: number }>(`/projects/${projectId}/notifications/mark-read`, {
     method: "POST",
     body: JSON.stringify({ ids }),
@@ -126,6 +133,8 @@ export async function getTraces(opts: {
   environment?: string;
   name?: string;
   cursor?: string;
+  duration_gt?: number;
+  rag?: boolean;
 }): Promise<TraceListResponse> {
   const params = new URLSearchParams({
     project_id: opts.projectId,
@@ -135,6 +144,8 @@ export async function getTraces(opts: {
   if (opts.environment) params.set("environment", opts.environment);
   if (opts.name) params.set("name", opts.name);
   if (opts.cursor) params.set("cursor", opts.cursor);
+  if (opts.duration_gt !== undefined) params.set("duration_gt", String(opts.duration_gt));
+  if (opts.rag !== undefined) params.set("rag", String(opts.rag));
   return fetchJson<TraceListResponse>(`/traces?${params.toString()}`);
 }
 
@@ -419,8 +430,13 @@ export async function getExport(exportId: string): Promise<ExportJob> {
   return fetchJson<ExportJob>(`/exports/${exportId}`);
 }
 
-export async function listExports(projectId: string, limit = 50): Promise<ExportListResponse> {
+export async function listExports(
+  projectId: string,
+  limit = 50,
+  cursor?: string,
+): Promise<ExportListResponse> {
   const params = new URLSearchParams({ limit: String(limit) });
+  if (cursor) params.set("cursor", cursor);
   return fetchJson<ExportListResponse>(`/projects/${projectId}/exports?${params.toString()}`);
 }
 
