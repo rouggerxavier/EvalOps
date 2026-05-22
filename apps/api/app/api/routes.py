@@ -473,6 +473,16 @@ def ingest_traces(
     return ingest_trace_batch(db, project, payload, redact_header)
 
 
+_SLOW_KIND_TO_SPAN_PREDICATE: dict[str, object] = {
+    "llm": Span.type == "llm_call",
+    "retrieval": or_(
+        Span.type == "retrieval",
+        Span.name.ilike("retrieval.%"),
+        Span.name.ilike("rag.retrieve%"),
+    ),
+}
+
+
 @router.get("/traces")
 def list_traces(
     trace_status: str | None = Query(None, alias="status"),
@@ -481,6 +491,7 @@ def list_traces(
     limit: int = 50,
     cursor: str | None = None,
     duration_gt: int | None = Query(None, ge=0),
+    slow_kind: str | None = Query(None, pattern="^(trace|llm|retrieval)$"),
     rag: bool | None = Query(None),
     project: Project = Depends(get_owned_project),
     db: Session = Depends(get_db),
@@ -497,13 +508,37 @@ def list_traces(
         query = query.filter(Trace.environment == environment)
     if name:
         query = query.filter(Trace.name.ilike(f"%{name}%"))
+    # Slowness contract:
+    # - slow_kind="trace" or unset: legacy filter on Trace.duration_ms.
+    # - slow_kind="llm": at least one llm_call span exceeds duration_gt.
+    # - slow_kind="retrieval": at least one retrieval/rag.retrieve span exceeds duration_gt.
+    # The reason that matched is exposed as `slow_reason` on each item.
+    effective_slow_kind: str | None = None
     if duration_gt is not None:
-        query = query.filter(Trace.duration_ms > duration_gt)
+        if slow_kind in {"llm", "retrieval"}:
+            span_predicate = _SLOW_KIND_TO_SPAN_PREDICATE[slow_kind]
+            slow_subq = (
+                select(Span.trace_id)
+                .where(span_predicate, Span.duration_ms > duration_gt)
+                .scalar_subquery()
+            )
+            query = query.filter(Trace.id.in_(slow_subq))
+            effective_slow_kind = slow_kind
+        else:
+            query = query.filter(Trace.duration_ms > duration_gt)
+            effective_slow_kind = "trace"
     if rag is True:
+        # Unified RAG detection: trace.name prefix, metadata flag, OR any span
+        # named "rag.*". Keeps the list filter aligned with the detail page,
+        # which inspects spans directly via routes_trace_actions.
+        rag_span_subq = (
+            select(Span.trace_id).where(Span.name.ilike("rag.%")).scalar_subquery()
+        )
         query = query.filter(
             or_(
                 Trace.name.ilike("rag.%"),
                 Trace.metadata_json["is_rag"].as_string().in_(("true", "1")),
+                Trace.id.in_(rag_span_subq),
             )
         )
     if cursor:
@@ -542,6 +577,7 @@ def list_traces(
     for row in rows:
         item = TraceOut.model_validate(row).model_dump()
         item["last_score"] = last_scores.get(row.id)
+        item["slow_reason"] = effective_slow_kind
         data.append(item)
     next_cursor = _encode_cursor(rows[-1].created_at, rows[-1].id) if has_more and rows else None
     return {"data": data, "next_cursor": next_cursor}

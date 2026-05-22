@@ -8,6 +8,7 @@ import { TracesAutoRefresh } from "./traces-auto-refresh";
 import { TracesEmpty, TracesTable } from "./traces-table";
 
 type Tab = "all" | "errors" | "partial" | "slow" | "rag";
+type SlowKind = "trace" | "llm" | "retrieval";
 
 type Props = {
   params: Promise<{ org: string; project: string }>;
@@ -17,12 +18,18 @@ type Props = {
     name?: string;
     tab?: string;
     cursor?: string;
+    slow_kind?: string;
   }>;
 };
 
 function parseTab(value: string | undefined): Tab {
   if (value === "errors" || value === "partial" || value === "slow" || value === "rag") return value;
   return "all";
+}
+
+function parseSlowKind(value: string | undefined): SlowKind {
+  if (value === "llm" || value === "retrieval") return value;
+  return "trace";
 }
 
 export default async function TracesListPage({ params, searchParams }: Props) {
@@ -35,6 +42,7 @@ export default async function TracesListPage({ params, searchParams }: Props) {
   const resolved = await resolveProject(org, project);
 
   const tabStatus = tab === "errors" ? "error" : tab === "partial" ? "partial" : qp.status;
+  const slowKind: SlowKind = tab === "slow" ? parseSlowKind(qp.slow_kind) : "trace";
   const traces = await getTraces({
     projectId: resolved.project_id,
     status: tabStatus,
@@ -43,6 +51,7 @@ export default async function TracesListPage({ params, searchParams }: Props) {
     limit: 50,
     cursor: qp.cursor,
     duration_gt: tab === "slow" ? 2000 : undefined,
+    slow_kind: tab === "slow" ? slowKind : undefined,
     rag: tab === "rag" ? true : undefined,
   });
 
@@ -62,6 +71,13 @@ export default async function TracesListPage({ params, searchParams }: Props) {
     if (t !== "all") p.set("tab", t);
     const s = p.toString();
     return s ? `${tabBase}?${s}` : tabBase;
+  };
+
+  const slowKindHref = (kind: SlowKind) => {
+    const p = new URLSearchParams(baseParams);
+    p.set("tab", "slow");
+    if (kind !== "trace") p.set("slow_kind", kind);
+    return `${tabBase}?${p.toString()}`;
   };
 
   const nextPageHref = traces.next_cursor
@@ -141,6 +157,34 @@ export default async function TracesListPage({ params, searchParams }: Props) {
           {tab === "rag" ? <span className="tab__count">{activeCount}</span> : null}
         </Link>
       </nav>
+
+      {tab === "slow" ? (
+        <nav
+          className="tabs tabs--sub"
+          aria-label="Origem da lentidão"
+          data-testid="slow-kind-tabs"
+          style={{ marginTop: 4, fontSize: 12 }}
+        >
+          <Link
+            href={slowKindHref("trace")}
+            className={`tab${slowKind === "trace" ? " is-active" : ""}`}
+          >
+            Trace inteiro
+          </Link>
+          <Link
+            href={slowKindHref("llm")}
+            className={`tab${slowKind === "llm" ? " is-active" : ""}`}
+          >
+            LLM call
+          </Link>
+          <Link
+            href={slowKindHref("retrieval")}
+            className={`tab${slowKind === "retrieval" ? " is-active" : ""}`}
+          >
+            Retrieval
+          </Link>
+        </nav>
+      ) : null}
 
       <form method="get" className="filters" action={tabBase}>
         {tab !== "all" ? <input type="hidden" name="tab" value={tab} /> : null}

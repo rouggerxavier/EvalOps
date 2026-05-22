@@ -253,3 +253,151 @@ def test_exports_listing_returns_project_jobs_descending() -> None:
     body = response.json()
     assert [row["id"] for row in body["data"]] == ["exp_new", "exp_old"]
     assert body["next_cursor"] is None
+
+
+def _ingest_trace_with_spans(
+    client: TestClient,
+    api_key: str,
+    *,
+    client_trace_id: str,
+    trace_name: str,
+    trace_duration_ms: int,
+    spans: list[dict],
+) -> str:
+    now = datetime.now(timezone.utc)
+    payload = {
+        "traces": [
+            {
+                "client_trace_id": client_trace_id,
+                "name": trace_name,
+                "service": "svc",
+                "environment": "prod",
+                "started_at": now.isoformat(),
+                "ended_at": (now + timedelta(milliseconds=trace_duration_ms)).isoformat(),
+                "status": "ok",
+                "tags": {},
+                "metadata": {},
+                "spans": spans,
+            }
+        ]
+    }
+    response = client.post("/v1/traces", headers={"X-EvalOps-Key": api_key}, json=payload)
+    assert response.status_code == 202, response.text
+    return response.json()["results"][0]["trace_id"]
+
+
+def _span(name: str, type_: str, start_ms: int, end_ms: int) -> dict:
+    base = datetime.now(timezone.utc)
+    return {
+        "client_span_id": f"sp_{name.replace('.', '_')}_{start_ms}",
+        "type": type_,
+        "name": name,
+        "started_at": (base + timedelta(milliseconds=start_ms)).isoformat(),
+        "ended_at": (base + timedelta(milliseconds=end_ms)).isoformat(),
+        "status": "ok",
+    }
+
+
+def test_slow_kind_llm_filters_traces_by_llm_span_duration() -> None:
+    client = TestClient(app)
+    headers, project_id, api_key = _bootstrap(client)
+
+    # Orchestrator trace: 5s total, only fast spans. Must NOT show up in slow=llm.
+    orchestrator_id = _ingest_trace_with_spans(
+        client,
+        api_key,
+        client_trace_id="orchestrator",
+        trace_name="agent.run",
+        trace_duration_ms=5000,
+        spans=[
+            _span("agent.plan", "tool", 0, 50),
+            _span("agent.act", "tool", 60, 120),
+        ],
+    )
+    # LLM trace: short total, but the llm_call span itself is slow.
+    llm_id = _ingest_trace_with_spans(
+        client,
+        api_key,
+        client_trace_id="slow-llm",
+        trace_name="qa.compose",
+        trace_duration_ms=3500,
+        spans=[
+            _span("openai.chat", "llm_call", 0, 3400),
+        ],
+    )
+
+    response = client.get(
+        f"/v1/traces?project_id={project_id}&slow_kind=llm&duration_gt=2000",
+        headers=headers,
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    ids = {row["id"] for row in body["data"]}
+    assert llm_id in ids
+    assert orchestrator_id not in ids
+    item = next(row for row in body["data"] if row["id"] == llm_id)
+    assert item["slow_reason"] == "llm"
+
+
+def test_slow_kind_default_is_trace_duration() -> None:
+    client = TestClient(app)
+    headers, project_id, api_key = _bootstrap(client)
+
+    fast_id = _ingest_trace_with_spans(
+        client,
+        api_key,
+        client_trace_id="fast",
+        trace_name="qa.compose",
+        trace_duration_ms=500,
+        spans=[_span("openai.chat", "llm_call", 0, 480)],
+    )
+    slow_id = _ingest_trace_with_spans(
+        client,
+        api_key,
+        client_trace_id="slow",
+        trace_name="agent.run",
+        trace_duration_ms=4000,
+        spans=[_span("agent.act", "tool", 0, 3900)],
+    )
+
+    response = client.get(
+        f"/v1/traces?project_id={project_id}&duration_gt=2000",
+        headers=headers,
+    )
+    body = response.json()
+    ids = {row["id"] for row in body["data"]}
+    assert slow_id in ids and fast_id not in ids
+    item = next(row for row in body["data"] if row["id"] == slow_id)
+    assert item["slow_reason"] == "trace"
+
+
+def test_rag_filter_matches_traces_via_span_name() -> None:
+    client = TestClient(app)
+    headers, project_id, api_key = _bootstrap(client)
+
+    # Non-RAG trace name but has a rag.retrieve span — must appear under rag=true.
+    rag_id = _ingest_trace_with_spans(
+        client,
+        api_key,
+        client_trace_id="rag-via-span",
+        trace_name="agent.run",  # not rag.*
+        trace_duration_ms=800,
+        spans=[
+            _span("rag.retrieve", "retrieval", 10, 200),
+            _span("openai.chat", "llm_call", 210, 700),
+        ],
+    )
+    # Plain agent trace — no RAG evidence — must NOT appear.
+    plain_id = _ingest_trace_with_spans(
+        client,
+        api_key,
+        client_trace_id="plain",
+        trace_name="agent.run",
+        trace_duration_ms=400,
+        spans=[_span("openai.chat", "llm_call", 0, 380)],
+    )
+
+    response = client.get(f"/v1/traces?project_id={project_id}&rag=true", headers=headers)
+    ids = {row["id"] for row in response.json()["data"]}
+    assert rag_id in ids
+    assert plain_id not in ids

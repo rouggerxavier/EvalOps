@@ -159,7 +159,22 @@ export function TracesTable({ org, project, rows }: Props) {
                           : "var(--fg-2)",
                     }}
                   >
-                    {formatLatency(trace.duration_ms)}
+                    <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
+                      <span>{formatLatency(trace.duration_ms)}</span>
+                      {trace.slow_reason === "llm" || trace.slow_reason === "retrieval" ? (
+                        <span
+                          className="tag"
+                          title={
+                            trace.slow_reason === "llm"
+                              ? "Span LLM ultrapassou o limiar de lentidão"
+                              : "Span de retrieval ultrapassou o limiar de lentidão"
+                          }
+                          style={{ fontSize: 9, padding: "1px 4px" }}
+                        >
+                          {trace.slow_reason === "llm" ? "LLM lento" : "retrieval lento"}
+                        </span>
+                      ) : null}
+                    </div>
                   </td>
                   <td className="t__num t__muted">
                     {trace.total_tokens_in.toLocaleString("pt-BR")}

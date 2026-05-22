@@ -134,6 +134,7 @@ export async function getTraces(opts: {
   name?: string;
   cursor?: string;
   duration_gt?: number;
+  slow_kind?: "trace" | "llm" | "retrieval";
   rag?: boolean;
 }): Promise<TraceListResponse> {
   const params = new URLSearchParams({
@@ -145,6 +146,7 @@ export async function getTraces(opts: {
   if (opts.name) params.set("name", opts.name);
   if (opts.cursor) params.set("cursor", opts.cursor);
   if (opts.duration_gt !== undefined) params.set("duration_gt", String(opts.duration_gt));
+  if (opts.slow_kind) params.set("slow_kind", opts.slow_kind);
   if (opts.rag !== undefined) params.set("rag", String(opts.rag));
   return fetchJson<TraceListResponse>(`/traces?${params.toString()}`);
 }

@@ -28,6 +28,7 @@ export type Trace = {
   redacted: boolean;
   created_at: string;
   last_score?: number | null;
+  slow_reason?: "trace" | "llm" | "retrieval" | null;
 };
 
 export type TraceListResponse = {
