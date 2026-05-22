@@ -203,7 +203,21 @@ docker compose up worker
 
 ---
 
-### Fase B — Worker de replay
+### Fase B — Worker de replay — **✅ IMPLEMENTADO (2026-05-21)**
+
+Status: `app/workers/replay_worker.py` criado com:
+- `_load_trace_or_fail` / `_find_primary_llm_span` (filtra `type in ("llm_call","llm")` OR `name ilike "llm.%"`, ordena por `started_at` asc)
+- `_build_messages` aplica substituição jinja2 com `{{var_name}}` (decisão §B-2); tolera entries não-dict e content ausente
+- `_call_provider` envolve `llm_judge.call_llm` em `asyncio.to_thread`; tokens via `estimate_tokens` (sync call retorna só texto); custo via `compute_cost_usd`
+- `_ingest_replay_result` cria novo `Span` no placeholder + atualiza totais + commita
+- `_set_replay_status` grava `replay_status`, `replay_started_at`, `replay_finished_at`, `replay_error`
+- Exceptions do provider caem em `failed` com `reason=ExceptionClassName` (decisão §B-1: sem propagar)
+
+`WorkerSettings.functions = [replay_trace]`.
+
+Testes em `tests/test_replay_worker.py` (6 testes): happy path → completed; sem span LLM → failed com `no_llm_span_found`; substituição jinja `{{nome}}→Alice`; override de modelo via `rerun_model`; erro do provider → failed; `_build_messages` lida com entries inválidas. Suite: 316 passed.
+
+
 
 **Escopo:** implementar a função `replay_trace` que o worker executa. Lê os spans LLM
 do trace original, reexecuta a chamada ao provider, e faz ingest do resultado no

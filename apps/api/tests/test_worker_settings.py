@@ -9,10 +9,11 @@ import importlib
 import os
 
 
-def test_worker_settings_loads_with_empty_function_list() -> None:
+def test_worker_settings_registers_replay_trace() -> None:
+    from app.workers.replay_worker import replay_trace
     from app.workers.settings import WorkerSettings
 
-    assert WorkerSettings.functions == []
+    assert replay_trace in WorkerSettings.functions
     assert callable(WorkerSettings.on_startup)
     assert callable(WorkerSettings.on_shutdown)
     assert WorkerSettings.max_jobs >= 1
