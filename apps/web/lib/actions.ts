@@ -17,6 +17,7 @@ import {
   createDatasetItems,
   createExperiment,
   createPrompt,
+  createProject,
   createPromptVersion,
   createTraceFeedback,
   createRubric,
@@ -584,6 +585,41 @@ export async function setEnvironmentAction(formData: FormData): Promise<void> {
   });
   revalidatePath(currentPath);
   redirectWithMessage(currentPath, { env: environment });
+}
+
+export async function createProjectAction(formData: FormData): Promise<void> {
+  const org = String(formData.get("org") ?? "");
+  const project = String(formData.get("project") ?? "");
+  const orgId = String(formData.get("organization_id") ?? "");
+  const name = String(formData.get("name") ?? "").trim();
+  const slug = String(formData.get("slug") ?? "").trim();
+  const descriptionRaw = String(formData.get("description") ?? "");
+  const description = descriptionRaw.trim() === "" ? null : descriptionRaw;
+  const defaultEnvironment = String(formData.get("default_environment") ?? "prod") as "dev" | "staging" | "prod";
+  const errorPath = org && project ? `/o/${org}/p/${project}/settings` : org ? `/o/${org}` : "/";
+
+  if (!orgId || !name || !slug) {
+    redirectWithMessage(errorPath, { error: "Informe organização, nome e slug do projeto." });
+  }
+
+  let created: Awaited<ReturnType<typeof createProject>> | null = null;
+  let errorMsg: string | null = null;
+  try {
+    created = await createProject({
+      organization_id: orgId,
+      name,
+      slug,
+      description,
+      default_environment: defaultEnvironment,
+    });
+    revalidatePath(`/o/${org}`);
+  } catch (error) {
+    errorMsg = messageFromActionError(error, "Failed to create project");
+  }
+  if (created && org) {
+    redirectWithMessage(`/o/${org}/p/${created.slug}/settings`, { created: "1" });
+  }
+  redirectWithMessage(errorPath, { error: errorMsg ?? "Failed to create project" });
 }
 
 export async function patchProjectAction(formData: FormData): Promise<void> {

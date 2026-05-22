@@ -478,6 +478,19 @@ export async function getProjects(orgId: string): Promise<{ data: Project[] }> {
   return fetchJson<{ data: Project[] }>(`/projects?${params.toString()}`);
 }
 
+export async function createProject(payload: {
+  organization_id: string;
+  name: string;
+  slug: string;
+  description?: string | null;
+  default_environment?: "dev" | "staging" | "prod";
+}): Promise<Project> {
+  return requestJson<Project>(`/projects`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
 export async function patchProject(projectId: string, payload: {
   name?: string;
   description?: string | null;

@@ -1,11 +1,11 @@
 import Link from "next/link";
-import { AlertCircle, CheckCircle2, Cog, ExternalLink, Users } from "lucide-react";
+import { AlertCircle, CheckCircle2, Cog, ExternalLink, Plus, Users } from "lucide-react";
 
 import { AuthRequiredPanel } from "@/components/AuthRequiredPanel";
 import { Badge } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
 import { Copyable } from "@/components/ui/Copyable";
-import { patchProjectAction } from "@/lib/actions";
+import { createProjectAction, patchProjectAction } from "@/lib/actions";
 import {
   getMembers,
   getProjects,
@@ -18,7 +18,7 @@ import type { Member, Project } from "@/lib/types";
 
 type Props = {
   params: Promise<{ org: string; project: string }>;
-  searchParams: Promise<{ updated?: string; error?: string }>;
+  searchParams: Promise<{ updated?: string; created?: string; error?: string }>;
 };
 
 export default async function SettingsPage({ params, searchParams }: Props) {
@@ -39,6 +39,7 @@ export default async function SettingsPage({ params, searchParams }: Props) {
   const members = membersRes.data;
   const safeQueryError = qp.error ? safeErrorMessage(qp.error, "Falha ao salvar.") : null;
   const updated = qp.updated === "1";
+  const created = qp.created === "1";
 
   const billingHref = `/o/${org}/usage`;
 
@@ -64,6 +65,16 @@ export default async function SettingsPage({ params, searchParams }: Props) {
           <div>
             <div className="attention__title">Projeto atualizado</div>
             <div className="attention__desc">Alterações persistidas em /v1/projects.</div>
+          </div>
+        </div>
+      ) : null}
+
+      {created ? (
+        <div className="attention" style={{ borderColor: "rgba(106,224,168,0.4)" }}>
+          <div className="attention__icon"><CheckCircle2 size={14} /></div>
+          <div>
+            <div className="attention__title">Projeto criado</div>
+            <div className="attention__desc">Você foi redirecionado para o novo projeto.</div>
           </div>
         </div>
       ) : null}
@@ -193,6 +204,73 @@ export default async function SettingsPage({ params, searchParams }: Props) {
             <Link className="btn btn--sm btn--ghost" href={billingHref}>
               <ExternalLink size={12} /> Abrir Usage · {resolved.org_slug}
             </Link>
+          </Card>
+
+          <Card title="Novo projeto" subtitle="POST /v1/projects">
+            <p className="muted" style={{ margin: 0, marginBottom: 10, fontSize: 12 }}>
+              Crie outro projeto na mesma organização. Após criar, você é
+              levado às configurações do projeto novo.
+            </p>
+            <form
+              action={createProjectAction}
+              style={{ display: "flex", flexDirection: "column", gap: 10 }}
+            >
+              <input type="hidden" name="org" value={org} />
+              <input type="hidden" name="project" value={project} />
+              <input type="hidden" name="organization_id" value={resolved.org_id} />
+
+              <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                <span style={{ fontSize: 11, color: "var(--fg-3)" }}>Nome</span>
+                <input
+                  className="filter-input"
+                  name="name"
+                  required
+                  minLength={2}
+                  placeholder="Support Bot"
+                  style={{ height: 32, padding: "0 10px" }}
+                />
+              </label>
+
+              <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                <span style={{ fontSize: 11, color: "var(--fg-3)" }}>Slug</span>
+                <input
+                  className="filter-input"
+                  name="slug"
+                  required
+                  minLength={2}
+                  pattern="[a-z0-9-]+"
+                  placeholder="support-bot"
+                  style={{ height: 32, padding: "0 10px" }}
+                />
+              </label>
+
+              <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                <span style={{ fontSize: 11, color: "var(--fg-3)" }}>Descrição</span>
+                <input
+                  className="filter-input"
+                  name="description"
+                  placeholder="(opcional)"
+                  style={{ height: 32, padding: "0 10px" }}
+                />
+              </label>
+
+              <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                <span style={{ fontSize: 11, color: "var(--fg-3)" }}>Environment padrão</span>
+                <select
+                  className="filter-select"
+                  name="default_environment"
+                  defaultValue="prod"
+                >
+                  <option value="dev">dev</option>
+                  <option value="staging">staging</option>
+                  <option value="prod">prod</option>
+                </select>
+              </label>
+
+              <button type="submit" className="btn btn--sm btn--primary" style={{ justifyContent: "center" }}>
+                <Plus size={12} /> Criar projeto
+              </button>
+            </form>
           </Card>
 
         </div>
