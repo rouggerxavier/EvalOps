@@ -119,9 +119,9 @@ export function EvoTopbar({
           ) : null}
         </div>
 
-        {projects.length > 1 ? (
-          <WorkspaceSwitcher current={`${org}/${project}`} projects={projects} />
-        ) : null}
+        {/* Always render the switcher so the "+ Novo projeto…" entry is
+            reachable even from accounts with a single project. */}
+        <WorkspaceSwitcher current={`${org}/${project}`} projects={projects} />
         <NotificationsBell
           notifications={notifications}
           org={org}

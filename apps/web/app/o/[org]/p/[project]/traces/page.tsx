@@ -2,6 +2,7 @@ import Link from "next/link";
 import { AlertCircle, Clock, Download, Flag, Layers, Search } from "lucide-react";
 
 import { AuthRequiredPanel } from "@/components/AuthRequiredPanel";
+import { getActiveEnvironment } from "@/lib/active-env";
 import { getTraces, hasAuthToken, resolveProject } from "@/lib/api";
 
 import { TracesAutoRefresh } from "./traces-auto-refresh";
@@ -43,10 +44,11 @@ export default async function TracesListPage({ params, searchParams }: Props) {
 
   const tabStatus = tab === "errors" ? "error" : tab === "partial" ? "partial" : qp.status;
   const slowKind: SlowKind = tab === "slow" ? parseSlowKind(qp.slow_kind) : "trace";
+  const environment = await getActiveEnvironment(qp.environment);
   const traces = await getTraces({
     projectId: resolved.project_id,
     status: tabStatus,
-    environment: qp.environment,
+    environment,
     name: tab !== "rag" ? qp.name : undefined,
     limit: 50,
     cursor: qp.cursor,
@@ -62,9 +64,15 @@ export default async function TracesListPage({ params, searchParams }: Props) {
 
   const tabBase = `/o/${org}/p/${project}/traces`;
   const baseParams = new URLSearchParams();
-  if (qp.environment) baseParams.set("environment", qp.environment);
+  // Reflect the *resolved* environment (cookie fallback included) so paginated
+  // and refresh links keep the same filter the user is actually seeing.
+  if (environment) baseParams.set("environment", environment);
   if (qp.name && tab !== "rag") baseParams.set("name", qp.name);
   if (qp.status && tab !== "errors" && tab !== "partial") baseParams.set("status", qp.status);
+  // Persist slow_kind across pagination, filter submit and refresh links so a
+  // user that picked "LLM call" / "Retrieval" doesn't silently fall back to
+  // "Trace inteiro" after the next click.
+  if (tab === "slow" && slowKind !== "trace") baseParams.set("slow_kind", slowKind);
 
   const tabHref = (t: Tab) => {
     const p = new URLSearchParams(baseParams);
@@ -188,6 +196,9 @@ export default async function TracesListPage({ params, searchParams }: Props) {
 
       <form method="get" className="filters" action={tabBase}>
         {tab !== "all" ? <input type="hidden" name="tab" value={tab} /> : null}
+        {tab === "slow" && slowKind !== "trace" ? (
+          <input type="hidden" name="slow_kind" value={slowKind} />
+        ) : null}
         <label className="filter-group">
           <Search size={12} />
           <input

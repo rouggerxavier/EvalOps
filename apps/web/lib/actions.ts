@@ -584,7 +584,10 @@ export async function setEnvironmentAction(formData: FormData): Promise<void> {
     maxAge: 60 * 60 * 24 * 180,
   });
   revalidatePath(currentPath);
-  redirectWithMessage(currentPath, { env: environment });
+  // Pages (overview, traces, exports) read `searchParams.environment`. Using
+  // the same key here makes the topbar selector immediately filter the page
+  // data on top of persisting the choice in the cookie for future visits.
+  redirectWithMessage(currentPath, { environment });
 }
 
 export async function createProjectAction(formData: FormData): Promise<void> {

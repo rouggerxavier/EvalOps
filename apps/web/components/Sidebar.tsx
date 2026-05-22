@@ -85,13 +85,16 @@ export function Sidebar({ org, project }: { org: string; project: string }) {
       </nav>
 
       <div className="sb-footer">
-        <div className="sb-status">
-          <span className="sb-status__pulse" aria-hidden="true" />
+        {/* Status was previously a hardcoded "online — ingestão pronta" string
+            even when the API was down. Now it links to /health, which probes
+            liveness + readiness in real time. No claim of "online" lives in
+            the shell unless that probe confirms it. */}
+        <Link href="/health" className="sb-status" prefetch={false}>
           <span style={{ minWidth: 0 }}>
-            <span className="sb-status__name">SDK Python</span>
-            <span className="sb-status__meta">online - ingestao pronta</span>
+            <span className="sb-status__name">Status do EvalOps</span>
+            <span className="sb-status__meta">probes vivos em /health</span>
           </span>
-        </div>
+        </Link>
       </div>
     </aside>
   );

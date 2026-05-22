@@ -193,6 +193,12 @@ const SAFE_HTTP_MESSAGES = {
   429: "Muitas requisições. Aguarde e tente novamente.",
 };
 
+const SAFE_DETAIL_MESSAGES = {
+  project_slug_taken: "Este slug já está em uso nesta organização. Escolha outro.",
+  organization_slug_taken: "Este slug de organização já está em uso. Escolha outro.",
+  api_key_not_revoked: "Revogue a chave antes de excluí-la.",
+};
+
 const GENERIC_ERROR = "Algo deu errado. Tente novamente.";
 
 const LEAK_PATTERNS = [
@@ -219,9 +225,15 @@ const LEAK_PATTERNS = [
 ];
 
 function sanitizeApiError(message) {
-  const match = /^API (\d{3}):/.exec(message);
+  const match = /^API (\d{3}):\s*(.*)$/.exec(message);
   if (match) {
     const httpStatus = parseInt(match[1], 10);
+    const body = match[2];
+    const detailMatch = /"detail"\s*:\s*"([a-z0-9_]+)"/i.exec(body);
+    if (detailMatch) {
+      const safeDetail = SAFE_DETAIL_MESSAGES[detailMatch[1]];
+      if (safeDetail) return safeDetail;
+    }
     return SAFE_HTTP_MESSAGES[httpStatus] ?? GENERIC_ERROR;
   }
   for (const pattern of LEAK_PATTERNS) {
@@ -255,9 +267,19 @@ test("G-23: 401 maps to friendly auth message", () => {
   assert.equal(sanitizeApiError(msg), SAFE_HTTP_MESSAGES[401]);
 });
 
-test("G-23: 409 maps to safe conflict message", () => {
-  const msg = "API 409: {\"detail\":\"organization_slug_taken\"}";
+test("G-23: 409 without a known detail keeps the generic conflict copy", () => {
+  const msg = "API 409: {\"detail\":\"something_unmapped\"}";
   assert.equal(sanitizeApiError(msg), SAFE_HTTP_MESSAGES[409]);
+});
+
+test("G-23: 409 with project_slug_taken returns the specific slug-in-use copy", () => {
+  const msg = "API 409: {\"detail\":\"project_slug_taken\"}";
+  assert.equal(sanitizeApiError(msg), SAFE_DETAIL_MESSAGES.project_slug_taken);
+});
+
+test("G-23: 409 with organization_slug_taken returns the org-slug copy", () => {
+  const msg = "API 409: {\"detail\":\"organization_slug_taken\"}";
+  assert.equal(sanitizeApiError(msg), SAFE_DETAIL_MESSAGES.organization_slug_taken);
 });
 
 test("G-23: 410 maps to export-expired message", () => {

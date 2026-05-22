@@ -27,6 +27,14 @@ const SAFE_HTTP_MESSAGES: Record<number, string> = {
   429: "Muitas requisições. Aguarde e tente novamente.",
 };
 
+// Known FastAPI ``detail`` codes that should override the generic status copy.
+// Keep this list tight — only codes vetted as safe (no PII, no schema leak).
+const SAFE_DETAIL_MESSAGES: Record<string, string> = {
+  project_slug_taken: "Este slug já está em uso nesta organização. Escolha outro.",
+  organization_slug_taken: "Este slug de organização já está em uso. Escolha outro.",
+  api_key_not_revoked: "Revogue a chave antes de excluí-la.",
+};
+
 export const GENERIC_ERROR = "Algo deu errado. Tente novamente.";
 
 const LEAK_PATTERNS = [
@@ -61,9 +69,18 @@ const LEAK_PATTERNS = [
  * raw text is never returned.
  */
 export function sanitizeApiError(message: string): string {
-  const match = /^API (\d{3}):/.exec(message);
+  const match = /^API (\d{3}):\s*(.*)$/.exec(message);
   if (match) {
     const httpStatus = parseInt(match[1], 10);
+    const body = match[2];
+    // Prefer a vetted, specific copy when the backend returned a known
+    // ``detail`` code (e.g. ``project_slug_taken``). Falls through to the
+    // generic per-status message if the code isn't on the allowlist.
+    const detailMatch = /"detail"\s*:\s*"([a-z0-9_]+)"/i.exec(body);
+    if (detailMatch) {
+      const safeDetail = SAFE_DETAIL_MESSAGES[detailMatch[1]];
+      if (safeDetail) return safeDetail;
+    }
     return SAFE_HTTP_MESSAGES[httpStatus] ?? GENERIC_ERROR;
   }
   for (const pattern of LEAK_PATTERNS) {

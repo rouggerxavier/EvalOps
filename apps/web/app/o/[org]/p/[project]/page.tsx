@@ -31,6 +31,7 @@ import {
   hasAuthToken,
   resolveProject,
 } from "@/lib/api";
+import { getActiveEnvironment } from "@/lib/active-env";
 import { formatCost, formatLatency, formatPercent } from "@/lib/format";
 import { getTraceCauseLabel, getTraceModelLabel } from "@/lib/trace-display";
 import type { Trace } from "@/lib/types";
@@ -104,7 +105,7 @@ const CAUSE_LABELS: Record<string, string> = {
 export default async function ProjectOverviewPage({ params, searchParams }: Props) {
   const { org, project } = await params;
   const qp = await searchParams;
-  const environment = qp.environment;
+  const environment = await getActiveEnvironment(qp.environment);
   const window_ = parseWindow(qp.window);
 
   if (!(await hasAuthToken())) return <AuthRequiredPanel layout="main" />;

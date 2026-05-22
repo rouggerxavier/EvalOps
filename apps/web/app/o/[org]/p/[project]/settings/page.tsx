@@ -206,6 +206,7 @@ export default async function SettingsPage({ params, searchParams }: Props) {
             </Link>
           </Card>
 
+          <div id="new-project" />
           <Card title="Novo projeto" subtitle="POST /v1/projects">
             <p className="muted" style={{ margin: 0, marginBottom: 10, fontSize: 12 }}>
               Crie outro projeto na mesma organização. Após criar, você é
