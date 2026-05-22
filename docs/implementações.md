@@ -391,21 +391,17 @@ Definition of done:
 
 ## Status de implementação (branch `feat/front-back-product-implementation`)
 
-| Fase | Status | Commit principal |
-|------|--------|------------------|
+| Fase | Status | Commits |
+|------|--------|---------|
 | 0 — Prep | ok | — |
-| 1 — Overview window | ok | `be68ec6` |
-| 2 — Lentas + RAG | parcial | `f7314b2` |
-| 3 — Delete API key | ok | PR #16 + `67bcccb` |
-| 4 — Multi-projeto | ok | `c6cba23` |
-| 5 — Notif + ambiente + /health | ok | `1f31e6a` |
-| 6 — Custo + exports | parcial | `698b6a3` |
-| 7 — Copy + QA | ok (com TODOs) | este commit |
+| 1 — Overview window | ok | `be68ec6` + `d93d632` (bug 1.1) |
+| 2 — Lentas + RAG | ok | `f7314b2` + `2388608` (bug 2.1) + `c084831` (bug 2.2) |
+| 3 — Delete API key | ok | PR #16 + `67bcccb` + `1a707ed` (bug 3.1) |
+| 4 — Multi-projeto | ok | `c6cba23` + `c084831` (bugs 4.1 / 4.2) |
+| 5 — Notif + ambiente + /health | ok | `1f31e6a` + `c084831` (bugs 5.1 / 5.2) |
+| 6 — Custo + exports | ok | `698b6a3` + `0a63dea` (bugs 6.1 / 6.2) |
+| 7 — Copy + QA | ok | `ab2b1b5` + `1a707ed` (bug 7.2) + este commit (bug 7.1) |
 
-Pendências conhecidas (acompanhar em
-`docs/audits/front-back-product-implementation-review-bugs.md`):
-- Fase 1: `cost_by_day` pode divergir dos KPIs em `window=24h` cruzando
-  meia-noite.
-- Fase 2: contrato RAG ainda não cobre `response.finalize` e chaves de
-  metadata RAG na lista (cobertos só no detalhe).
-- Fase 6: origem do custo `provided` vs `priced` exige inspeção span-level.
+Todos os bugs do code review estão fechados; ver
+`docs/audits/front-back-product-implementation-review-bugs.md` para a
+correlação bug → commit.

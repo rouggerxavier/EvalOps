@@ -7,13 +7,32 @@ Plano: [docs/implementações.md](../implementações.md)
 Auditoria base: [front-back-product-audit-2026-05-21.md](./front-back-product-audit-2026-05-21.md)
 Branch: `feat/front-back-product-implementation`
 
+## Resumo
+
+Todos os bugs do review foram fechados:
+
+| Bug | Status | Commit de correção |
+|-----|--------|--------------------|
+| 1.1 — `cost_by_day` x KPIs em 24h | fechado | `d93d632` |
+| 2.1 — contrato RAG lista x detalhe | fechado | `2388608` |
+| 2.2 — `slow_kind` não persiste | fechado | `c084831` |
+| 3.1 — teste keys frágil | fechado | `1a707ed` |
+| 4.1 — Novo projeto fora do switcher | fechado | `c084831` |
+| 4.2 — slug duplicado genérico | fechado | `c084831` |
+| 5.1 — env não filtra dados | fechado | `c084831` |
+| 5.2 — sidebar `online` estático | fechado | `c084831` |
+| 6.1 — `_classify_cost_source` erra casos | fechado | `0a63dea` |
+| 6.2 — `cost_source` ausente no detalhe | fechado | `0a63dea` |
+| 7.1 — tabela de status do plano | fechado | este commit |
+| 7.2 — `npm run test` web falhando | fechado | `1a707ed` |
+
 ## Fase 1 - Overview window
 
 Commit revisado: `be68ec6` - `feat(analytics): aplica window=24h|7d|30d em /analytics/overview`
 
 ### Bug 1.1 - `cost_by_day` pode divergir dos KPIs em `window=24h`
 
-Status: aberto
+Status: fechado
 
 Se a janela de 24h atravessar meia-noite, os KPIs contam traces de hoje e de
 ontem, mas `cost_by_day` pode retornar apenas o dia mais recente porque o
@@ -39,7 +58,7 @@ Commit revisado: `f7314b2` - `feat(traces): classifica lentidão por origem (tra
 
 ### Bug 2.1 - Filtro RAG da lista ainda não usa o mesmo contrato do detalhe
 
-Status: aberto
+Status: fechado
 
 O commit adiciona matching por spans `rag.%`, mas o detalhe considera mais
 sinais como RAG: spans `response.finalize` e metadados como
@@ -65,7 +84,7 @@ Correção esperada:
 
 ### Bug 2.2 - `slow_kind` não é preservado em paginação e filtros
 
-Status: aberto
+Status: fechado
 
 As sub-abas de lentidão geram URL com `slow_kind`, mas `baseParams` não guarda
 esse parâmetro. Com isso, ao ir para próxima página, voltar para primeira página
@@ -96,7 +115,7 @@ Commit revisado: `67bcccb` - `test(keys): atualiza source test de keys para cobr
 
 ### Bug 3.1 - Teste source nao garante que `Excluir` fica apenas no ramo revogado
 
-Status: aberto
+Status: fechado
 
 O produto atual renderiza `Revogar` para chave ativa e `Excluir` para chave
 revogada, mas o teste adicionado no commit nao valida essa relacao de forma
@@ -132,7 +151,7 @@ Commit revisado: `c6cba23` - `feat(projects): UI para criar novo projeto direto 
 
 ### Bug 4.1 - `Novo projeto` nao foi conectado ao workspace/sidebar
 
-Status: aberto
+Status: fechado
 
 O commit cria o formulario de novo projeto dentro de Settings, mas nao adiciona
 a entrada de criacao no workspace switcher ou na sidebar, que era o ponto
@@ -164,7 +183,7 @@ Correção esperada:
 
 ### Bug 4.2 - Slug duplicado ainda retorna mensagem generica
 
-Status: aberto
+Status: fechado
 
 O backend retorna `project_slug_taken` para slug duplicado, mas o frontend
 sanitiza todo erro HTTP 409 para uma mensagem generica de conflito. Isso evita
@@ -197,7 +216,7 @@ Commit revisado: `1f31e6a` - `feat(shell): notif "Marcar lidas", seletor de ambi
 
 ### Bug 5.1 - Seletor de ambiente muda o chip, mas nao muda os dados
 
-Status: aberto
+Status: fechado
 
 O seletor do topbar passou a gravar `evalops_env` em cookie e redirecionar com
 `env={valor}`, mas as paginas que filtram dados leem `searchParams.environment`.
@@ -227,7 +246,7 @@ Correção esperada:
 
 ### Bug 5.2 - Status estatico do sidebar continua dizendo `online`
 
-Status: aberto
+Status: fechado
 
 O commit criou `/health`, mas manteve no sidebar o status estatico `SDK Python`
 `online - ingestao pronta` sem depender do probe real. Isso conflita com o
@@ -255,7 +274,7 @@ Commit revisado: `698b6a3` - `feat(exports/cost): file_size_bytes em exports + o
 
 ### Bug 6.1 - Origem do custo e inferida do agregado e classifica casos reais errado
 
-Status: aberto
+Status: fechado
 
 `_classify_cost_source(trace)` olha apenas `total_cost_usd` e tokens agregados.
 Com isso, um custo enviado pelo cliente em `span.cost_usd` vira `priced`, e um
@@ -285,7 +304,7 @@ Correção esperada:
 
 ### Bug 6.2 - Origem de custo/tokens nao aparece no detalhe do trace
 
-Status: aberto
+Status: fechado
 
 O badge de origem foi adicionado apenas na tabela de traces. A pagina de detalhe
 continua exibindo `Custo` e tokens sem informar se o valor foi precificado,
@@ -316,7 +335,7 @@ Commit revisado: `ab2b1b5` - `chore(copy): renomeia/remova ações sem efeito re
 
 ### Bug 7.1 - Tabela de status do plano marca fases incompletas como `ok`
 
-Status: aberto
+Status: fechado
 
 O commit atualiza `docs/implementações.md` com status final, mas marca fases com
 bugs abertos como `ok` e deixa pendencias conhecidas incompletas.
@@ -340,7 +359,7 @@ Correção esperada:
 
 ### Bug 7.2 - `npm run test` do web ainda falha no estado final da branch
 
-Status: aberto
+Status: fechado
 
 Mesmo depois do commit de copy/QA, o comando padrao de testes do pacote web nao
 fecha. A maioria das falhas parece vir de testes source antigos que ainda
