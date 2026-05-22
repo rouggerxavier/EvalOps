@@ -457,7 +457,16 @@ apps/web/lib/types.ts  (verificar se TraceMetadata cobre replay_status)
 
 ---
 
-### Fase E — Testes e observabilidade
+### Fase E — Testes e observabilidade — **✅ IMPLEMENTADO (2026-05-21)**
+
+Status:
+- `tests/test_replay_integration.py` (3 testes pytest) cobre o fluxo completo via função (sem precisar Redis): POST `/rerun` enfileira (Fase C verifica via `fake_arq_pool`), depois invoca `replay_trace(ctx, original_id, new_id)` direto (como arq faria), valida estado final no DB (`status="ok"`, `duration_ms ≥ 0`, `total_tokens_in/out > 0`, `replay_status="completed"`, span criado com `messages_out` corretos). Critério "zero zombies partial com duration_ms=0" validado por teste dedicado.
+- Logging estruturado: já adicionado em Fase B (`replay.started`, `replay.completed`, `replay.failed`). Teste de integração captura via caplog (com propagate=True temporário porque `configure_logging` no lifespan seta `evalops.propagate=False`).
+- `apps/web/e2e/rerun-replay.spec.ts` — Playwright e2e completo: cria projeto, ingere trace via SDK, dispara rerun, faz polling em `/v1/traces/{id}` por até 30s aguardando `metadata.replay_status === "completed"`, depois valida o badge `replay · completed` no detalhe via browser. Skip automático quando `/health/liveness` está offline (precisa do stack `docker compose up`).
+
+Suite pytest: 321 passed.
+
+
 
 **Escopo:** testes de integração end-to-end e logging estruturado no worker.
 

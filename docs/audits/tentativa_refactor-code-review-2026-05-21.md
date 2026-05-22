@@ -955,7 +955,7 @@ Teste `test_double_flag_same_reason_returns_existing`.
 
 Antes de marcar como pronto:
 
-- [ ] Bug #1: **adiado** — spec completa em `docs/plans/evalops-async-worker-replay-spec.md`. Implementar após correção dos demais bugs (requer Fase A–E: arq + worker + rota + front + testes, ~11h).
+- [x] Bug #1: **CORRIGIDO** — Fases A-E da spec `docs/plans/evalops-async-worker-replay-spec.md` implementadas: arq dep + worker container (A); `replay_trace` chama provider e ingere span (B); rota `rerun_trace` enfileira job real e falha 503 se Redis down (C); badge dinâmico de `replay_status` no detalhe do trace (D); testes de integração + Playwright e2e + logging estruturado (E). Suite 321 passed.
 - [x] Bug #2: `listExports` integrado em `exports/page.tsx` — lista vem do servidor, mesclada com `knownIds`. Card "Contrato atual" removido. Coluna "Tamanho" mostra `—` (sem `file_size_bytes` no model — migration futura).
 - [x] Bug #3: Bell e WorkspaceSwitcher montados em `EvoTopbar.tsx`/`AppShell.tsx`. **Pendência:** `markRead` Server Action e fechar Bug #8 antes de adicionar.
 - [x] Bug #4: backend aceita `duration_gt` / `rag=true`, frontend não filtra em JS. Filtro RAG portátil SQLite (`("true","1")`). **Pendência:** endpoint global `/traces/segments` para counts cross-tab.
