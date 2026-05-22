@@ -29,6 +29,7 @@ export type Trace = {
   created_at: string;
   last_score?: number | null;
   slow_reason?: "trace" | "llm" | "retrieval" | null;
+  cost_source?: "priced" | "estimated" | "unknown" | null;
 };
 
 export type TraceListResponse = {
@@ -288,6 +289,7 @@ export type ExportJob = {
   filters: Record<string, unknown>;
   row_count: number;
   file_path: string | null;
+  file_size_bytes: number | null;
   error: string | null;
   expires_at: string | null;
   created_by: string | null;

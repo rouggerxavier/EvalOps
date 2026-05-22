@@ -102,6 +102,10 @@ def create_jsonl_export(
         job.status = "completed"
         job.file_path = str(out_path)
         job.row_count = row_count
+        try:
+            job.file_size_bytes = out_path.stat().st_size
+        except OSError:
+            job.file_size_bytes = None
         job.expires_at = utcnow() + timedelta(days=7)
         job.completed_at = utcnow()
         apply_usage_with_quota(db, project, exports=1)

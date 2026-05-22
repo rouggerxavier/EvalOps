@@ -483,6 +483,7 @@ class ExportJobOut(BaseModel):
     filters: dict
     row_count: int
     file_path: str | None = None
+    file_size_bytes: int | None = None
     error: str | None = None
     expires_at: datetime | None = None
     created_by: str | None = None

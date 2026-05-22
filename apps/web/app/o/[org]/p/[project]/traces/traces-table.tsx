@@ -180,7 +180,24 @@ export function TracesTable({ org, project, rows }: Props) {
                     {trace.total_tokens_in.toLocaleString("pt-BR")}
                     <span className="faint">/{trace.total_tokens_out.toLocaleString("pt-BR")}</span>
                   </td>
-                  <td className="t__num">{formatCost(trace.total_cost_usd)}</td>
+                  <td className="t__num">
+                    <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
+                      <span>{formatCost(trace.total_cost_usd)}</span>
+                      {trace.cost_source && trace.cost_source !== "priced" ? (
+                        <span
+                          className="tag"
+                          title={
+                            trace.cost_source === "estimated"
+                              ? "Tokens registrados, mas provider/model sem preço — custo não é uma medição real"
+                              : "Sem tokens nem preço — custo desconhecido"
+                          }
+                          style={{ fontSize: 9, padding: "1px 4px" }}
+                        >
+                          {trace.cost_source === "estimated" ? "estimado" : "sem preço"}
+                        </span>
+                      ) : null}
+                    </div>
+                  </td>
                   <td>
                     {trace.last_score === null || trace.last_score === undefined ? (
                       <span className="faint mono">—</span>

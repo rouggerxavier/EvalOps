@@ -92,7 +92,39 @@ Correção esperada:
 
 ## Fase 3 - API key revogada
 
-Commit revisado: pendente
+Commit revisado: `67bcccb` - `test(keys): atualiza source test de keys para cobrir delete + remove asserts stale`
+
+### Bug 3.1 - Teste source nao garante que `Excluir` fica apenas no ramo revogado
+
+Status: aberto
+
+O produto atual renderiza `Revogar` para chave ativa e `Excluir` para chave
+revogada, mas o teste adicionado no commit nao valida essa relacao de forma
+estrutural. Ele procura `!key.revoked_at` seguido de `revokeApiKeyAction`, e
+depois procura `deleteApiKeyAction`/`Excluir` em qualquer ponto da pagina. Uma
+regressao que invertesse os formularios entre os ramos ativo e revogado ainda
+poderia passar nesse teste, mesmo expondo uma acao destrutiva para chave ativa.
+
+Evidencia:
+- `apps/web/tests/keys-p7.test.mjs` valida `deleteApiKeyAction` e `Excluir` de
+  forma global, sem amarrar ambos ao ramo `: (` do ternario de `key.revoked_at`.
+- A pagina real usa o ternario em `apps/web/app/o/[org]/p/[project]/keys/page.tsx`
+  para separar `revokeApiKeyAction` e `deleteApiKeyAction`.
+- O backend protege DELETE ativo com 409, mas a DoD da fase tambem exige que a
+  UI exiba `Excluir` apenas para chave revogada.
+
+Risco:
+- O teste daria falso positivo se a UI passasse a mostrar `Excluir` para chaves
+  ativas.
+- O usuario poderia tentar excluir uma chave ativa e receber erro 409, quebrando
+  o fluxo esperado de revogar primeiro e excluir depois.
+
+Correção esperada:
+- Fortalecer o source test para provar que o ramo `!key.revoked_at ? (...)`
+  contem `revokeApiKeyAction`/`Revogar` e que o ramo `: (...)` contem
+  `deleteApiKeyAction`/`Excluir`.
+- Manter a regressao backend existente para DELETE ativo 409 e DELETE revogado
+  204/remocao da listagem.
 
 ## Fase 4 - Multi-projeto
 

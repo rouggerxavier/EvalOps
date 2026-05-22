@@ -66,6 +66,17 @@ export function ms(value: number): string {
   return formatLatency(value);
 }
 
+export function formatBytes(value: number | null | undefined): string {
+  if (value === null || value === undefined) return "—";
+  if (value < 1024) return `${value} B`;
+  const kb = value / 1024;
+  if (kb < 1024) return `${kb.toFixed(1)} KB`;
+  const mb = kb / 1024;
+  if (mb < 1024) return `${mb.toFixed(1)} MB`;
+  const gb = mb / 1024;
+  return `${gb.toFixed(2)} GB`;
+}
+
 export function pct(value: number, digits = 1): string {
   return formatPercent(value, digits);
 }

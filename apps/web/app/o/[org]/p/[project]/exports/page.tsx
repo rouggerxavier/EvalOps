@@ -12,7 +12,7 @@ import {
   listExports,
   resolveProject,
 } from "@/lib/api";
-import { formatCost, formatCount, formatDateTime } from "@/lib/format";
+import { formatBytes, formatCost, formatCount, formatDateTime } from "@/lib/format";
 import { safeErrorMessage } from "@/lib/safe-error";
 import type { ExportJob } from "@/lib/types";
 
@@ -406,7 +406,9 @@ export default async function ExportsPage({ params, searchParams }: Props) {
                           </td>
                           <td>{jobStatusBadge(row.job.status)}</td>
                           <td className="t__muted" style={{ fontSize: 12 }}>{formatDateTime(row.job.created_at)}</td>
-                          <td className="mono t__muted" style={{ fontSize: 12 }}>—</td>
+                          <td className="mono t__muted" style={{ fontSize: 12 }}>
+                            {formatBytes(row.job.file_size_bytes)}
+                          </td>
                           <td>
                             <div className="row" style={{ justifyContent: "flex-end" }}>
                               {isDownloadReady ? (

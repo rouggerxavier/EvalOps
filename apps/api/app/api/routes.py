@@ -473,6 +473,25 @@ def ingest_traces(
     return ingest_trace_batch(db, project, payload, redact_header)
 
 
+def _classify_cost_source(trace: Trace) -> str:
+    """Honest classification of how reliable ``total_cost_usd`` is.
+
+    Returns one of:
+    - ``priced``: backend matched provider/model and applied the pricing table.
+    - ``estimated``: tokens were recorded but no price was found — the cost
+      column is a deterministic zero, not a measurement of $0.
+    - ``unknown``: no tokens and no cost — pure absence of signal.
+
+    Caller is expected to render a badge/tooltip differentiating these so a
+    user does not mistake an unpriced zero for "actually free".
+    """
+    if (trace.total_cost_usd or 0) > 0:
+        return "priced"
+    if (trace.total_tokens_in or 0) > 0 or (trace.total_tokens_out or 0) > 0:
+        return "estimated"
+    return "unknown"
+
+
 _SLOW_KIND_TO_SPAN_PREDICATE: dict[str, object] = {
     "llm": Span.type == "llm_call",
     "retrieval": or_(
@@ -578,6 +597,7 @@ def list_traces(
         item = TraceOut.model_validate(row).model_dump()
         item["last_score"] = last_scores.get(row.id)
         item["slow_reason"] = effective_slow_kind
+        item["cost_source"] = _classify_cost_source(row)
         data.append(item)
     next_cursor = _encode_cursor(rows[-1].created_at, rows[-1].id) if has_more and rows else None
     return {"data": data, "next_cursor": next_cursor}
