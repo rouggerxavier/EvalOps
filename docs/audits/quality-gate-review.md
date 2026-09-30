@@ -1,7 +1,7 @@
 # Revisão integrada — Quality Gate
 
 ## Achados
-Nenhum bloqueador de código pendente na revisão local final. CI remoto bloqueado pelo orçamento de GitHub Actions; os jobs não iniciaram. Dois achados foram corrigidos:
+Nenhum bloqueador de código pendente na revisão local final. A CI usa agora o runner self-hosted `mac-evalops` neste Mac, com label `mac-ci`. O resultado da HEAD deve ser conferido nos checks da PR. Dois achados foram corrigidos:
 
 | Severidade | Área | Achado | Correção/evidência |
 | --- | --- | --- | --- |
@@ -35,7 +35,7 @@ Contratos atuais preservados; feature aditiva; decisões e limites em `docs/qual
   têm limites explícitos; o gate não cria avaliações/segurança por inferência.
 - E2E rodou em SQLite isolado e API com lifecycle de Redis desativado. Replay/Redis
   continuam cobertos pelos testes existentes, com mocks de fila.
-- GitHub Actions: jobs sem steps/logs; anotação oficial: "The job was not started because an Actions budget is preventing further use." Evidência: https://github.com/rouggerxavier/EvalOps/actions/runs/36700206771. É necessário liberar orçamento e repetir CI antes de merge.
+- GitHub hosted não iniciou por orçamento no [run 36700206771](https://github.com/rouggerxavier/EvalOps/actions/runs/36700206771). A CI foi migrada para `mac-ci`, com venv por job, mesma matriz SDK e testes/build web. Operação em `docs/runbooks/ci-runner-self-hosted.md`; confirmar checks verdes na HEAD antes de merge.
 - Há avisos de depreciação das dependências nos testes backend; suites passaram.
 
 ## Próximos passos

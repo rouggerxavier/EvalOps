@@ -11,6 +11,7 @@ implementacao verificaveis contra o codigo.
 - [Quality Gate — arquitetura, contrato e demonstração](./quality-gate.md)
 - [Plano da entrega Quality Gate](./plans/quality-gate.md)
 - [Revisão integrada e evidências do Quality Gate](./audits/quality-gate-review.md)
+- [CI no Mac com runner self-hosted](./runbooks/ci-runner-self-hosted.md)
 
 - [Auditoria front/back e backlog de produto](./audits/front-back-product-audit-2026-05-21.md)
 - [Bugs encontrados na implementação front-back-product](./audits/front-back-product-implementation-review-bugs.md)
