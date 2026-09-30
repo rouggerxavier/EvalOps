@@ -17,7 +17,7 @@ e2e_tier: focal
 ```
 
 ## Bloqueios
-- MERGE BLOCKER: CI da HEAD deve estar verde antes de integrar.
+- MERGE BLOCKER: CI da HEAD deve estar verde antes de integrar. Jobs remotos não iniciaram por orçamento do GitHub Actions; liberar orçamento e repetir CI.
 - NEXT-WORK BLOCKER: none — revisão e documentação podem continuar.
 - POST-MERGE OBSERVATION: not_applicable — merge/deploy não fazem parte desta entrega.
 - Publication hold impede declarar readiness de produção/deploy com migração sem validação no ambiente alvo. A PR de rascunho contém trabalho para revisão.

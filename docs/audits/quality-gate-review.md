@@ -1,7 +1,7 @@
 # Revisão integrada — Quality Gate
 
 ## Achados
-Nenhum bloqueador pendente na revisão local final. Dois achados foram corrigidos:
+Nenhum bloqueador de código pendente na revisão local final. CI remoto bloqueado pelo orçamento de GitHub Actions; os jobs não iniciaram. Dois achados foram corrigidos:
 
 | Severidade | Área | Achado | Correção/evidência |
 | --- | --- | --- | --- |
@@ -35,6 +35,7 @@ Contratos atuais preservados; feature aditiva; decisões e limites em `docs/qual
   têm limites explícitos; o gate não cria avaliações/segurança por inferência.
 - E2E rodou em SQLite isolado e API com lifecycle de Redis desativado. Replay/Redis
   continuam cobertos pelos testes existentes, com mocks de fila.
+- GitHub Actions: jobs sem steps/logs; anotação oficial: "The job was not started because an Actions budget is preventing further use." Evidência: https://github.com/rouggerxavier/EvalOps/actions/runs/36700206771. É necessário liberar orçamento e repetir CI antes de merge.
 - Há avisos de depreciação das dependências nos testes backend; suites passaram.
 
 ## Próximos passos
