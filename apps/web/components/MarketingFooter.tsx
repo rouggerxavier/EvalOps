@@ -13,8 +13,8 @@ export function MarketingFooter() {
               </span>
             </Link>
             <p>
-              A camada de observabilidade, governança e qualidade para aplicações de IA. Feita para engenheiros
-              que colocam agentes em produção.
+              Controle de qualidade para agentes de IA, com a base técnica de LLMOps: tracing, rubricas e experimentos
+              para quem coloca agentes em produção.
             </p>
           </div>
           <div>

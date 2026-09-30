@@ -3,7 +3,7 @@ import "./globals.css";
 
 export const metadata = {
   title: "EvalOps Studio",
-  description: "Observabilidade, tracing e avaliação para sistemas de IA em produção.",
+  description: "Controle de qualidade para agentes de IA com Quality Gates, tracing, avaliações e experimentos LLMOps.",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

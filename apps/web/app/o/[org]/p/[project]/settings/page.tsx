@@ -1,12 +1,14 @@
 import Link from "next/link";
 import { AlertCircle, CheckCircle2, Cog, ExternalLink, Plus, Users } from "lucide-react";
 
+import { QualityGateForm } from "@/components/QualityGateForm";
 import { AuthRequiredPanel } from "@/components/AuthRequiredPanel";
 import { Badge } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
 import { Copyable } from "@/components/ui/Copyable";
 import { createProjectAction, patchProjectAction } from "@/lib/actions";
 import {
+  getQualityGateConfig,
   getMembers,
   getProjects,
   hasAuthToken,
@@ -18,7 +20,7 @@ import type { Member, Project } from "@/lib/types";
 
 type Props = {
   params: Promise<{ org: string; project: string }>;
-  searchParams: Promise<{ updated?: string; created?: string; error?: string }>;
+  searchParams: Promise<{ updated?: string; created?: string; error?: string; gate_saved?: string }>;
 };
 
 export default async function SettingsPage({ params, searchParams }: Props) {
@@ -29,9 +31,10 @@ export default async function SettingsPage({ params, searchParams }: Props) {
 
   const resolved = await resolveProject(org, project);
 
-  const [projectsRes, membersRes] = await Promise.all([
+  const [projectsRes, membersRes, gateConfig] = await Promise.all([
     getProjects(resolved.org_id).catch(() => ({ data: [] as Project[] })),
     getMembers(resolved.org_id).catch(() => ({ data: [] as Member[] })),
+    getQualityGateConfig(resolved.project_id).catch(() => null),
   ]);
 
   const projectRecord =
@@ -54,7 +57,7 @@ export default async function SettingsPage({ params, searchParams }: Props) {
             <Cog size={18} /> Settings
           </h1>
           <div className="page-header__subtitle">
-            Projeto · membros · billing
+            Qualidade dos agentes · projeto · membros · billing
           </div>
         </div>
       </header>
@@ -88,6 +91,10 @@ export default async function SettingsPage({ params, searchParams }: Props) {
           </div>
         </div>
       ) : null}
+
+      {qp.gate_saved === "1" && <p role="status" className="quality-gate__intro">Quality Gate salvo. Confira o resultado na visão geral.</p>}
+      <QualityGateForm config={gateConfig} org={org} project={project} />
+      <div style={{ height: 16 }} />
 
       <section className="grid-detail">
         <Card

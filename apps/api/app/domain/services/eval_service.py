@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.domain.evaluators.base import EvaluatorResult
 from app.domain.evaluators.registry import REGISTRY
+from app.domain.rubrics.outcomes import automatic_failures
 from app.domain.rubrics.resolver import build_trace_context
 from app.domain.services.usage_service import judge_budget_for_org
 from app.models import EvaluationRun, EvaluationScore, EvaluatorRow, Project, Rubric, RubricVersion, Span, Trace
@@ -277,15 +278,7 @@ def run_evaluation(
     aggregate_score = _aggregate(agg_pairs, aggregate_method)
     threshold = float(parsed_spec.get("threshold", 0.7))
 
-    # Check automatic_fail_conditions
-    score_by_slug = {sr.evaluator_slug: sr for sr in score_records}
-    auto_failed = False
-    for cond in auto_fail_conditions:
-        ev_id = cond.get("evaluator_id")
-        if ev_id and ev_id in score_by_slug:
-            if not score_by_slug[ev_id].passed:
-                auto_failed = True
-                break
+    auto_failed = bool(automatic_failures(score_records, auto_fail_conditions))
 
     passed = (aggregate_score >= threshold) and not auto_failed
 

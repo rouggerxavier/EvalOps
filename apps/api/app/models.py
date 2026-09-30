@@ -57,6 +57,19 @@ class Project(Base):
     organization: Mapped[Organization] = relationship()
 
 
+class QualityGateConfig(Base):
+    """One opt-in quality policy per project; no changes to trace/eval storage."""
+    __tablename__ = "quality_gate_configs"
+
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), primary_key=True)
+    min_score: Mapped[float] = mapped_column(Float, nullable=False)
+    max_ungrounded_rate: Mapped[float] = mapped_column(Float, nullable=False)
+    max_avg_cost_usd: Mapped[float] = mapped_column(Float, nullable=False)
+    max_p95_ms: Mapped[int] = mapped_column(Integer, nullable=False)
+    require_zero_critical: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
 class ApiKey(Base):
     __tablename__ = "api_keys"
 

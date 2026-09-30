@@ -53,7 +53,9 @@ jobs:
         with:
           node-version: "22"
       - name: Install web deps
-        run: npm install
+        run: npm ci
+      - name: Run web tests
+        run: npm run test
       - name: Build web
         run: npm run build
 
