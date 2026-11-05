@@ -63,7 +63,7 @@ function RunCard({ run, rubricSlug }: { run: EvaluationRun; rubricSlug: string }
   return (
     <Card
       title={`${rubricSlug} v${run.rubric_version}`}
-      subtitle={`${formatRelativeTime(run.created_at)} · ${formatCost(run.cost_usd)} · ${run.triggered_by}`}
+      subtitle={`${formatRelativeTime(run.created_at)} · ${run.cost_usd === null ? "custo desconhecido" : formatCost(run.cost_usd)} · ${run.triggered_by}`}
       action={
         <span className="row" style={{ gap: 10 }}>
           {run.aggregate_score === null ? null : <ScoreCell value={run.aggregate_score} />}

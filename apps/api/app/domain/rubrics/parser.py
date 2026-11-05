@@ -102,6 +102,9 @@ def _validate_evaluator_config(evaluator_type: str, config: dict[str, Any]) -> N
         repeats = config.get("repeats", 1)
         if not isinstance(repeats, int) or isinstance(repeats, bool) or not 1 <= repeats <= MAX_JUDGE_REPEATS:
             raise ValueError(f"llm_judge.repeats must be between 1 and {MAX_JUDGE_REPEATS}")
+        model = config.get("model")
+        if isinstance(model, str) and model.startswith("cli:") and not model.partition("/")[2].strip():
+            raise ValueError("llm_judge.model must pin a model, e.g. cli:claude/claude-sonnet-5-5")
 
 
 class EvaluatorSpec(BaseModel):

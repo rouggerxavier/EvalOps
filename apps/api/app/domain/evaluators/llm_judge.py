@@ -9,6 +9,7 @@ from typing import Any
 
 from app.domain.evaluators.base import EvaluatorResult
 from app.domain.rubrics.templating import render_template
+from app.infra.llm import cli_judge
 from app.infra.llm.pricing import estimate_judge_cost_usd, split_provider_model
 from app.safe_errors import safe_message
 
@@ -36,6 +37,8 @@ def _call_llm(model: str, messages: list[dict], temperature: float) -> str:
     import httpx
 
     provider, model_name = split_provider_model(model)
+    if provider in cli_judge.CLI_PROVIDERS:
+        return cli_judge.call(provider, model_name, messages)
     if provider not in PROVIDERS:
         raise JudgeNotConfigured(f"unsupported_judge_provider:{provider}")
     base_url, key_env = PROVIDERS[provider]
@@ -77,6 +80,34 @@ def _parse_verdict(raw_text: str) -> tuple[dict, float] | None:
 
 
 def run(context: dict, config: dict[str, Any]) -> EvaluatorResult:
+    model = config.get("model")
+    if not cli_judge.is_cli_model(model):
+        return _run_judge(context, config)
+    t0 = time.monotonic()
+    provider, model_name = split_provider_model(model)
+    identity = {"provider": provider, "model": model_name, "cli_version": None}
+    try:
+        gate = cli_judge.gate_status(provider)
+        if gate:
+            raise cli_judge.CliJudgeError(gate)
+        identity["cli_version"] = cli_judge.cli_version(provider)
+    except cli_judge.CliJudgeError as exc:
+        return EvaluatorResult(
+            score=0.0,
+            passed=False,
+            reasoning=f"LLM call failed: {exc}",
+            raw_output={"error": str(exc), "judge_cli": identity},
+            cost_usd=None,
+            latency_ms=int((time.monotonic() - t0) * 1000),
+        )
+    result = _run_judge(context, config)
+    result.raw_output = {**result.raw_output, "judge_cli": identity}
+    # The plan does not report a price per call: unknown, never 0.
+    result.cost_usd = None
+    return result
+
+
+def _run_judge(context: dict, config: dict[str, Any]) -> EvaluatorResult:
     t0 = time.monotonic()
     model: str = config.get("model", "openai/gpt-4o-mini")
     temperature: float = config.get("temperature", 0)
@@ -110,6 +141,8 @@ def run(context: dict, config: dict[str, Any]) -> EvaluatorResult:
         )
 
     def _estimated_cost(response_text: str) -> float:
+        if cli_judge.is_cli_model(model):
+            return 0.0  # no price to cap; run() reports the cost as unknown
         return float(
             estimate_judge_cost_usd(
                 model,

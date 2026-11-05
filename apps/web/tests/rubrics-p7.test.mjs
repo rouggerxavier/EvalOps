@@ -17,7 +17,7 @@ test("rubrics: page wires real server actions and API calls", () => {
 test("rubrics: forms expose backend-required fields", () => {
   assert.match(page, /action=\{createRubricAction\}/);
   assert.match(page, /action=\{createRubricVersionAction\}/);
-  assert.match(page, /name="yaml_source"/);
+  assert.match(page, /<RubricYamlEditor/);
   assert.match(page, /name="rubric_id"/);
   assert.match(page, /name="project_id"/);
 });

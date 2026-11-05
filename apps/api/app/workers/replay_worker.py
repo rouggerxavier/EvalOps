@@ -131,6 +131,9 @@ async def _call_provider(
     # The span's provider decides the endpoint: its model id may carry another vendor's prefix.
     route = f"{provider}/{model}" if provider and not override else (model or "")
 
+    if route.startswith("cli:"):
+        raise ValueError("cli_judge_not_supported_in_replay")
+
     def _sync() -> str:
         return llm_judge.call_llm(route, messages, 0.0)
 

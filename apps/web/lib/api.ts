@@ -17,6 +17,7 @@ import type {
   NotificationListResponse,
   OrgSubscription,
   OrgUsage,
+  CliJudgeOption,
   OverviewResponse,
   Project,
   Prompt,
@@ -255,6 +256,15 @@ export async function deleteApiKey(projectId: string, keyId: string): Promise<vo
   });
   if (!res.ok) {
     throw new Error(`API ${res.status}: ${await res.text()}`);
+  }
+}
+
+export async function getCliJudges(): Promise<CliJudgeOption[]> {
+  // Optional helper: an API without this route must not take the rubric screen down.
+  try {
+    return (await fetchJson<{ data: CliJudgeOption[] }>("/judges/cli")).data;
+  } catch {
+    return [];
   }
 }
 

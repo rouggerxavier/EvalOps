@@ -171,7 +171,7 @@ export default async function EvaluationsPage({ params, searchParams }: Props) {
   const totalRuns7d = summary?.runs_7d ?? runs.filter(withinLast7d).length;
   const activeRubrics = summary?.active_rubrics ?? rubrics.length;
   const overallPassRate = summary?.pass_rate ?? passRate(runs);
-  const costUsd = summary?.cost_usd ?? runs.reduce((s, r) => s + r.cost_usd, 0);
+  const costUsd = summary ? summary.cost_usd : runs.reduce((s, r) => s + (r.cost_usd ?? 0), 0);
 
   const baseUrl = `/o/${org}/p/${project}/evaluations`;
   const tabHref = (t: string) => `${baseUrl}?tab=${t}`;
@@ -292,7 +292,7 @@ export default async function EvaluationsPage({ params, searchParams }: Props) {
         <Metric
           label="Custo de avaliação"
           icon={<Coins size={12} />}
-          value={fmtCost(costUsd)}
+          value={costUsd === null ? "—" : fmtCost(costUsd)}
           delta="USD · 7d"
         />
       </section>
@@ -461,7 +461,7 @@ export default async function EvaluationsPage({ params, searchParams }: Props) {
                           <ScoreCell value={run.aggregate_score} />
                         )}
                       </td>
-                      <td className="t__num t__muted">${run.cost_usd.toFixed(6)}</td>
+                      <td className="t__num t__muted">{run.cost_usd === null ? "—" : `$${run.cost_usd.toFixed(6)}`}</td>
                       <td className="t__faint" style={{ fontSize: 11 }}>{relTime(run.created_at)} atrás</td>
                     </tr>
                   );
