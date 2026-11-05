@@ -1,6 +1,6 @@
 """composite index on evaluation_runs(trace_id, created_at desc).
 
-Revision ID: 0007_evaluation_runs_trace_created_index
+Revision ID: 0007_eval_runs_trace_created
 Revises: 0006_prompt_ref_index
 Create Date: 2026-05-21
 """
@@ -11,7 +11,7 @@ from typing import Sequence, Union
 from alembic import op
 
 
-revision: str = "0007_evaluation_runs_trace_created_index"
+revision: str = "0007_eval_runs_trace_created"
 down_revision: Union[str, Sequence[str], None] = "0006_prompt_ref_index"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None

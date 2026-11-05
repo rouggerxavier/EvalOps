@@ -9,12 +9,13 @@ State machine on placeholder `metadata_json`:
 
 Decision §B-1: if the original trace has no LLM span, the worker marks
 `failed` with `reason="no_llm_span_found"` and returns — never re-raises.
-Decision §B-2: variable substitution uses `{{var_name}}` (jinja2).
+Decision §B-2: variable substitution uses `{{var_name}}`, plain names only.
 """
 from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import time
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -72,15 +73,15 @@ def _find_primary_llm_span(db, trace_id: str) -> Span | None:
     )
 
 
-def _render(text: str, variables: dict[str, Any]) -> str:
-    if not variables:
-        return text
-    try:
-        from jinja2 import Template
+_VARIABLE_RE = re.compile(r"\{\{\s*([A-Za-z_]\w*)\s*\}\}")
 
-        return Template(text).render(**variables)
-    except Exception:
-        return text
+
+def _render(text: str, variables: dict[str, Any]) -> str:
+    # Message content can come from end users: never evaluate it as a template.
+    return _VARIABLE_RE.sub(
+        lambda match: str(variables[match.group(1)]) if match.group(1) in variables else match.group(0),
+        text,
+    )
 
 
 def _build_messages(span: Span, variables: dict[str, Any]) -> list[dict]:

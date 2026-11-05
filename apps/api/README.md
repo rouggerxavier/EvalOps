@@ -19,8 +19,21 @@ FastAPI backend for EvalOps Studio.
 cd apps/api
 python -m venv .venv
 .venv\Scripts\activate
-pip install -e .[dev]
+pip install -c requirements.lock -e .[dev]
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+After changing dependencies, regenerate the versions pinned by `requirements.lock`:
+
+```bash
+uv pip compile pyproject.toml --extra dev --universal --python-version 3.12 -o requirements.lock
+```
+
+Every organization starts on the `free` plan (1000 traces and 500 evaluations per
+month). Operators change one organization's limits with:
+
+```bash
+python scripts/set_org_limits.py --org my-org --traces 100000 --evals 20000
 ```
 
 Health and docs:

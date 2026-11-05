@@ -12,12 +12,12 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from jinja2 import Environment
 from sqlalchemy.orm import Session
 
 from app.domain.evaluators.base import EvaluatorResult
 from app.domain.evaluators.registry import REGISTRY
 from app.domain.rubrics.resolver import build_trace_context
+from app.domain.rubrics.templating import render_template
 from app.domain.services.eval_service import (
     _aggregate,
     judge_budget_status,
@@ -35,8 +35,6 @@ from app.models import (
     Span,
     Trace,
 )
-
-_jinja = Environment(autoescape=False)
 
 
 class ExperimentValidationError(Exception):
@@ -87,7 +85,7 @@ def _extract_user_text(item_input: Any) -> str:
 
 def _render_template(template: str, variables: dict[str, Any]) -> str:
     try:
-        return _jinja.from_string(template).render(**variables)
+        return render_template(template, variables)
     except Exception:  # noqa: BLE001
         return template
 

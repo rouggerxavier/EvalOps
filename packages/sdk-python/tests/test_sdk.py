@@ -1,7 +1,16 @@
 import evalops
 import json
+import subprocess
+import sys
+from decimal import Decimal
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Event, Thread
+from time import sleep
+from types import ModuleType, SimpleNamespace
+
+import pytest
+
+from evalops.tracer import EvalOpsTracer
 from evalops.uploader import BackgroundUploader, ReplayResult, UploaderConfig, _SendOutcome
 
 
@@ -983,3 +992,153 @@ def test_background_uploader_queue_full_fallback_no_silent_drop(monkeypatch) -> 
         assert uploader.dropped_count == 0
     finally:
         uploader.shutdown()
+
+
+class _StatusClient:
+    """httpx.Client stand-in that answers every POST with a fixed status."""
+
+    status = 401
+    calls = 0
+
+    def __init__(self, *args, **kwargs) -> None:
+        return None
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        return None
+
+    def post(self, *args, **kwargs):
+        type(self).calls += 1
+        return type("Resp", (), {"status_code": type(self).status})()
+
+
+@pytest.mark.parametrize("status", [401, 402, 413, 422])
+def test_permanent_4xx_stops_sending_the_batch(monkeypatch, tmp_path, status) -> None:
+    client = type("Client", (_StatusClient,), {"status": status, "calls": 0})
+    monkeypatch.setattr("evalops.uploader.httpx.Client", client)
+    uploader = BackgroundUploader(
+        UploaderConfig(api_url="http://x/v1", api_key="k", flush_interval=0.01, dead_letter_dir=tmp_path)
+    )
+    try:
+        uploader.submit({"client_trace_id": "ct"})
+        sleep(0.3)
+        assert client.calls == 1
+        assert uploader.dropped_count == 1
+        assert uploader.queue.empty()
+    finally:
+        _assert_returns_within(uploader.shutdown, timeout_s=1.0)
+
+
+def test_transient_failure_backs_off_keeps_the_batch_and_recovers(monkeypatch, tmp_path) -> None:
+    client = type("Client", (_StatusClient,), {"status": 503, "calls": 0})
+    monkeypatch.setattr("evalops.uploader.httpx.Client", client)
+    uploader = BackgroundUploader(
+        UploaderConfig(api_url="http://x/v1", api_key="k", flush_interval=0.1, max_retries=0, dead_letter_dir=tmp_path)
+    )
+    try:
+        uploader.submit({"client_trace_id": "ct"})
+        sleep(0.7)
+        # Delays of 0.1, 0.2 and 0.4 s fit in the window; without backoff this is thousands of calls.
+        assert 1 <= client.calls <= 5
+        assert uploader.dropped_count == 0
+        client.status = 202
+        sleep(0.9)
+        assert uploader.queue.empty()
+        assert uploader.dropped_count == 0
+        assert uploader._retry_delay == 0.0
+    finally:
+        _assert_returns_within(uploader.shutdown, timeout_s=1.0)
+
+
+def test_init_rejects_environment_the_api_refuses() -> None:
+    with pytest.raises(ValueError, match="environment"):
+        EvalOpsTracer().init(api_key="k", project="p", environment="production", disabled=True)
+
+
+def test_set_llm_reaches_the_payload_and_survives_odd_values() -> None:
+    tracer = EvalOpsTracer()
+    tracer.init(api_key="k", project="p", disabled=True)
+    tracer._disabled = False
+    tracer._uploader = DummyUploader()
+
+    @tracer.trace("t")
+    def run() -> None:
+        with tracer.span("llm") as sp:
+            sp.set_llm(
+                provider="openrouter",
+                model="m",
+                messages_in=[{"role": "user", "content": "oi"}, "não é objeto"],
+                messages_out=[{"role": "assistant", "content": "olá"}],
+                tokens_in="10",
+                tokens_out="não é número",
+                cost_usd=Decimal("0.5"),
+                prompt_version_ref="p@1",
+            )
+
+    run()
+    span = next(s for s in tracer._uploader.items[0]["spans"] if s["name"] == "llm")
+    assert span["type"] == "llm_call"
+    assert (span["provider"], span["model"], span["prompt_version_ref"]) == ("openrouter", "m", "p@1")
+    assert span["messages_in"] == [{"role": "user", "content": "oi"}]
+    assert span["messages_out"] == [{"role": "assistant", "content": "olá"}]
+    assert (span["tokens_in"], span["tokens_out"], span["cost_usd"]) == (10, None, 0.5)
+    json.dumps(span)
+
+
+def test_instrument_openai_records_the_call(monkeypatch) -> None:
+    usage = SimpleNamespace(prompt_tokens=7, completion_tokens=3)
+    response = SimpleNamespace(
+        model="gpt-4o-mini",
+        usage=usage,
+        choices=[SimpleNamespace(message=SimpleNamespace(content="olá"))],
+    )
+
+    class Completions:
+        def create(self, *args, **kwargs):
+            return response
+
+    module = ModuleType("openai.resources.chat.completions")
+    module.Completions = Completions
+    monkeypatch.setitem(sys.modules, "openai.resources.chat.completions", module)
+    tracer = EvalOpsTracer()
+    tracer.init(api_key="k", project="p", disabled=True)
+    tracer._disabled = False
+    tracer._uploader = DummyUploader()
+    monkeypatch.setattr(evalops, "_tracer", tracer)
+
+    assert evalops.instrument_openai() is True
+
+    @tracer.trace("t")
+    def run() -> None:
+        Completions().create(model="gpt-4o-mini", messages=[{"role": "user", "content": "oi"}])
+
+    run()
+    span = next(s for s in tracer._uploader.items[0]["spans"] if s["name"] == "openai.chat.completions")
+    assert (span["provider"], span["model"], span["tokens_in"], span["tokens_out"]) == ("openai", "gpt-4o-mini", 7, 3)
+    assert span["messages_in"] == [{"role": "user", "content": "oi"}]
+    assert span["messages_out"] == [{"role": "assistant", "content": "olá"}]
+
+
+def test_queued_traces_are_sent_at_process_exit() -> None:
+    _CaptureHandler.events = []
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _CaptureHandler)
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    script = f"""
+import evalops
+evalops.init(api_key="k", project="p", api_url="http://127.0.0.1:{server.server_port}/v1")
+@evalops.trace("na.saida")
+def run():
+    return "ok"
+run()
+"""
+    try:
+        done = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True, timeout=20)
+        assert done.returncode == 0, done.stderr
+        names = [t["name"] for event in _CaptureHandler.events for t in event["payload"]["traces"]]
+        assert names == ["na.saida"]
+    finally:
+        server.shutdown()
+        thread.join(timeout=2)

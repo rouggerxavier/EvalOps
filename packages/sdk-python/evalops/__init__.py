@@ -49,6 +49,11 @@ def flush() -> None:
     _tracer.flush()
 
 
+def shutdown() -> None:
+    """Stop the uploader and send what is queued. Also runs at normal process exit."""
+    _tracer.shutdown()
+
+
 def replay_dead_letter(
     path: str | Path | None = None,
     *,
@@ -89,6 +94,19 @@ def instrument_openai() -> bool:
                 sp.set_io(input={"model": model, "messages": messages})
             response = original(self, *args, **kwargs)
             sp.set_io(output={"response_type": response.__class__.__name__})
+            usage = getattr(response, "usage", None)
+            choices = getattr(response, "choices", None) or []
+            message = getattr(choices[0], "message", None) if choices else None
+            content = getattr(message, "content", None)
+            # shortcut: provider is fixed even with a custom base_url (OpenRouter); pass cost via set_llm there.
+            sp.set_llm(
+                provider="openai",
+                model=getattr(response, "model", None) or model,
+                messages_in=messages,
+                messages_out=[{"role": "assistant", "content": content}] if content else None,
+                tokens_in=getattr(usage, "prompt_tokens", None),
+                tokens_out=getattr(usage, "completion_tokens", None),
+            )
             return response
 
     setattr(wrapped, "__evalops_patched__", True)

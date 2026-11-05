@@ -8,6 +8,7 @@ from typing import Any
 
 from app.domain.evaluators.base import EvaluatorResult
 from app.domain.rubrics.resolver import resolve_dotpath
+from app.domain.rubrics.templating import render_template
 from app.infra.llm.pricing import estimate_judge_cost_usd
 from app.safe_errors import safe_message
 
@@ -42,8 +43,7 @@ call_llm = _call_llm
 
 def _render_prompt(template: str, context: dict) -> str:
     try:
-        from jinja2 import Template
-        return Template(template).render(context)
+        return render_template(template, context)
     except Exception:  # noqa: BLE001
         return template
 

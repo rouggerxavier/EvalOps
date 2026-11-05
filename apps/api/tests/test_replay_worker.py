@@ -196,7 +196,7 @@ def test_replay_trace_no_llm_span_fails_gracefully(monkeypatch) -> None:
         assert ph.metadata_json["replay_error"] == "no_llm_span_found"
 
 
-def test_replay_trace_substitutes_variables_with_jinja(monkeypatch) -> None:
+def test_replay_trace_substitutes_variables(monkeypatch) -> None:
     org_id, project_id = _seed_project()
     original_id = _seed_original_trace_with_llm_span(org_id, project_id)
     placeholder_id = _seed_placeholder(

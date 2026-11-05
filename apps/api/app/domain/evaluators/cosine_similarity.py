@@ -6,6 +6,7 @@ from typing import Any
 
 from app.domain.evaluators.base import EvaluatorResult
 from app.domain.rubrics.resolver import resolve_dotpath
+from app.domain.rubrics.templating import render_template
 from app.safe_errors import safe_message
 
 
@@ -58,8 +59,7 @@ def run(context: dict, config: dict[str, Any]) -> EvaluatorResult:
     text_a = resolve_dotpath(target_a_path, context)
 
     try:
-        from jinja2 import Template
-        text_b = Template(target_b_template).render(context)
+        text_b = render_template(target_b_template, context)
     except Exception:  # noqa: BLE001
         text_b = target_b_template
 

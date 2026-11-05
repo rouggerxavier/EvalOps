@@ -143,7 +143,7 @@ def run_evaluation(
     if trace is None:
         raise ValueError(f"trace '{trace_id}' not found")
 
-    spans: list[Span] = db.query(Span).filter(Span.trace_id == trace_id).all()
+    spans: list[Span] = db.query(Span).filter(Span.trace_id == trace_id).order_by(Span.started_at.asc()).all()
 
     # Load rubric
     rubric: Rubric | None = db.get(Rubric, rubric_id)

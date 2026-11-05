@@ -21,6 +21,7 @@ logger = logging.getLogger(__name__)
 DEAD_LETTER_VERSION = 1
 DEAD_LETTER_ENV = "EVALOPS_DEAD_LETTER_DIR"
 DEAD_LETTER_PREFIX = "evalops-dead-letter-"
+MAX_RETRY_DELAY_S = 60.0
 
 
 @dataclass
@@ -248,6 +249,7 @@ class BackgroundUploader:
         self.queue: Queue[dict[str, Any]] = Queue(maxsize=config.max_queue)
         self._stop = Event()
         self._dropped = 0
+        self._retry_delay = 0.0
         self._thread = Thread(target=self._loop, daemon=True)
         self._thread.start()
 
@@ -298,16 +300,24 @@ class BackgroundUploader:
         if not buf:
             return False
         outcome = self._send_with_outcome(buf)
-        if not outcome.ok:
-            # Do not requeue once shutdown started: a final failed send during
-            # shutdown must be counted as dropped on this first failure path so
-            # shutdown() does not need a second _send() within the budget.
-            if requeue_on_failure and not self._stop.is_set():
-                self._requeue(buf)
-            else:
-                self._write_dead_letter_for_outcome(buf, outcome)
-                self._dropped += len(buf)
-                logger.warning("evalops sdk dropped %s trace payload(s) after final send failure", len(buf))
+        if outcome.ok:
+            self._retry_delay = 0.0
+            return True
+        # Do not requeue once shutdown started: a final failed send during
+        # shutdown must be counted as dropped on this first failure path so
+        # shutdown() does not need a second _send() within the budget.
+        # should_dead_letter is False for permanent 4xx: resending cannot succeed.
+        if requeue_on_failure and outcome.should_dead_letter and not self._stop.is_set():
+            self._requeue(buf)
+            self._retry_delay = min(max(self.config.flush_interval, self._retry_delay * 2), MAX_RETRY_DELAY_S)
+        else:
+            self._write_dead_letter_for_outcome(buf, outcome)
+            self._dropped += len(buf)
+            logger.warning(
+                "evalops sdk dropped %s trace payload(s) after final send failure (http %s)",
+                len(buf),
+                outcome.http_status,
+            )
         return True
 
     def _loop(self) -> None:
@@ -315,6 +325,8 @@ class BackgroundUploader:
             sent = self._send_buffered()
             if not sent:
                 self._stop.wait(self.config.flush_interval)
+            elif self._retry_delay:
+                self._stop.wait(self._retry_delay)
         while self._send_buffered(requeue_on_failure=False):
             pass
 
