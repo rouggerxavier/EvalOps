@@ -60,6 +60,10 @@ def get_project_from_api_key(
     x_evalops_key: str | None = Header(default=None),
     db: Session = Depends(get_db),
 ) -> Project:
+    return authenticate_api_key(request, x_evalops_key, db, "ingest")
+
+
+def authenticate_api_key(request: Request, x_evalops_key: str | None, db: Session, scope: str) -> Project:
     if not x_evalops_key:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="unauthorized")
     key_prefix = x_evalops_key[:14]
@@ -76,7 +80,7 @@ def get_project_from_api_key(
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="unauthorized")
 
     scopes = {s for s in selected.scopes.split(",") if s}
-    if "ingest" not in scopes:
+    if scope not in scopes:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="forbidden")
 
     retry_after = check_api_key_rate_limit(selected.id, selected.rate_limit_per_minute)

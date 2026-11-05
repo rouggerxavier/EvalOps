@@ -29,7 +29,7 @@ export type Trace = {
   created_at: string;
   last_score?: number | null;
   slow_reason?: "trace" | "llm" | "retrieval" | null;
-  cost_source?: "priced" | "estimated" | "unknown" | null;
+  cost_source?: "priced" | "provided" | "unpriced" | "unknown" | null;
 };
 
 export type TraceListResponse = {

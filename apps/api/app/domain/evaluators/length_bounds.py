@@ -10,7 +10,8 @@ from app.domain.rubrics.resolver import resolve_dotpath
 def run(context: dict, config: dict[str, Any]) -> EvaluatorResult:
     t0 = time.monotonic()
     target_path: str = config.get("target", "")
-    unit: str = config.get("unit", "chars")  # chars | words | tokens
+    # chars | words | tokens
+    unit: str = config.get("unit") or ("words" if "min_words" in config or "max_words" in config else "chars")
     min_val: int | None = config.get("min") or config.get("min_chars") or config.get("min_words")
     max_val: int | None = config.get("max") or config.get("max_chars") or config.get("max_words")
 

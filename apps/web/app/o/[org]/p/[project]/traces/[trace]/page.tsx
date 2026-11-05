@@ -45,7 +45,7 @@ function costSourceLabel(source: string | null | undefined): string | undefined 
   // total was derived. Returns undefined for `priced` so the metric falls back
   // to the model name (default neutral state).
   if (source === "provided") return "valor enviado pelo cliente";
-  if (source === "estimated") return "sem preço — estimado por tokens";
+  if (source === "unpriced") return "sem preço — tokens registrados";
   if (source === "unknown") return "sem preço nem tokens";
   return undefined;
 }

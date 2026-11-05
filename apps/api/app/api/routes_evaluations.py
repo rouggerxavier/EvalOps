@@ -9,15 +9,26 @@ from app.db import get_db
 from app.deps import get_current_user
 from app.domain.services.audit_service import record_audit
 from app.domain.services.eval_service import (
+    DuplicateEvaluation,
+    JudgeBudgetExhausted,
+    evaluate_trace,
+    existing_run,
     judge_budget_status,
     rubric_uses_llm_judge,
-    run_evaluation,
 )
-from app.domain.services.usage_service import apply_usage_with_quota, increment_usage
-from app.models import EvaluationRun, EvaluationScore, Rubric, RubricVersion, Trace, User
-from app.ownership import load_project, load_trace
+from app.domain.services.rubric_report_service import WINDOWS, filtered_traces, rubric_report
+from app.models import EvaluationRun, EvaluationScore, Project, Rubric, RubricVersion, Trace, User
+from app.ownership import load_project, load_trace, project_access
+from app.workers.queue import get_arq_pool
 from app.safe_errors import safe_message
-from app.schemas import CoverageResponse, EvaluationRunOut, EvaluationRunRequest, EvaluationScoreOut, EvaluationSummaryOut
+from app.schemas import (
+    CoverageResponse,
+    EvaluationBatchIn,
+    EvaluationRunOut,
+    EvaluationRunRequest,
+    EvaluationScoreOut,
+    EvaluationSummaryOut,
+)
 
 router = APIRouter(prefix="/v1")
 
@@ -27,20 +38,6 @@ def _run_detail(run: EvaluationRun, db: Session) -> dict:
     run_out = EvaluationRunOut.model_validate(run).model_dump()
     run_out["scores"] = [EvaluationScoreOut.model_validate(s).model_dump() for s in scores]
     return run_out
-
-
-def _existing_run(
-    db: Session, trace_id: str, rubric_id: str, rubric_version: int
-) -> EvaluationRun | None:
-    return (
-        db.query(EvaluationRun)
-        .filter(
-            EvaluationRun.trace_id == trace_id,
-            EvaluationRun.rubric_id == rubric_id,
-            EvaluationRun.rubric_version == rubric_version,
-        )
-        .one_or_none()
-    )
 
 
 def _resolve_rubric_version(rubric: Rubric, requested: int | None, db: Session) -> RubricVersion:
@@ -74,62 +71,36 @@ def trigger_evaluation(
 
     rubric_version_row = _resolve_rubric_version(rubric, payload.rubric_version, db)
 
-    # G-11: pre-check the (trace_id, rubric_id, rubric_version) uniqueness.
-    # Returning 409 here avoids running the rubric for a duplicate request and
-    # surfaces the existing run id so the client can fetch it without retrying.
-    existing = _existing_run(db, trace.id, rubric.id, rubric_version_row.version)
-    if existing is not None:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail={
-                "error": "evaluation_run_duplicate",
-                "existing_run_id": existing.id,
-            },
-        )
-
     project = load_project(db, user.id, trace.project_id)
 
-    # G-12: when the rubric uses an llm_judge evaluator, gate at 402 if the
-    # plan budget is already exhausted. Per-evaluator budget skipping inside
-    # eval_service still applies as a safety net for partial spend during run.
-    if rubric_uses_llm_judge(rubric_version_row.id, db):
-        has_budget, spent, budget = judge_budget_status(trace.project_id, db)
-        if not has_budget:
-            raise HTTPException(
-                status_code=status.HTTP_402_PAYMENT_REQUIRED,
-                detail={
-                    "error": "judge_budget_exhausted",
-                    "spent_usd": round(spent, 6),
-                    "budget_usd": round(budget, 6),
-                },
-            )
-
     try:
-        apply_usage_with_quota(db, project, evals=1)
-        run = run_evaluation(
-            trace_id=payload.trace_id,
-            rubric_id=payload.rubric_id,
+        run = evaluate_trace(
+            db,
+            trace,
+            rubric,
+            rubric_version_row.version,
+            rubric_version_row.id,
+            project,
             triggered_by=payload.triggered_by,
             user_id=user.id,
-            db=db,
-            rubric_version_num=rubric_version_row.version,
-        )
-        # Apply only cost here; eval count was reserved atomically above.
-        increment_usage(db, trace.organization_id, cost_usd=float(run.cost_usd or 0))
-        record_audit(
-            db, "evaluation.run",
-            organization_id=trace.organization_id,
-            actor_user_id=user.id,
-            target_type="evaluation_run",
-            target_id=run.id,
-            payload={
-                "trace_id": run.trace_id,
-                "rubric_id": run.rubric_id,
-                "status": run.status,
-                "passed": bool(run.passed) if run.passed is not None else None,
-            },
         )
         db.commit()
+    except DuplicateEvaluation as exc:
+        # G-11: surfaces the existing run id so the client can fetch it without retrying.
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"error": "evaluation_run_duplicate", "existing_run_id": exc.existing_run_id},
+        ) from exc
+    except JudgeBudgetExhausted as exc:
+        # G-12: gate at 402 when the plan's judge budget is already exhausted.
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail={
+                "error": "judge_budget_exhausted",
+                "spent_usd": round(exc.spent_usd, 6),
+                "budget_usd": round(exc.budget_usd, 6),
+            },
+        ) from exc
     except HTTPException:
         db.rollback()
         raise
@@ -143,21 +114,100 @@ def trigger_evaluation(
         # G-11: race condition safety net — another request created the row
         # between our pre-check and the insert. Translate to a clean 409.
         db.rollback()
-        existing = _existing_run(db, trace.id, rubric.id, rubric_version_row.version)
+        existing = existing_run(db, trace.id, rubric.id, rubric_version_row.version)
         if existing is None:
             raise exc
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail={
-                "error": "evaluation_run_duplicate",
-                "existing_run_id": existing.id if existing else None,
-            },
-        )
+            detail={"error": "evaluation_run_duplicate", "existing_run_id": existing.id},
+        ) from exc
     except Exception:
         db.rollback()
         raise
 
     return {"run": _run_detail(run, db)}
+
+
+@router.post("/projects/{project_id}/evaluations/batch", status_code=status.HTTP_202_ACCEPTED)
+async def trigger_evaluation_batch(
+    payload: EvaluationBatchIn,
+    project: Project = Depends(project_access("evaluate")),
+    db: Session = Depends(get_db),
+    arq_pool=Depends(get_arq_pool),
+) -> dict:
+    """Queue the traces that still lack a complete run. Poll the rubric report for results."""
+    rubric = db.get(Rubric, payload.rubric_id)
+    if not rubric or rubric.project_id != project.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="not_found")
+    version = _resolve_rubric_version(rubric, payload.rubric_version, db)
+    if rubric_uses_llm_judge(version.id, db):
+        has_budget, spent, budget = judge_budget_status(project.id, db)
+        if not has_budget:
+            raise HTTPException(
+                status_code=status.HTTP_402_PAYMENT_REQUIRED,
+                detail={"error": "judge_budget_exhausted", "spent_usd": round(spent, 6), "budget_usd": round(budget, 6)},
+            )
+
+    complete = db.query(EvaluationRun.trace_id).filter(
+        EvaluationRun.rubric_id == rubric.id,
+        EvaluationRun.rubric_version == version.version,
+        EvaluationRun.status == "completed",
+        EvaluationRun.passed.isnot(None),
+    )
+    traces = filtered_traces(
+        db,
+        project.id,
+        environment=payload.environment,
+        batch=payload.batch,
+        name_contains=payload.name_contains,
+        since=payload.since,
+    ).filter(Trace.id.not_in(complete))
+    if payload.trace_ids is not None:
+        traces = traces.filter(Trace.id.in_(payload.trace_ids))
+    trace_ids = [
+        row.id for row in traces.with_entities(Trace.id).order_by(Trace.created_at.desc()).limit(payload.limit).all()
+    ]
+
+    try:
+        for trace_id in trace_ids:
+            await arq_pool.enqueue_job(
+                "evaluate_trace_job",
+                trace_id=trace_id,
+                rubric_id=rubric.id,
+                rubric_version=version.version,
+            )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="evaluation_queue_unavailable",
+        ) from exc
+
+    record_audit(
+        db, "evaluation.batch_requested",
+        organization_id=project.organization_id,
+        target_type="rubric",
+        target_id=rubric.id,
+        payload={"rubric_version": version.version, "enqueued": len(trace_ids), "batch": payload.batch},
+    )
+    db.commit()
+    return {"enqueued": len(trace_ids), "rubric_version": version.version, "trace_ids": trace_ids}
+
+
+@router.get("/projects/{project_id}/rubrics/{rubric_id}/report")
+def get_rubric_report(
+    rubric_id: str,
+    window: str = Query("30d"),
+    environment: str | None = Query(None, pattern=r"^(dev|staging|prod)$"),
+    batch: str | None = Query(None, max_length=255),
+    project: Project = Depends(project_access("read")),
+    db: Session = Depends(get_db),
+) -> dict:
+    if window not in WINDOWS:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="invalid_window")
+    rubric = db.get(Rubric, rubric_id)
+    if not rubric or rubric.project_id != project.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="not_found")
+    return rubric_report(db, rubric, window=window, environment=environment, batch=batch)
 
 
 @router.get("/evaluations/{run_id}")

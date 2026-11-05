@@ -12,3 +12,8 @@ _env = ImmutableSandboxedEnvironment(autoescape=False)
 
 def render_template(template: str, context: dict[str, Any]) -> str:
     return _env.from_string(template).render(context)
+
+
+def check_template(template: str) -> None:
+    """Raise ``jinja2.TemplateSyntaxError`` when ``template`` cannot compile."""
+    _env.parse(template)

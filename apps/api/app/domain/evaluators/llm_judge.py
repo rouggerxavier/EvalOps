@@ -3,14 +3,26 @@ from __future__ import annotations
 import json
 import os
 import re
+import statistics
 import time
 from typing import Any
 
 from app.domain.evaluators.base import EvaluatorResult
-from app.domain.rubrics.resolver import resolve_dotpath
 from app.domain.rubrics.templating import render_template
-from app.infra.llm.pricing import estimate_judge_cost_usd
+from app.infra.llm.pricing import estimate_judge_cost_usd, split_provider_model
 from app.safe_errors import safe_message
+
+#: provider prefix of ``config.model`` -> (OpenAI-compatible base URL, env var with the key)
+PROVIDERS = {
+    "openai": ("https://api.openai.com/v1", "OPENAI_API_KEY"),
+    "openrouter": ("https://openrouter.ai/api/v1", "OPENROUTER_API_KEY"),
+    "gemini": ("https://generativelanguage.googleapis.com/v1beta/openai", "GEMINI_API_KEY"),
+    "groq": ("https://api.groq.com/openai/v1", "GROQ_API_KEY"),
+}
+
+
+class JudgeNotConfigured(ValueError):
+    """Raised before any request: the provider was not called, so nothing was spent."""
 
 
 def _extract_first_json(text: str) -> str | None:
@@ -23,29 +35,45 @@ def _call_llm(model: str, messages: list[dict], temperature: float) -> str:
     """Call LLM and return raw text response."""
     import httpx
 
-    # Strip provider prefix (e.g. "openai/gpt-4o-mini" → "gpt-4o-mini")
-    model_name = model.split("/")[-1] if "/" in model else model
-
-    api_key = os.getenv("OPENAI_API_KEY", "")
+    provider, model_name = split_provider_model(model)
+    if provider not in PROVIDERS:
+        raise JudgeNotConfigured(f"unsupported_judge_provider:{provider}")
+    base_url, key_env = PROVIDERS[provider]
+    api_key = os.getenv(key_env, "")
+    if not api_key:
+        raise JudgeNotConfigured(f"judge_key_not_configured:{key_env}")
     resp = httpx.post(
-        "https://api.openai.com/v1/chat/completions",
+        f"{base_url}/chat/completions",
         headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
         json={"model": model_name, "messages": messages, "temperature": temperature},
         timeout=60,
     )
     resp.raise_for_status()
-    return resp.json()["choices"][0]["message"]["content"]
+    return resp.json()["choices"][0]["message"]["content"] or ""
 
 
 # Replaceable in tests
 call_llm = _call_llm
 
 
-def _render_prompt(template: str, context: dict) -> str:
-    try:
-        return render_template(template, context)
-    except Exception:  # noqa: BLE001
-        return template
+def _parse_verdict(raw_text: str) -> tuple[dict, float] | None:
+    """Return ``(verdict, score)``, or None when the reply carries no score in 0..1."""
+    candidates = [raw_text]
+    extracted = _extract_first_json(raw_text)
+    if extracted:
+        candidates.append(extracted)
+    for candidate in candidates:
+        try:
+            parsed = json.loads(candidate)
+            raw_score = parsed["score"]
+            if isinstance(raw_score, bool):
+                continue
+            score = float(raw_score)
+        except (json.JSONDecodeError, TypeError, KeyError, ValueError):
+            continue
+        if isinstance(parsed, dict) and 0.0 <= score <= 1.0:
+            return parsed, score
+    return None
 
 
 def run(context: dict, config: dict[str, Any]) -> EvaluatorResult:
@@ -56,6 +84,7 @@ def run(context: dict, config: dict[str, Any]) -> EvaluatorResult:
     retry_on_invalid: int = config.get("retry_on_invalid", 1)
     pass_threshold: float = config.get("pass_threshold", 0.7)
     cost_cap_usd: float = config.get("cost_cap_usd", 0.01)
+    repeats: int = max(1, int(config.get("repeats", 1)))
 
     # Fix-7B.5 (A-08): assumed completion budget for the pre-call cost estimate.
     # Output length is unknown before the call, so cost is gated conservatively
@@ -64,8 +93,21 @@ def run(context: dict, config: dict[str, Any]) -> EvaluatorResult:
     # (estimated) spend.
     assumed_output_tokens: int = int(config.get("max_output_tokens", 512) or 512)
 
-    rendered_prompt = _render_prompt(prompt_template, context)
-    messages = [{"role": "user", "content": rendered_prompt}]
+    def _latency() -> int:
+        return int((time.monotonic() - t0) * 1000)
+
+    try:
+        rendered_prompt = render_template(prompt_template, context)
+    except Exception as exc:  # noqa: BLE001
+        # Judging an unrendered template would produce a score about nothing.
+        safe_message(exc, fallback="prompt_render_failed", context="llm_judge")
+        return EvaluatorResult(
+            score=0.0,
+            passed=False,
+            reasoning="prompt_render_failed",
+            raw_output={"error": "prompt_render_failed"},
+            latency_ms=_latency(),
+        )
 
     def _estimated_cost(response_text: str) -> float:
         return float(
@@ -80,9 +122,8 @@ def run(context: dict, config: dict[str, Any]) -> EvaluatorResult:
     # Fix-7B.5 (A-08): cost_cap_usd is no longer a dead field. Block *before*
     # spending money when even the conservative pre-call estimate exceeds the
     # cap. Error is structured and leaks no stack/SQL/path/secret.
-    pre_call_cost = _estimated_cost("")
+    pre_call_cost = _estimated_cost("") * repeats
     if cost_cap_usd is not None and pre_call_cost > float(cost_cap_usd):
-        latency_ms = int((time.monotonic() - t0) * 1000)
         return EvaluatorResult(
             score=0.0,
             passed=False,
@@ -93,73 +134,66 @@ def run(context: dict, config: dict[str, Any]) -> EvaluatorResult:
                 "cost_cap_usd": round(float(cost_cap_usd), 6),
             },
             cost_usd=pre_call_cost,
-            latency_ms=latency_ms,
+            latency_ms=_latency(),
         )
 
-    raw_text = ""
-    parsed: dict | None = None
-    attempts = 0
-    max_attempts = 1 + retry_on_invalid
+    total_cost = 0.0
+    verdicts: list[dict] = []
+    samples: list[float] = []
 
-    while attempts < max_attempts:
-        attempts += 1
-        try:
-            raw_text = call_llm(model, messages, temperature)
-        except Exception as exc:  # noqa: BLE001
-            safe = safe_message(exc, fallback="llm_call_failed", context="llm_judge")
-            latency_ms = int((time.monotonic() - t0) * 1000)
+    for _ in range(repeats):
+        messages = [{"role": "user", "content": rendered_prompt}]
+        raw_text = ""
+        verdict = None
+        for attempt in range(1 + retry_on_invalid):
+            try:
+                raw_text = call_llm(model, messages, temperature)
+            except Exception as exc:  # noqa: BLE001
+                safe = safe_message(exc, fallback="llm_call_failed", context="llm_judge")
+                return EvaluatorResult(
+                    score=0.0,
+                    passed=False,
+                    reasoning=f"LLM call failed: {safe}",
+                    raw_output={"error": safe},
+                    cost_usd=total_cost if isinstance(exc, JudgeNotConfigured) else total_cost + _estimated_cost(raw_text),
+                    latency_ms=_latency(),
+                )
+            # Every attempt was paid for, not only the one that parsed.
+            total_cost += _estimated_cost(raw_text)
+            verdict = _parse_verdict(raw_text)
+            if verdict is not None:
+                break
+            if attempt < retry_on_invalid:
+                messages.append({"role": "assistant", "content": raw_text})
+                messages.append({"role": "user", "content": 'Respond ONLY with valid JSON containing "score" between 0 and 1.'})
+        if verdict is None:
             return EvaluatorResult(
                 score=0.0,
                 passed=False,
-                reasoning=f"LLM call failed: {safe}",
-                raw_output={"error": safe},
-                cost_usd=_estimated_cost(raw_text),
-                latency_ms=latency_ms,
+                reasoning="LLM returned invalid JSON after retries",
+                raw_output={"error": "judge_invalid_response", "parse_error": True, "raw": raw_text[:500]},
+                cost_usd=total_cost,
+                latency_ms=_latency(),
             )
+        verdicts.append(verdict[0])
+        samples.append(verdict[1])
 
-        # Try strict parse
-        try:
-            parsed = json.loads(raw_text)
-            break
-        except json.JSONDecodeError:
-            pass
-
-        # Try extract first JSON
-        extracted = _extract_first_json(raw_text)
-        if extracted:
-            try:
-                parsed = json.loads(extracted)
-                break
-            except json.JSONDecodeError:
-                pass
-
-        # Retry hint
-        if attempts < max_attempts:
-            messages.append({"role": "assistant", "content": raw_text})
-            messages.append({"role": "user", "content": "Respond ONLY with valid JSON."})
-
-    latency_ms = int((time.monotonic() - t0) * 1000)
-
-    if parsed is None:
-        return EvaluatorResult(
-            score=0.0,
-            passed=False,
-            reasoning="LLM returned invalid JSON after retries",
-            raw_output={"parse_error": True, "raw": raw_text[:500]},
-            cost_usd=_estimated_cost(raw_text),
-            latency_ms=latency_ms,
-        )
-
-    score = float(parsed.get("score", 0.0))
-    score = max(0.0, min(1.0, score))
-    passed = score >= pass_threshold
-    reasoning = str(parsed.get("reasoning", parsed.get("rationale", "")))
-
+    score = sum(samples) / len(samples)
+    first = verdicts[0]
+    raw_output = first
+    if repeats > 1:
+        flags = sorted({flag for item in verdicts for flag in _flags(item)})
+        raw_output = {**first, "score": score, "flags": flags, "samples": samples, "stddev": statistics.pstdev(samples)}
     return EvaluatorResult(
         score=score,
-        passed=passed,
-        reasoning=reasoning,
-        raw_output=parsed,
-        cost_usd=_estimated_cost(raw_text),
-        latency_ms=latency_ms,
+        passed=score >= pass_threshold,
+        reasoning=str(first.get("reasoning", first.get("rationale", ""))),
+        raw_output=raw_output,
+        cost_usd=total_cost,
+        latency_ms=_latency(),
     )
+
+
+def _flags(verdict: dict) -> list[str]:
+    flags = verdict.get("flags")
+    return [flag for flag in flags if isinstance(flag, str)] if isinstance(flags, list) else []

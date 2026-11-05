@@ -60,6 +60,17 @@ def answer(msg: str) -> str:
     return reply.text
 ```
 
+## Describing a trace
+
+Inside a trace, group turns and test runs with opaque ids. These values are stored
+and shown as sent: never use a phone number or name.
+
+```python
+evalops.set_trace(conversation_id="c_8f2a", batch="bateria-2026-11-05", user_ref="u_91")
+```
+
+Rubrics read the earlier turns of a conversation in `trace.conversation.transcript`.
+
 ## LangGraph-style usage
 
 ```python

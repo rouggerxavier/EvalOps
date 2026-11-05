@@ -4,18 +4,17 @@ from decimal import Decimal
 
 PRICING_PER_1K = {
     ("openai", "gpt-4o-mini"): (Decimal("0.00015"), Decimal("0.00060")),
-    ("openai", "gpt-4.1"): (Decimal("0.00500"), Decimal("0.01500")),
-    ("gemini", "gemini-2.5-flash"): (Decimal("0.00015"), Decimal("0.00060")),
-    ("gemini", "gemini-2.5-pro"): (Decimal("0.00125"), Decimal("0.00500")),
-    ("groq", "llama-3.3-70b"): (Decimal("0.00059"), Decimal("0.00079")),
+    ("openai", "gpt-4.1"): (Decimal("0.00200"), Decimal("0.00800")),
+    ("gemini", "gemini-2.5-flash"): (Decimal("0.00030"), Decimal("0.00250")),
+    ("gemini", "gemini-2.5-pro"): (Decimal("0.00125"), Decimal("0.01000")),
 }
 
 # Fix-7B.5 (A-08): conservative fallback used when an llm_judge config names a
 # provider/model absent from PRICING_PER_1K. Returning Decimal("0") for unknown
 # models (compute_cost_usd's behaviour) would silently zero-cost every judge
 # call and let the cost cap / monthly judge budget be bypassed. The fallback is
-# deliberately the most expensive tier in the table (gpt-4.1) so an unpriced
-# model errs toward blocking, never toward a free pass.
+# deliberately above every tier in the table so an unpriced model errs toward
+# blocking, never toward a free pass.
 DEFAULT_JUDGE_PER_1K = (Decimal("0.00500"), Decimal("0.01500"))
 
 # Heuristic chars-per-token. Token usage is not exposed by the synchronous

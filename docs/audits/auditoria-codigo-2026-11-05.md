@@ -35,8 +35,29 @@ Limites das correções:
   `alembic stamp 0007_eval_runs_trace_created`. Só SQLite pode estar nesse estado.
 - O job `migrate-postgres` foi adicionado à CI, mas não rodou: depende do GitHub Actions.
 
-**Os P1 continuam abertos.** Trace sem nenhuma saída ainda aprova (item 10). Corrigir os itens 10 a 15 e 19
-antes de confiar na nota.
+Os P1 (itens 10 a 24) também foram corrigidos na mesma branch. Validação:
+
+- 403 testes API em SQLite, 36 testes SDK em Python 3.9 e 3.12, 145 testes web, typecheck e build.
+- Em Postgres 16, os testes de regressão de P0 e P1 passaram. O restante da suíte rodou com as FKs desligadas,
+  porque 34 testes antigos inserem linhas fora de ordem e só passam em SQLite. Nenhum erro de SQL do app apareceu.
+- Na stack de produção (Postgres, Redis, worker), o lote enfileirou 4 traces e o relatório devolveu 2 aprovados,
+  1 reprovado e 1 erro. Reenviar o lote só reenfileirou o erro. Chave sem escopo `evaluate` recebeu 403.
+- Item 21 medido em Postgres com juiz de 4 s: ingestão durante a avaliação caiu de 3,73 s para 0,09 s.
+- Telas de Experimentos, Traces, Avaliações e Overview conferidas no navegador, com dados descartáveis.
+
+A conferência das telas achou dois defeitos, já corrigidos: juiz sem chave cobrava o custo estimado sem chamar
+nada, e a tabela de Avaliações mostrava score 1,00 de um run em que o juiz não rodou.
+
+Limites das correções:
+
+- O custo do juiz é uma estimativa. Modelo sem preço na tabela usa a taxa padrão e pode bater no `cost_cap_usd`
+  padrão de 0,01 em prompts longos. Nesse caso, defina `cost_cap_usd` na rubrica.
+- Não há avaliação automática na ingestão nem amostragem: só lote, limitado por `limit`.
+- `ignored_fields` e o relatório por rubrica existem só na API. Chave com escopo `evaluate` só é criada via API.
+- Experimentos continuam sintéticos e ignoram flags. A tela agora avisa; o item 16 só fecha ao importar resultados
+  do harness.
+- Nenhuma chamada real a LLM foi feita. O roteamento por provider foi testado com HTTP simulado.
+- O PR #19 toca `eval_service.py` e precisa de rebase sobre esta branch.
 
 ## P0 — Bloqueiam a conexão
 
@@ -134,8 +155,7 @@ O ponto de encaixe já existe e não exige mexer no prompt nem no agente.
 
 ## Não verificado
 
-- Item 21 não foi executado em concorrência real.
 - Fluxo completo de replay com Redis e worker não foi rodado.
-- Telas do dashboard não foram testadas no navegador: web cobre testes, typecheck e build.
+- Telas do dashboard fora das quatro alteradas não foram testadas no navegador.
 - Carga e volume de produção não foram medidos.
 - Nenhuma chamada real a LLM foi feita; o juiz foi simulado.

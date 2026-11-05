@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.deps import get_current_user
-from app.domain.rubrics.parser import parse_rubric_yaml
+from app.domain.rubrics.parser import ignored_fields, parse_rubric_yaml
 from app.domain.services.audit_service import record_audit
 from app.models import EvaluatorRow, Project, Rubric, RubricVersion, User
 from app.ownership import get_owned_project, get_owned_rubric
@@ -114,6 +114,7 @@ def create_rubric(
     return {
         "rubric": RubricOut.model_validate(rubric).model_dump(),
         "version": RubricVersionOut.model_validate(rubric_ver).model_dump(),
+        "ignored_fields": ignored_fields(spec),
     }
 
 
@@ -201,4 +202,8 @@ def create_rubric_version(
     db.commit()
     db.refresh(rubric_ver)
 
-    return {"version": RubricVersionOut.model_validate(rubric_ver).model_dump(), "rubric_version": new_version_num}
+    return {
+        "version": RubricVersionOut.model_validate(rubric_ver).model_dump(),
+        "rubric_version": new_version_num,
+        "ignored_fields": ignored_fields(spec),
+    }

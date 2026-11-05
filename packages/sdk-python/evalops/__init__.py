@@ -45,6 +45,17 @@ def span(name: str, type: str = "chain") -> AbstractContextManager[Any]:
     return _tracer.span(name=name, type=type)
 
 
+def set_trace(
+    *,
+    conversation_id: str | None = None,
+    batch: str | None = None,
+    user_ref: str | None = None,
+    tags: dict | None = None,
+    metadata: dict | None = None,
+) -> None:
+    _tracer.set_trace(conversation_id=conversation_id, batch=batch, user_ref=user_ref, tags=tags, metadata=metadata)
+
+
 def flush() -> None:
     _tracer.flush()
 

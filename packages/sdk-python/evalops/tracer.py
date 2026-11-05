@@ -112,10 +112,12 @@ class TraceRecord:
     spans: list[SpanRecord] = field(default_factory=list)
     status: str = "ok"
     error: dict | None = None
+    user_ref: str | None = None
+    metadata: dict = field(default_factory=dict)
 
     def to_payload(self) -> dict[str, Any]:
         ended_at = _now()
-        metadata = {"sdk": {"name": "evalops-python", "version": "0.1.0"}}
+        metadata = {**_safe(self.metadata), "sdk": {"name": "evalops-python", "version": "0.1.0"}}
         if self.error:
             metadata["error"] = self.error
         return {
@@ -127,6 +129,7 @@ class TraceRecord:
             "ended_at": _utc_iso(ended_at),
             "status": self.status,
             "tags": _safe(self.tags),
+            "user_ref": self.user_ref,
             "metadata": metadata,
             "spans": [span.to_payload() for span in self.spans],
         }
@@ -289,6 +292,29 @@ class EvalOpsTracer:
                 new_stack.pop()
             self._span_stack.reset(token_stack)
             self._span_stack.set(new_stack)
+
+    def set_trace(
+        self,
+        *,
+        conversation_id: str | None = None,
+        batch: str | None = None,
+        user_ref: str | None = None,
+        tags: dict | None = None,
+        metadata: dict | None = None,
+    ) -> None:
+        """Describe the current trace. Does nothing outside one."""
+        trace = self._trace_ctx.get()
+        if trace is None:
+            return
+        trace.metadata.update(metadata or {})
+        if conversation_id is not None:
+            trace.metadata["conversation_id"] = str(conversation_id)
+        if batch is not None:
+            trace.metadata["batch"] = str(batch)
+        if user_ref is not None:
+            trace.user_ref = str(user_ref)
+        if tags:
+            trace.tags = {**trace.tags, **tags}
 
     def flush(self) -> None:
         if self._uploader is not None:

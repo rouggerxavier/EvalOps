@@ -29,6 +29,32 @@ After changing dependencies, regenerate the versions pinned by `requirements.loc
 uv pip compile pyproject.toml --extra dev --universal --python-version 3.12 -o requirements.lock
 ```
 
+## Measuring an agent
+
+Rubric evaluators must point to a known path (`trace.output.text`,
+`trace.conversation.transcript`, `trace.metadata.*`). An evaluator with nothing to
+read, or that fails to run, records an `error`, stays out of the score and leaves
+the verdict empty instead of failing the answer. Runs with an error, or partial
+runs, can be evaluated again; what they spent stays in the judge budget.
+
+The judge model picks the provider by prefix, with the key in the environment:
+`openai/` (`OPENAI_API_KEY`), `openrouter/` (`OPENROUTER_API_KEY`), `gemini/`
+(`GEMINI_API_KEY`), `groq/` (`GROQ_API_KEY`). Its cost is an estimate from text
+length, and a model outside the price table uses a high fallback price, so set
+`cost_cap_usd` in the evaluator config. `repeats` (1 to 5) calls the judge several
+times and records the spread in `stddev`. A judge that returns `"flags": ["slug"]`
+triggers `critical_flags` with `auto_fail` and `automatic_fail_conditions` on `flag`.
+
+With Redis and the worker running, evaluate many traces and read the results:
+
+```text
+POST /v1/projects/{id}/evaluations/batch        {"rubric_id": "...", "batch": "bateria-1"}
+GET  /v1/projects/{id}/rubrics/{rubric_id}/report?window=30d&batch=bateria-1
+```
+
+Both accept a member's token or `X-EvalOps-Key`. The batch route needs a key
+created with the `evaluate` scope, which is never a default; the report needs `read`.
+
 Every organization starts on the `free` plan (1000 traces and 500 evaluations per
 month). Operators change one organization's limits with:
 

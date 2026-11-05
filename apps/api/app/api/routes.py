@@ -331,14 +331,10 @@ def _problem_cause(trace: Trace, spans: list[Span]) -> str:
                 return value
         message = str(err.get("message") or "").lower()
         if "timeout" in message:
-            return "vector_db_timeout" if "vector" in message else "timeout"
+            return "timeout"
         if "schema" in message:
             return "schema_mismatch"
-    if trace.status == "partial":
-        return "low_confidence"
-    if trace.total_cost_usd and float(trace.total_cost_usd) > 1:
-        return "cost_spike"
-    return "trace_error"
+    return "partial_trace" if trace.status == "partial" else "trace_error"
 
 
 def _delta_ms(later: datetime, earlier: datetime) -> int:
@@ -479,7 +475,7 @@ def ingest_traces(
 # most degraded signal across spans, not the most flattering.
 _COST_SOURCE_PRIORITY: dict[str, int] = {
     "unknown": 4,
-    "estimated": 3,
+    "unpriced": 3,
     "provided": 2,
     "priced": 1,
 }
@@ -516,7 +512,7 @@ def _bulk_cost_source_for_traces(db: Session, trace_ids: list[str]) -> dict[str,
             if (cost or 0) > 0:
                 source = "priced"
             elif (tokens_in or 0) + (tokens_out or 0) > 0:
-                source = "estimated"
+                source = "unpriced"
             else:
                 source = "unknown"
         prev = per_trace.get(trace_id)
@@ -537,7 +533,7 @@ def _classify_cost_source(trace: Trace, *, span_label: str | None = None) -> str
     if (trace.total_cost_usd or 0) > 0:
         return "priced"
     if (trace.total_tokens_in or 0) > 0 or (trace.total_tokens_out or 0) > 0:
-        return "estimated"
+        return "unpriced"
     return "unknown"
 
 
@@ -618,6 +614,7 @@ def list_traces(
     duration_gt: int | None = Query(None, ge=0),
     slow_kind: str | None = Query(None, pattern="^(trace|llm|retrieval)$"),
     rag: bool | None = Query(None),
+    conversation_id: str | None = Query(None, max_length=255),
     project: Project = Depends(get_owned_project),
     db: Session = Depends(get_db),
 ) -> dict:
@@ -654,6 +651,8 @@ def list_traces(
             effective_slow_kind = "trace"
     if rag is True:
         query = query.filter(_rag_filter_predicate())
+    if conversation_id:
+        query = query.filter(Trace.metadata_json["conversation_id"].as_string() == conversation_id)
     if cursor:
         cursor_created_at, cursor_id = _decode_cursor(cursor)
         query = query.filter(
@@ -817,6 +816,34 @@ def _resolve_overview_cutoff(window: str | None, limit_days: int) -> tuple[datet
     return utcnow() - timedelta(days=days), days
 
 
+def _evaluation_kpis(db: Session, traces) -> tuple[float | None, int]:
+    """Mean score of each trace's newest rubric versions, and how many traces it covers.
+
+    Errors and partial runs have no verdict (``passed`` is null): they are not quality evidence.
+    """
+    ranked = (
+        select(
+            EvaluationRun.trace_id,
+            EvaluationRun.aggregate_score,
+            EvaluationRun.passed,
+            func.row_number()
+            .over(
+                partition_by=(EvaluationRun.trace_id, EvaluationRun.rubric_id),
+                order_by=EvaluationRun.rubric_version.desc(),
+            )
+            .label("rn"),
+        )
+        .where(EvaluationRun.trace_id.in_(traces.with_entities(Trace.id)))
+        .subquery()
+    )
+    average, covered = db.execute(
+        select(func.avg(ranked.c.aggregate_score), func.count(func.distinct(ranked.c.trace_id))).where(
+            ranked.c.rn == 1, ranked.c.passed.isnot(None)
+        )
+    ).one()
+    return (round(float(average), 4) if average is not None else None), int(covered or 0)
+
+
 @router.get("/analytics/overview")
 def analytics_overview(
     environment: str | None = None,
@@ -842,6 +869,7 @@ def analytics_overview(
                 "cost_usd": 0.0,
                 "latency_p95_ms": 0,
                 "avg_score": None,
+                "evaluated_traces": 0,
                 "error_rate": 0.0,
             },
             "cost_by_day": [],
@@ -849,6 +877,7 @@ def analytics_overview(
             "recent_flagged": [],
         }
 
+    avg_score, evaluated_traces = _evaluation_kpis(db, base_query)
     p95 = _p95_nearest_rank([row.duration_ms for row in rows])
     error_count = sum(1 for row in rows if row.status == "error")
     total_cost = float(sum(Decimal(str(row.total_cost_usd)) for row in rows))
@@ -910,7 +939,8 @@ def analytics_overview(
             "traces": len(rows),
             "cost_usd": round(total_cost, 6),
             "latency_p95_ms": p95,
-            "avg_score": None,
+            "avg_score": avg_score,
+            "evaluated_traces": evaluated_traces,
             "error_rate": round(error_count / max(1, len(rows)), 4),
         },
         "cost_by_day": [

@@ -1142,3 +1142,28 @@ run()
     finally:
         server.shutdown()
         thread.join(timeout=2)
+
+
+def test_set_trace_describes_only_the_current_trace() -> None:
+    tracer = EvalOpsTracer()
+    tracer.init(api_key="k", project="p", tags={"app": "x"}, disabled=True)
+    tracer._disabled = False
+    tracer._uploader = DummyUploader()
+    tracer.set_trace(conversation_id="fora")
+
+    @tracer.trace("t")
+    def run() -> None:
+        tracer.set_trace(conversation_id=123, batch="b1", user_ref="u1", tags={"canal": "wa"}, metadata={"sdk": "x", "k": "v"})
+
+    run()
+    run_again = tracer.trace("t2")(lambda: None)
+    run_again()
+    first, second = tracer._uploader.items
+    assert first["metadata"]["conversation_id"] == "123"
+    assert first["metadata"]["batch"] == "b1"
+    assert first["metadata"]["k"] == "v"
+    assert first["metadata"]["sdk"]["name"] == "evalops-python"
+    assert first["user_ref"] == "u1"
+    assert first["tags"] == {"app": "x", "canal": "wa"}
+    assert second["tags"] == {"app": "x"}
+    assert "conversation_id" not in second["metadata"]

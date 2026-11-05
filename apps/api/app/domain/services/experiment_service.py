@@ -410,6 +410,8 @@ def execute_experiment(experiment: Experiment, db: Session) -> dict:
             "rubric_id": rubric.id,
             "rubric_version": rubric.current_version,
             "baseline_variant": baseline_name,
+            # No model is called: outputs come from _synthesize_variant_output.
+            "synthetic": True,
             "item_results": item_results,
         },
     }

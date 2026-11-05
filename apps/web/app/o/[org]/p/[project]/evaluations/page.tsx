@@ -187,7 +187,8 @@ export default async function EvaluationsPage({ params, searchParams }: Props) {
   if (drawerRubricId) {
     const row = evalRows.find((r) => r.rubric.id === drawerRubricId);
     if (row) {
-      const scores = row.runs.map((r) => r.aggregate_score).filter((s): s is number => s !== null);
+      // Partial runs score only part of the evidence: same rule as the API report.
+      const scores = row.runs.filter((r) => r.passed !== null).map((r) => r.aggregate_score).filter((s): s is number => s !== null);
       const avg = scores.length ? scores.reduce((a, b) => a + b, 0) / scores.length : null;
       const versions = versionsByRubric.get(row.rubric.id) ?? [];
       const latest = versions.find((v) => v.version === row.rubric.current_version) ?? versions[0] ?? null;
@@ -333,6 +334,7 @@ export default async function EvaluationsPage({ params, searchParams }: Props) {
               <tbody>
                 {evalRows.map(({ rubric, runs: rubricRuns }) => {
                   const scores = rubricRuns
+                    .filter((r) => r.passed !== null)
                     .map((r) => r.aggregate_score)
                     .filter((s): s is number => s !== null);
                   const avg = scores.length ? scores.reduce((a, b) => a + b, 0) / scores.length : null;
@@ -447,7 +449,7 @@ export default async function EvaluationsPage({ params, searchParams }: Props) {
                         ) : run.passed === false ? (
                           <Badge variant="err">falhou</Badge>
                         ) : (
-                          <Badge>{run.status}</Badge>
+                          <Badge>{run.status === "completed" ? "sem veredito" : run.status === "error" ? "erro" : run.status}</Badge>
                         )}
                       </td>
                       <td>

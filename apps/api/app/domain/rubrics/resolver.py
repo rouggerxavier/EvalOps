@@ -99,6 +99,21 @@ def build_trace_context(trace: Trace, spans: list[Span]) -> dict:
     }
 
 
+def build_conversation_context(conversation_id: str | None, turns: list[tuple[Trace, list[Span]]]) -> dict:
+    """Turns of a conversation up to the evaluated trace, oldest first."""
+    rows = []
+    for trace, spans in turns:
+        context = build_trace_context(trace, spans)["trace"]
+        rows.append({"trace_id": trace.id, "input": context["input"]["text"], "output": context["output"]["text"]})
+    transcript = "\n".join(
+        line
+        for row in rows
+        for line in (f"user: {row['input']}" if row["input"] else "", f"assistant: {row['output']}" if row["output"] else "")
+        if line
+    )
+    return {"id": conversation_id, "turns": rows, "transcript": transcript}
+
+
 def resolve_dotpath(path: str, context: dict) -> str:
     """Navigate a dotpath like 'trace.output.assistant_message' in the context dict."""
     parts = path.split(".")

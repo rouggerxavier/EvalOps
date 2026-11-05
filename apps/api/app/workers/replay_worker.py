@@ -123,11 +123,16 @@ async def _call_provider(
     provider: str | None,
     model: str | None,
     messages: list[dict],
+    *,
+    override: bool = False,
 ) -> _ReplayResult:
     t0 = time.monotonic()
 
+    # The span's provider decides the endpoint: its model id may carry another vendor's prefix.
+    route = f"{provider}/{model}" if provider and not override else (model or "")
+
     def _sync() -> str:
-        return llm_judge.call_llm(model or "", messages, 0.0)
+        return llm_judge.call_llm(route, messages, 0.0)
 
     text = await asyncio.to_thread(_sync)
     duration_ms = int((time.monotonic() - t0) * 1000)
@@ -228,7 +233,7 @@ async def replay_trace(ctx: dict, original_trace_id: str, new_trace_id: str) -> 
         messages = _build_messages(llm_span, variables if isinstance(variables, dict) else {})
 
         try:
-            result = await _call_provider(llm_span.provider, model, messages)
+            result = await _call_provider(llm_span.provider, model, messages, override=bool(override_model))
         except Exception as exc:  # noqa: BLE001
             _set_replay_status(db, placeholder, "failed", error=type(exc).__name__)
             logger.error(

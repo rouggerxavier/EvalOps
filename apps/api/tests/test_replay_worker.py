@@ -139,7 +139,7 @@ def test_replay_trace_transitions_to_completed(monkeypatch) -> None:
 
     result = asyncio.run(replay_trace(_ctx(), original_id, placeholder_id))
     assert result["status"] == "completed"
-    assert captured["model"] == "gpt-4o-mini"
+    assert captured["model"] == "openai/gpt-4o-mini"
 
     with SessionLocal() as db:
         ph = db.get(Trace, placeholder_id)

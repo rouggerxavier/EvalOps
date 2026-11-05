@@ -14,6 +14,7 @@ from fastapi.testclient import TestClient
 from app.db import Base, SessionLocal, engine
 from app.domain.evaluators import exact_match, llm_judge
 from app.domain.rubrics.resolver import build_trace_context
+from app.domain.rubrics.templating import render_template
 from app.domain.services import usage_service
 from app.domain.services.experiment_service import _render_template
 from app.main import app
@@ -65,7 +66,11 @@ def test_exact_match_template_cannot_reach_the_server(template) -> None:
 
 def test_judge_prompt_template_cannot_reach_the_server(monkeypatch) -> None:
     monkeypatch.setenv("JWT_SECRET", "segredo-de-teste")
-    assert "segredo-de-teste" not in llm_judge._render_prompt(READ_ENV, {})
+    called = []
+    monkeypatch.setattr(llm_judge, "call_llm", lambda *args: called.append(args))
+    result = llm_judge.run({}, {"prompt": READ_ENV})
+    assert result.raw_output == {"error": "prompt_render_failed"}
+    assert called == []
 
 
 def test_experiment_template_cannot_reach_the_server(monkeypatch) -> None:
@@ -74,7 +79,7 @@ def test_experiment_template_cannot_reach_the_server(monkeypatch) -> None:
 
 
 def test_legitimate_templates_still_render() -> None:
-    assert llm_judge._render_prompt("Avalie: {{ trace.output.text }}", {"trace": {"output": {"text": "oi"}}}) == "Avalie: oi"
+    assert render_template("Avalie: {{ trace.output.text }}", {"trace": {"output": {"text": "oi"}}}) == "Avalie: oi"
     assert _render_template("Olá {{ user_message }}", {"user_message": "Ana"}) == "Olá Ana"
 
 
