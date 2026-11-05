@@ -130,5 +130,7 @@ Limites:
 - Experimentos e replay recusam `cli:*`: experimentos contam falha de avaliador como nota 0.
 - A tela não sabe se o login expirou, pois verificar gastaria cota. Isso aparece ao avaliar.
 - Uma rubrica com `repeats` ou retentativas pode passar do `job_timeout` de 300s do `arq`.
+- Use Postgres com o worker. Em SQLite, um job segura a escrita enquanto a CLI roda e os outros falham com `database is locked`, sem registrar avaliação.
+- `latency_ms` da nota inclui a espera na fila serial, não só o tempo do modelo.
 - O total de custo do relatório de rubrica soma só custos conhecidos.
 - Não mande conversa real de cliente: o texto sai para o provedor da CLI.
