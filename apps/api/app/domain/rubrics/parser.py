@@ -4,8 +4,12 @@ from __future__ import annotations
 import re
 from typing import Any, Literal
 
+import jsonschema
+import jinja2
 import yaml
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
+
+from app.domain.rubrics.templating import check_template
 
 
 VALID_EVALUATOR_TYPES = {
@@ -31,6 +35,75 @@ _ALLOWED_TOP_FIELDS = {
 }
 
 
+# A wrong path resolves to "" at run time, so it is rejected when the rubric is saved.
+_TARGET_PATHS = {
+    "trace.id", "trace.name", "trace.status", "trace.user_ref",
+    "trace.input.text", "trace.input.user_message",
+    "trace.output.text", "trace.output.assistant_message",
+    "trace.conversation.id", "trace.conversation.transcript",
+}
+_TARGET_PREFIXES = ("trace.metadata.", "trace.tags.", "dataset_item.expected_output.", "variant.")
+_TARGET_KEYS = {
+    "regex_match": ("target",),
+    "keyword_presence": ("target",),
+    "length_bounds": ("target",),
+    "json_schema_valid": ("target",),
+    "exact_match": ("target",),
+    "cosine_similarity": ("target_a",),
+}
+_CHOICES = {
+    "regex_match": {"mode": ("must_match", "must_not_match")},
+    "keyword_presence": {"require": ("any", "all", "none")},
+    "length_bounds": {"unit": ("chars", "words", "tokens")},
+    "json_schema_valid": {"parse_mode": ("strict", "extract_first")},
+}
+_TEMPLATE_KEYS = {"exact_match": ("expected",), "cosine_similarity": ("target_b",), "llm_judge": ("prompt",)}
+_LENGTH_KEYS = ("min", "max", "min_chars", "max_chars", "min_words", "max_words")
+MAX_JUDGE_REPEATS = 5
+
+
+def _validate_evaluator_config(evaluator_type: str, config: dict[str, Any]) -> None:
+    for key in _TARGET_KEYS.get(evaluator_type, ()):
+        target = config.get(key)
+        if not isinstance(target, str) or not (target in _TARGET_PATHS or target.startswith(_TARGET_PREFIXES)):
+            raise ValueError(f"{evaluator_type}.{key} must be a known path such as trace.output.text")
+    for key, allowed in _CHOICES.get(evaluator_type, {}).items():
+        if key in config and config[key] not in allowed:
+            raise ValueError(f"{evaluator_type}.{key} must be one of {allowed}")
+    for key in _TEMPLATE_KEYS.get(evaluator_type, ()):
+        template = config.get(key)
+        if not isinstance(template, str) or not template.strip():
+            raise ValueError(f"{evaluator_type}.{key} is required")
+        try:
+            check_template(template)
+        except jinja2.TemplateError as exc:
+            raise ValueError(f"{evaluator_type}.{key} is not a valid template") from exc
+
+    if evaluator_type == "regex_match":
+        try:
+            re.compile(config.get("pattern") or "")
+        except re.error as exc:
+            raise ValueError("regex_match.pattern is not a valid regex") from exc
+        if not config.get("pattern"):
+            raise ValueError("regex_match.pattern is required")
+    elif evaluator_type == "keyword_presence":
+        keywords = config.get("keywords")
+        if not keywords or not isinstance(keywords, list) or not all(isinstance(k, str) and k for k in keywords):
+            raise ValueError("keyword_presence.keywords must be a non-empty list of strings")
+    elif evaluator_type == "length_bounds":
+        if not any(config.get(key) is not None for key in _LENGTH_KEYS):
+            raise ValueError("length_bounds needs a min or max")
+    elif evaluator_type == "json_schema_valid" and config.get("schema"):
+        try:
+            jsonschema.validators.validator_for(config["schema"]).check_schema(config["schema"])
+        except jsonschema.SchemaError as exc:
+            raise ValueError("json_schema_valid.schema is not a valid JSON schema") from exc
+    elif evaluator_type == "llm_judge":
+        repeats = config.get("repeats", 1)
+        if not isinstance(repeats, int) or isinstance(repeats, bool) or not 1 <= repeats <= MAX_JUDGE_REPEATS:
+            raise ValueError(f"llm_judge.repeats must be between 1 and {MAX_JUDGE_REPEATS}")
+
+
 class EvaluatorSpec(BaseModel):
     id: str
     type: str
@@ -54,6 +127,11 @@ class EvaluatorSpec(BaseModel):
         if v not in VALID_EVALUATOR_TYPES:
             raise ValueError(f"unknown evaluator type '{v}'; must be one of {sorted(VALID_EVALUATOR_TYPES)}")
         return v
+
+    @model_validator(mode="after")
+    def valid_config(self) -> "EvaluatorSpec":
+        _validate_evaluator_config(self.type, self.config)
+        return self
 
 
 class CriterionSpec(BaseModel):
@@ -160,12 +238,41 @@ class RubricSpec(BaseModel):
         return self
 
     @model_validator(mode="after")
+    def validate_flags_have_a_source(self) -> "RubricSpec":
+        # Only llm_judge reports flags: without one the rule would silently never fire.
+        uses_flags = any(cond.flag for cond in self.automatic_fail_conditions) or any(
+            flag.auto_fail for flag in self.critical_flags
+        )
+        if uses_flags and not any(ev.type == "llm_judge" and ev.enabled for ev in self.evaluators):
+            raise ValueError("automatic failure by flag needs an enabled llm_judge evaluator")
+        return self
+
+    @model_validator(mode="after")
     def validate_weighted_mean_weights(self) -> "RubricSpec":
         if self.aggregate == "weighted_mean":
             for ev in self.evaluators:
                 if ev.enabled and ev.weight <= 0:
                     raise ValueError(f"evaluator '{ev.id}' weight must be > 0 for weighted_mean")
         return self
+
+
+def ignored_fields(spec: RubricSpec) -> list[str]:
+    """Fields accepted for compatibility that no evaluation path reads."""
+    ignored = [
+        name for name in ("judge", "thresholds", "criteria", "cost_limits", "output_schema", "evaluation_mode")
+        if getattr(spec, name)
+    ]
+    ignored += [name for name in ("input_resolver", "output_resolver") if getattr(spec, name) != "auto"]
+    return ignored
+
+
+def _first_error(exc: ValidationError) -> str:
+    """One line naming the field: pydantic's own text is multi-line and echoes the input."""
+    errors = exc.errors()
+    where = ".".join(str(part) for part in errors[0]["loc"])
+    message = errors[0]["msg"].removeprefix("Value error, ")
+    more = f" (+{len(errors) - 1} erros)" if len(errors) > 1 else ""
+    return f"{where}: {message}{more}" if where else f"{message}{more}"
 
 
 def parse_rubric_yaml(yaml_source: str) -> RubricSpec:
@@ -184,5 +291,5 @@ def parse_rubric_yaml(yaml_source: str) -> RubricSpec:
 
     try:
         return RubricSpec.model_validate(raw)
-    except Exception as exc:
-        raise ValueError(str(exc)) from exc
+    except ValidationError as exc:
+        raise ValueError(_first_error(exc)) from exc

@@ -51,7 +51,7 @@ evalops-preview/      fonte visual do redesign (referência, não buildado)
 ```bash
 cd apps/api
 python -m venv .venv && source .venv/bin/activate
-pip install -e .[dev]
+pip install -c requirements.lock -e .[dev]
 alembic upgrade head
 uvicorn app.main:app --reload --port 8000
 ```

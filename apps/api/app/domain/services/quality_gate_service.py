@@ -6,7 +6,7 @@ import math
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
-from app.domain.rubrics.outcomes import automatic_failures
+from app.domain.rubrics.outcomes import automatic_fail_flags, automatic_failures, raised_flags
 from app.domain.services.analytics_service import p95_nearest_rank, resolve_overview_cutoff
 from app.domain.services.rag_service import consolidate_rag, rag_filter_predicate
 from app.models import EvaluationRun, QualityGateConfig, RubricVersion, Span, Trace, utcnow
@@ -88,15 +88,16 @@ def calculate_status(db: Session, project_id: str, window: str, environment: str
                 continue
             conditions = spec.get("automatic_fail_conditions", [])
             executable = [condition for condition in conditions if condition.get("evaluator_id")]
-            has_rules = has_rules or bool(executable)
-            # Flag-only rules have no persisted executor in the current engine.
-            if len(executable) != len(conditions):
-                rules_complete = False
+            flags = automatic_fail_flags(spec)
+            has_rules = has_rules or bool(executable) or bool(flags)
             valid_scores = [score for score in run.scores if _usable_score(score)] if run.status == "completed" else []
             score_slugs = {score.evaluator_slug for score in valid_scores}
             if any(condition["evaluator_id"] not in score_slugs for condition in executable):
                 rules_complete = False
-            violated = violated or bool(automatic_failures(valid_scores, executable))
+            # A judge that omitted "flags" reported nothing: that is missing evidence, not a clean result.
+            if flags and not any(isinstance((score.raw_output or {}).get("flags"), list) for score in valid_scores):
+                rules_complete = False
+            violated = violated or bool(automatic_failures(valid_scores, executable)) or bool(raised_flags(valid_scores) & flags)
         critical_checked += int(has_rules and rules_complete)
         critical_violations += int(violated)
 

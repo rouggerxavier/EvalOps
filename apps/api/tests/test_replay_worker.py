@@ -139,7 +139,7 @@ def test_replay_trace_transitions_to_completed(monkeypatch) -> None:
 
     result = asyncio.run(replay_trace(_ctx(), original_id, placeholder_id))
     assert result["status"] == "completed"
-    assert captured["model"] == "gpt-4o-mini"
+    assert captured["model"] == "openai/gpt-4o-mini"
 
     with SessionLocal() as db:
         ph = db.get(Trace, placeholder_id)
@@ -196,7 +196,7 @@ def test_replay_trace_no_llm_span_fails_gracefully(monkeypatch) -> None:
         assert ph.metadata_json["replay_error"] == "no_llm_span_found"
 
 
-def test_replay_trace_substitutes_variables_with_jinja(monkeypatch) -> None:
+def test_replay_trace_substitutes_variables(monkeypatch) -> None:
     org_id, project_id = _seed_project()
     original_id = _seed_original_trace_with_llm_span(org_id, project_id)
     placeholder_id = _seed_placeholder(

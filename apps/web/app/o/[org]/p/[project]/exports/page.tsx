@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Download, Plus, RefreshCw } from "lucide-react";
 
 import { AuthRequiredPanel } from "@/components/AuthRequiredPanel";
+import { PlanUsage } from "@/components/PlanUsage";
 import { createExportAction } from "@/lib/actions";
 import {
   getExport,
@@ -12,7 +13,7 @@ import {
   listExports,
   resolveProject,
 } from "@/lib/api";
-import { formatBytes, formatCost, formatCount, formatDateTime } from "@/lib/format";
+import { formatBytes, formatCount, formatDateTime } from "@/lib/format";
 import { safeErrorMessage } from "@/lib/safe-error";
 import type { ExportJob } from "@/lib/types";
 
@@ -129,26 +130,6 @@ function relTime(iso: string): string {
   const hrs = Math.floor(mins / 60);
   if (hrs < 24) return `${hrs}h atrás`;
   return `${Math.floor(hrs / 24)}d atrás`;
-}
-
-function percent(value: number, limit: number): number {
-  if (!limit || limit <= 0) return 0;
-  return Math.max(0, Math.min(100, (value / limit) * 100));
-}
-
-function UsageBar({ label, value, limit }: { label: string; value: number; limit: number }) {
-  const pct = percent(value, limit);
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "var(--text-muted)" }}>
-        <span>{label}</span>
-        <span className="mono">{formatCount(value)} / {formatCount(limit)}</span>
-      </div>
-      <div style={{ height: 6, background: "var(--bg-2)", borderRadius: 999, overflow: "hidden" }}>
-        <div style={{ width: `${pct}%`, height: "100%", background: pct > 90 ? "var(--warn)" : "var(--accent)" }} />
-      </div>
-    </div>
-  );
 }
 
 export default async function ExportsPage({ params, searchParams }: Props) {
@@ -514,82 +495,12 @@ export default async function ExportsPage({ params, searchParams }: Props) {
             </div>
           </section>
 
-          <section className="card">
-            <div className="card__header">
-              <h3 className="card__title">Plano e uso</h3>
-            </div>
-            <div className="card__body" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-              {subResult.subscription ? (
-                <>
-                  <div>
-                    <div style={{ color: "var(--text)", fontSize: 14, fontWeight: 600 }}>
-                      {subResult.subscription.plan.name}
-                    </div>
-                    <div style={{ color: "var(--text-faint)", fontSize: 12 }}>
-                      {subResult.subscription.plan.code}
-                    </div>
-                  </div>
-                  {usageResult.usage ? (
-                    <>
-                      <div className="mono" style={{ color: "var(--text)", fontSize: 18 }}>
-                        {formatCost(usageResult.usage.cost_usd)}
-                      </div>
-                      <div style={{ color: "var(--text-faint)", fontSize: 12 }}>
-                        periodo: {usageResult.usage.period}
-                      </div>
-                      <UsageBar
-                        label="Traces"
-                        value={usageResult.usage.traces_ingested}
-                        limit={subResult.subscription.plan.monthly_trace_limit}
-                      />
-                      <UsageBar
-                        label="Avaliacoes"
-                        value={usageResult.usage.evaluations_run}
-                        limit={subResult.subscription.plan.monthly_eval_limit}
-                      />
-                      <UsageBar
-                        label="Exports"
-                        value={usageResult.usage.exports_created}
-                        limit={subResult.subscription.plan.monthly_export_limit}
-                      />
-                      <UsageBar
-                        label="Spans"
-                        value={usageResult.usage.spans_ingested}
-                        limit={subResult.subscription.plan.monthly_span_limit}
-                      />
-                      <UsageBar
-                        label="Tokens"
-                        value={usageResult.usage.tokens_ingested}
-                        limit={subResult.subscription.plan.monthly_token_limit}
-                      />
-                      <div
-                        style={{
-                          display: "flex",
-                          justifyContent: "space-between",
-                          alignItems: "baseline",
-                          borderTop: "1px solid var(--border-subtle)",
-                          paddingTop: 10,
-                        }}
-                      >
-                        <span style={{ color: "var(--text-muted)", fontSize: 12 }}>Budget mensal de judge</span>
-                        <span className="mono" style={{ color: "var(--text)", fontSize: 13 }}>
-                          {formatCost(subResult.subscription.plan.monthly_judge_budget_usd)}
-                        </span>
-                      </div>
-                    </>
-                  ) : (
-                    <p style={{ margin: 0, color: "var(--warn)", fontSize: 12 }}>
-                      Falha ao carregar uso: {usageResult.error}
-                    </p>
-                  )}
-                </>
-              ) : (
-                <p style={{ margin: 0, color: "var(--warn)", fontSize: 12 }}>
-                  Falha ao carregar assinatura: {subResult.error}
-                </p>
-              )}
-            </div>
-          </section>
+          <PlanUsage
+            usage={usageResult.usage}
+            usageError={usageResult.error}
+            subscription={subResult.subscription}
+            subscriptionError={subResult.error}
+          />
 
         </div>
       </div>

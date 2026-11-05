@@ -55,8 +55,17 @@ class MemberOut(BaseModel):
 class ApiKeyCreate(BaseModel):
     name: str = Field(min_length=2, max_length=255)
     environment: str = Field(pattern=r"^(dev|staging|prod)$")
+    # "evaluate" spends judge budget, so it is never a default.
     scopes: list[str] = Field(default_factory=lambda: ["ingest", "read"])
     expires_at: datetime | None = None
+
+    @field_validator("scopes")
+    @classmethod
+    def validate_scopes(cls, value: list[str]) -> list[str]:
+        unknown = set(value) - {"ingest", "read", "evaluate"}
+        if unknown:
+            raise ValueError(f"unknown scopes: {sorted(unknown)}")
+        return value
 
     @field_validator("expires_at")
     @classmethod
@@ -268,6 +277,17 @@ class EvaluationRunRequest(BaseModel):
     rubric_id: str
     rubric_version: int | None = None
     triggered_by: str = "api"
+
+
+class EvaluationBatchIn(BaseModel):
+    rubric_id: str
+    rubric_version: int | None = None
+    trace_ids: list[str] | None = Field(default=None, max_length=500)
+    environment: str | None = Field(default=None, pattern=r"^(dev|staging|prod)$")
+    batch: str | None = Field(default=None, max_length=255)
+    name_contains: str | None = Field(default=None, max_length=255)
+    since: datetime | None = None
+    limit: int = Field(default=100, ge=1, le=500)
 
 
 class EvaluationScoreOut(BaseModel):

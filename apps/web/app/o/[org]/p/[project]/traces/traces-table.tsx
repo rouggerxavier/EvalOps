@@ -132,6 +132,7 @@ export function TracesTable({ org, project, rows }: Props) {
                       <span className="t__faint mono" style={{ fontSize: 10 }}>
                         {trace.service ?? "—"}
                         {isRag ? <> · <span style={{ color: "var(--info)" }}>RAG</span></> : null}
+                        {trace.flag_count ? <> · <span style={{ color: "var(--warning)" }}>marcado</span></> : null}
                       </span>
                     </Link>
                   </td>
@@ -187,13 +188,15 @@ export function TracesTable({ org, project, rows }: Props) {
                         <span
                           className="tag"
                           title={
-                            trace.cost_source === "estimated"
+                            trace.cost_source === "unpriced"
                               ? "Tokens registrados, mas provider/model sem preço — custo não é uma medição real"
-                              : "Sem tokens nem preço — custo desconhecido"
+                              : trace.cost_source === "provided"
+                                ? "Valor enviado pelo cliente"
+                                : "Sem tokens nem preço — custo desconhecido"
                           }
                           style={{ fontSize: 9, padding: "1px 4px" }}
                         >
-                          {trace.cost_source === "estimated" ? "estimado" : "sem preço"}
+                          {trace.cost_source === "unpriced" ? "sem preço" : trace.cost_source === "provided" ? "informado" : "sem dados"}
                         </span>
                       ) : null}
                     </div>

@@ -6,6 +6,7 @@ from typing import Any
 
 from app.domain.evaluators.base import EvaluatorResult
 from app.domain.rubrics.resolver import resolve_dotpath
+from app.domain.rubrics.templating import render_template
 
 
 def _normalize(text: str, ops: list[str]) -> str:
@@ -28,8 +29,7 @@ def run(context: dict, config: dict[str, Any]) -> EvaluatorResult:
 
     # Render expected template using basic dotpath substitution (Jinja2-lite)
     try:
-        from jinja2 import Template
-        expected = Template(expected_template).render(context)
+        expected = render_template(expected_template, context)
     except Exception:  # noqa: BLE001
         expected = expected_template
 

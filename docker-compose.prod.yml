@@ -32,6 +32,10 @@ x-api-base: &api-base
     EVALOPS_MAX_SPANS_PER_TRACE: ${EVALOPS_MAX_SPANS_PER_TRACE:-500}
     EVALOPS_WORKER_CONCURRENCY: ${EVALOPS_WORKER_CONCURRENCY:-4}
     JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET}
+    OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+    OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+    GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+    GROQ_API_KEY: ${GROQ_API_KEY:-}
     API_HOST: 0.0.0.0
     API_PORT: 8000
 
@@ -64,8 +68,7 @@ services:
     <<: *api-base
     restart: "no"
     command: >
-      sh -c "pip install --no-cache-dir -e '.' &&
-             pip install --no-cache-dir 'psycopg[binary]>=3.2' &&
+      sh -c "pip install --no-cache-dir -c requirements.lock -e . &&
              alembic upgrade head"
     depends_on:
       postgres:
@@ -75,8 +78,7 @@ services:
     <<: *api-base
     restart: unless-stopped
     command: >
-      sh -c "pip install --no-cache-dir -e '.' &&
-             pip install --no-cache-dir 'psycopg[binary]>=3.2' &&
+      sh -c "pip install --no-cache-dir -c requirements.lock -e . &&
              uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1"
     depends_on:
       postgres:
@@ -92,8 +94,7 @@ services:
     <<: *api-base
     restart: unless-stopped
     command: >
-      sh -c "pip install --no-cache-dir -e '.' &&
-             pip install --no-cache-dir 'psycopg[binary]>=3.2' &&
+      sh -c "pip install --no-cache-dir -c requirements.lock -e . &&
              python -m arq app.workers.settings.WorkerSettings"
     depends_on:
       postgres:

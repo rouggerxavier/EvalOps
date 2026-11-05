@@ -31,8 +31,8 @@ Contratos atuais preservados; feature aditiva; decisões e limites em `docs/qual
 
 ## Riscos residuais
 - PostgreSQL/volume de produção não testados; validar antes de rollout.
-- Proxy de grounding, custo conforme já registrado e ausência de flag executor
-  têm limites explícitos; o gate não cria avaliações/segurança por inferência.
+- Proxy de grounding, custo conforme já registrado e flags que dependem do juiz
+  registrar `flags` têm limites explícitos; o gate não cria avaliações/segurança por inferência.
 - E2E rodou em SQLite isolado e API com lifecycle de Redis desativado. Replay/Redis
   continuam cobertos pelos testes existentes, com mocks de fila.
 - GitHub hosted não iniciou por orçamento no [run 36700206771](https://github.com/rouggerxavier/EvalOps/actions/runs/36700206771). A CI foi migrada para `mac-ci`, com venv por job, mesma matriz SDK e testes/build web. Operação em `docs/runbooks/ci-runner-self-hosted.md`; confirmar checks verdes na HEAD antes de merge.

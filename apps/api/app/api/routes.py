@@ -16,7 +16,7 @@ from app.domain.services.analytics_service import (
 from app.domain.services.rag_service import rag_filter_predicate as _rag_filter_predicate
 from app.domain.services.audit_service import record_audit
 from app.domain.services.trace_ingest_service import ingest_trace_batch
-from app.models import EvaluationRun, Event, HumanFeedback, Membership, Notification, Organization, Project, Span, Trace, User, utcnow
+from app.models import EvaluationRun, Event, HumanFeedback, Membership, Notification, Organization, Project, Span, Trace, TraceFlag, User, utcnow
 from app.ownership import get_owned_project, get_owned_trace
 from app.schemas import (
     AttentionResponse,
@@ -85,6 +85,7 @@ def create_organization(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="organization_slug_taken")
     org = Organization(id=new_id("org"), name=payload.name, slug=payload.slug)
     db.add(org)
+    db.flush()
     db.add(Membership(user_id=user.id, organization_id=org.id, role="owner"))
     db.commit()
     db.refresh(org)
@@ -326,14 +327,10 @@ def _problem_cause(trace: Trace, spans: list[Span]) -> str:
                 return value
         message = str(err.get("message") or "").lower()
         if "timeout" in message:
-            return "vector_db_timeout" if "vector" in message else "timeout"
+            return "timeout"
         if "schema" in message:
             return "schema_mismatch"
-    if trace.status == "partial":
-        return "low_confidence"
-    if trace.total_cost_usd and float(trace.total_cost_usd) > 1:
-        return "cost_spike"
-    return "trace_error"
+    return "partial_trace" if trace.status == "partial" else "trace_error"
 
 
 def _delta_ms(later: datetime, earlier: datetime) -> int:
@@ -474,10 +471,23 @@ def ingest_traces(
 # most degraded signal across spans, not the most flattering.
 _COST_SOURCE_PRIORITY: dict[str, int] = {
     "unknown": 4,
-    "estimated": 3,
+    "unpriced": 3,
     "provided": 2,
     "priced": 1,
 }
+
+
+def _bulk_model_for_traces(db: Session, trace_ids: list[str]) -> dict[str, str]:
+    """Model of each trace's newest LLM call: the one that produced the final answer."""
+    if not trace_ids:
+        return {}
+    rows = (
+        db.query(Span.trace_id, Span.model)
+        .filter(Span.trace_id.in_(trace_ids), Span.type == "llm_call", Span.model.is_not(None))
+        .order_by(Span.started_at)
+        .all()
+    )
+    return dict(rows)
 
 
 def _bulk_cost_source_for_traces(db: Session, trace_ids: list[str]) -> dict[str, str]:
@@ -511,7 +521,7 @@ def _bulk_cost_source_for_traces(db: Session, trace_ids: list[str]) -> dict[str,
             if (cost or 0) > 0:
                 source = "priced"
             elif (tokens_in or 0) + (tokens_out or 0) > 0:
-                source = "estimated"
+                source = "unpriced"
             else:
                 source = "unknown"
         prev = per_trace.get(trace_id)
@@ -532,7 +542,7 @@ def _classify_cost_source(trace: Trace, *, span_label: str | None = None) -> str
     if (trace.total_cost_usd or 0) > 0:
         return "priced"
     if (trace.total_tokens_in or 0) > 0 or (trace.total_tokens_out or 0) > 0:
-        return "estimated"
+        return "unpriced"
     return "unknown"
 
 
@@ -556,6 +566,8 @@ def list_traces(
     duration_gt: int | None = Query(None, ge=0),
     slow_kind: str | None = Query(None, pattern="^(trace|llm|retrieval)$"),
     rag: bool | None = Query(None),
+    conversation_id: str | None = Query(None, max_length=255),
+    flagged: bool | None = Query(None),
     project: Project = Depends(get_owned_project),
     db: Session = Depends(get_db),
 ) -> dict:
@@ -592,6 +604,10 @@ def list_traces(
             effective_slow_kind = "trace"
     if rag is True:
         query = query.filter(_rag_filter_predicate())
+    if conversation_id:
+        query = query.filter(Trace.metadata_json["conversation_id"].as_string() == conversation_id)
+    if flagged is True:
+        query = query.filter(Trace.id.in_(select(TraceFlag.trace_id)))
     if cursor:
         cursor_created_at, cursor_id = _decode_cursor(cursor)
         query = query.filter(
@@ -625,12 +641,21 @@ def list_traces(
         for row in db.execute(latest_q):
             last_scores[row.trace_id] = float(row.aggregate_score) if row.aggregate_score is not None else None
     cost_sources = _bulk_cost_source_for_traces(db, trace_ids)
+    models = _bulk_model_for_traces(db, trace_ids)
+    flag_counts = dict(
+        db.query(TraceFlag.trace_id, func.count(TraceFlag.id))
+        .filter(TraceFlag.trace_id.in_(trace_ids))
+        .group_by(TraceFlag.trace_id)
+        .all()
+    )
     data = []
     for row in rows:
         item = TraceOut.model_validate(row).model_dump()
         item["last_score"] = last_scores.get(row.id)
         item["slow_reason"] = effective_slow_kind
         item["cost_source"] = _classify_cost_source(row, span_label=cost_sources.get(row.id))
+        item["model"] = models.get(row.id)
+        item["flag_count"] = flag_counts.get(row.id, 0)
         data.append(item)
     next_cursor = _encode_cursor(rows[-1].created_at, rows[-1].id) if has_more and rows else None
     return {"data": data, "next_cursor": next_cursor}
@@ -642,7 +667,7 @@ def get_trace(
     db: Session = Depends(get_db),
 ) -> dict:
     trace_id = trace.id
-    spans = db.query(Span).filter(Span.trace_id == trace_id).all()
+    spans = db.query(Span).filter(Span.trace_id == trace_id).order_by(Span.started_at).all()
     span_ids = [span.id for span in spans]
     events = db.query(Event).filter(Event.span_id.in_(span_ids)).all() if span_ids else []
     events_by_span: dict[str, list[Event]] = {}
@@ -705,11 +730,22 @@ def get_trace(
     cost_sources = _bulk_cost_source_for_traces(db, [trace_id])
     trace_out = TraceOut.model_validate(trace).model_dump()
     trace_out["cost_source"] = _classify_cost_source(trace, span_label=cost_sources.get(trace_id))
+    trace_out["model"] = _bulk_model_for_traces(db, [trace_id]).get(trace_id)
+    flags = (
+        db.query(TraceFlag)
+        .filter(TraceFlag.trace_id == trace_id)
+        .order_by(TraceFlag.created_at.desc())
+        .all()
+    )
     return {
         "trace": trace_out,
         "spans": span_data,
         "events_count": len(events),
         "feedback": feedback_data,
+        "flags": [
+            {"id": row.id, "reason": row.reason, "note": row.note, "created_at": row.created_at}
+            for row in flags
+        ],
     }
 
 
@@ -730,6 +766,34 @@ def delete_trace(
         payload={"project_id": trace.project_id, "trace_name": trace.name},
     )
     db.commit()
+
+
+def _evaluation_kpis(db: Session, traces) -> tuple[float | None, int]:
+    """Mean score of each trace's newest rubric versions, and how many traces it covers.
+
+    Errors and partial runs have no verdict (``passed`` is null): they are not quality evidence.
+    """
+    ranked = (
+        select(
+            EvaluationRun.trace_id,
+            EvaluationRun.aggregate_score,
+            EvaluationRun.passed,
+            func.row_number()
+            .over(
+                partition_by=(EvaluationRun.trace_id, EvaluationRun.rubric_id),
+                order_by=EvaluationRun.rubric_version.desc(),
+            )
+            .label("rn"),
+        )
+        .where(EvaluationRun.trace_id.in_(traces.with_entities(Trace.id)))
+        .subquery()
+    )
+    average, covered = db.execute(
+        select(func.avg(ranked.c.aggregate_score), func.count(func.distinct(ranked.c.trace_id))).where(
+            ranked.c.rn == 1, ranked.c.passed.isnot(None)
+        )
+    ).one()
+    return (round(float(average), 4) if average is not None else None), int(covered or 0)
 
 
 @router.get("/analytics/overview")
@@ -757,6 +821,7 @@ def analytics_overview(
                 "cost_usd": 0.0,
                 "latency_p95_ms": 0,
                 "avg_score": None,
+                "evaluated_traces": 0,
                 "error_rate": 0.0,
             },
             "cost_by_day": [],
@@ -764,6 +829,7 @@ def analytics_overview(
             "recent_flagged": [],
         }
 
+    avg_score, evaluated_traces = _evaluation_kpis(db, base_query)
     p95 = _p95_nearest_rank([row.duration_ms for row in rows])
     error_count = sum(1 for row in rows if row.status == "error")
     total_cost = float(sum(Decimal(str(row.total_cost_usd)) for row in rows))
@@ -825,7 +891,8 @@ def analytics_overview(
             "traces": len(rows),
             "cost_usd": round(total_cost, 6),
             "latency_p95_ms": p95,
-            "avg_score": None,
+            "avg_score": avg_score,
+            "evaluated_traces": evaluated_traces,
             "error_rate": round(error_count / max(1, len(rows)), 4),
         },
         "cost_by_day": [

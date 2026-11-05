@@ -1,7 +1,7 @@
 """export_jobs.file_size_bytes column.
 
 Revision ID: 0008_export_jobs_file_size_bytes
-Revises: 0007_evaluation_runs_trace_created_index
+Revises: 0007_eval_runs_trace_created
 Create Date: 2026-05-22
 """
 from __future__ import annotations
@@ -13,7 +13,7 @@ from alembic import op
 
 
 revision: str = "0008_export_jobs_file_size_bytes"
-down_revision: Union[str, Sequence[str], None] = "0007_evaluation_runs_trace_created_index"
+down_revision: Union[str, Sequence[str], None] = "0007_eval_runs_trace_created"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

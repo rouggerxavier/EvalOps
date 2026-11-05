@@ -23,7 +23,7 @@ test("EvoTopbar environment selector posts setEnvironmentAction (no purely-local
   assert.match(topbar, /name="environment"/);
   assert.match(topbar, /name="current_path"/);
   // Default value should now come from props, not useState.
-  assert.match(topbar, /environment = "prod"/);
+  assert.match(topbar, /environment = "all"/);
   assert.doesNotMatch(topbar, /setEnvironment\(env\)/);
 });
 

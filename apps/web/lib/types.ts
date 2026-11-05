@@ -29,7 +29,9 @@ export type Trace = {
   created_at: string;
   last_score?: number | null;
   slow_reason?: "trace" | "llm" | "retrieval" | null;
-  cost_source?: "priced" | "estimated" | "unknown" | null;
+  cost_source?: "priced" | "provided" | "unpriced" | "unknown" | null;
+  model?: string | null;
+  flag_count?: number;
 };
 
 export type TraceListResponse = {
@@ -74,6 +76,7 @@ export type TraceDetailResponse = {
   spans: TraceSpan[];
   events_count: number;
   feedback: HumanFeedback[];
+  flags: Pick<TraceFlag, "id" | "reason" | "note" | "created_at">[];
 };
 
 export type OverviewResponse = {

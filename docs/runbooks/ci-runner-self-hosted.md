@@ -13,8 +13,10 @@ label `mac-ci`; o registro e o serviço do fluxo-nexo continuam independentes.
 ## Workflow
 
 `.github/workflows/ci.yml` roda em PRs, pushes em `main` e acionamentos manuais.
-Todos os jobs usam `runs-on: mac-ci`, sem fallback automático para o GitHub hosted.
-Mac desligado, sem rede ou serviço parado deixa os jobs na fila.
+Os jobs usam `runs-on: mac-ci`, sem fallback automático para o GitHub hosted.
+A exceção é `migrate-postgres`, em `ubuntu-latest`: service containers só rodam
+em Linux. Ele depende do orçamento de Actions.
+Mac desligado, sem rede ou serviço parado deixa os jobs do `mac-ci` na fila.
 
 A cobertura permanece: API Python 3.12, SDK Python 3.9–3.12, testes e build web
 Node 22. `setup-uv` instala Python sem exigir instalação global via sudo; cada

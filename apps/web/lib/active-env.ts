@@ -13,11 +13,15 @@ const VALID_ENVS = new Set(["dev", "staging", "prod"]);
  *    pages/navigation.
  * 3. `undefined` — caller treats it as "all environments".
  *
+ * An empty `?environment=` is the filter's "qualquer env": an explicit "all" that
+ * must beat the cookie for this view.
+ *
  * Centralising this avoids the bug where the topbar selector wrote a cookie but
  * pages still read only the query string, so switching the chip didn't filter
  * any data.
  */
 export async function getActiveEnvironment(qpEnv: string | undefined): Promise<string | undefined> {
+  if (qpEnv === "") return undefined;
   if (qpEnv && VALID_ENVS.has(qpEnv)) return qpEnv;
   const store = await cookies();
   const cookieValue = store.get(ENV_COOKIE)?.value;

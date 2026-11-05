@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.deps import get_current_user
-from app.domain.rubrics.parser import parse_rubric_yaml
+from app.domain.rubrics.parser import ignored_fields, parse_rubric_yaml
 from app.domain.services.audit_service import record_audit
 from app.models import EvaluatorRow, Project, Rubric, RubricVersion, User
 from app.ownership import get_owned_project, get_owned_rubric
@@ -34,6 +34,13 @@ def _persist_evaluators(db: Session, rubric_version_id: str, parsed_spec: dict) 
         db.add(row)
 
 
+def _invalid_rubric(exc: ValueError) -> str:
+    """``invalid_rubric: <reason>``, or the bare code when the reason is not safe to show."""
+    reason = " ".join(str(exc).split())[:200]
+    safe = safe_message(reason, fallback="", context="parse_rubric_yaml")
+    return f"invalid_rubric: {safe}" if safe else "invalid_rubric"
+
+
 @router.get("/projects/{project_id}/rubrics")
 def list_rubrics(
     project: Project = Depends(get_owned_project),
@@ -56,7 +63,7 @@ def create_rubric(
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=safe_message(exc, fallback="invalid_rubric", context="parse_rubric_yaml"),
+            detail=_invalid_rubric(exc),
         ) from exc
 
     existing = (
@@ -114,6 +121,7 @@ def create_rubric(
     return {
         "rubric": RubricOut.model_validate(rubric).model_dump(),
         "version": RubricVersionOut.model_validate(rubric_ver).model_dump(),
+        "ignored_fields": ignored_fields(spec),
     }
 
 
@@ -169,7 +177,7 @@ def create_rubric_version(
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=safe_message(exc, fallback="invalid_rubric", context="parse_rubric_yaml"),
+            detail=_invalid_rubric(exc),
         ) from exc
 
     new_version_num = rubric.current_version + 1
@@ -201,4 +209,8 @@ def create_rubric_version(
     db.commit()
     db.refresh(rubric_ver)
 
-    return {"version": RubricVersionOut.model_validate(rubric_ver).model_dump(), "rubric_version": new_version_num}
+    return {
+        "version": RubricVersionOut.model_validate(rubric_ver).model_dump(),
+        "rubric_version": new_version_num,
+        "ignored_fields": ignored_fields(spec),
+    }

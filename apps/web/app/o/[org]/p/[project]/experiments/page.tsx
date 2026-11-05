@@ -52,7 +52,7 @@ function RunResultCard({ run }: { run: ExperimentRun }) {
           className={`badge ${run.passed ? "badge--ok" : "badge--err"}`}
         >
           <span className="badge__dot" />
-          {run.passed ? "Aprovado" : "Falhou"}
+          {run.passed ? "Aprovado (simulado)" : "Falhou (simulado)"}
         </span>
       </div>
       <div className="card__body card__body--flush">
@@ -221,7 +221,7 @@ export default async function ExperimentosPage({ params, searchParams }: Props) 
           <p className="page-header__eyebrow">Operação · Experimentos</p>
           <h1 className="page-header__title">Experimentos</h1>
           <p className="page-header__subtitle">
-            Comparações controladas de modelos, prompts e parâmetros sobre datasets com critérios de aprovação por rubrica.
+            Simulação de variantes de prompt sobre datasets, com critérios de aprovação por rubrica.
           </p>
         </div>
         <div className="row">
@@ -229,6 +229,22 @@ export default async function ExperimentosPage({ params, searchParams }: Props) 
             <Plus size={13} /> Novo experimento
           </Link>
         </div>
+      </div>
+
+      <div
+        role="note"
+        style={{
+          padding: "10px 14px",
+          background: "var(--warning-soft)",
+          border: "1px solid var(--warning-border)",
+          borderRadius: 6,
+          color: "var(--warning)",
+          fontSize: 13,
+          marginBottom: 12,
+        }}
+      >
+        Resultados simulados: nenhum modelo é chamado. A saída de cada variante é o prompt renderizado, então estas
+        notas não medem o seu agente. Para medir respostas reais, envie traces e use Avaliações.
       </div>
 
       {/* Flash */}

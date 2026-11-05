@@ -8,7 +8,7 @@ import { getTraces, hasAuthToken, resolveProject } from "@/lib/api";
 import { TracesAutoRefresh } from "./traces-auto-refresh";
 import { TracesEmpty, TracesTable } from "./traces-table";
 
-type Tab = "all" | "errors" | "partial" | "slow" | "rag";
+type Tab = "all" | "errors" | "partial" | "slow" | "rag" | "flagged";
 type SlowKind = "trace" | "llm" | "retrieval";
 
 type Props = {
@@ -24,7 +24,7 @@ type Props = {
 };
 
 function parseTab(value: string | undefined): Tab {
-  if (value === "errors" || value === "partial" || value === "slow" || value === "rag") return value;
+  if (value === "errors" || value === "partial" || value === "slow" || value === "rag" || value === "flagged") return value;
   return "all";
 }
 
@@ -55,6 +55,7 @@ export default async function TracesListPage({ params, searchParams }: Props) {
     duration_gt: tab === "slow" ? 2000 : undefined,
     slow_kind: tab === "slow" ? slowKind : undefined,
     rag: tab === "rag" ? true : undefined,
+    flagged: tab === "flagged" ? true : undefined,
   });
 
   const rows = traces.data;
@@ -67,6 +68,7 @@ export default async function TracesListPage({ params, searchParams }: Props) {
   // Reflect the *resolved* environment (cookie fallback included) so paginated
   // and refresh links keep the same filter the user is actually seeing.
   if (environment) baseParams.set("environment", environment);
+  else if (qp.environment === "") baseParams.set("environment", "");
   if (qp.name && tab !== "rag") baseParams.set("name", qp.name);
   if (qp.status && tab !== "errors" && tab !== "partial") baseParams.set("status", qp.status);
   // Persist slow_kind across pagination, filter submit and refresh links so a
@@ -164,6 +166,10 @@ export default async function TracesListPage({ params, searchParams }: Props) {
           <Layers size={11} /> RAG
           {tab === "rag" ? <span className="tab__count">{activeCount}</span> : null}
         </Link>
+        <Link href={tabHref("flagged")} className={`tab${tab === "flagged" ? " is-active" : ""}`}>
+          <Flag size={11} /> Marcados
+          {tab === "flagged" ? <span className="tab__count">{activeCount}</span> : null}
+        </Link>
       </nav>
 
       {tab === "slow" ? (
@@ -214,7 +220,7 @@ export default async function TracesListPage({ params, searchParams }: Props) {
           <option value="partial">parcial</option>
           <option value="error">erro</option>
         </select>
-        <select className="filter-select" name="environment" defaultValue={qp.environment ?? ""}>
+        <select className="filter-select" name="environment" defaultValue={environment ?? ""}>
           <option value="">qualquer env</option>
           <option value="prod">prod</option>
           <option value="staging">staging</option>

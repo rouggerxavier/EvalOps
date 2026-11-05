@@ -333,3 +333,22 @@ def test_flag_only_critical_condition_requires_review(gate):
         db.get(RubricVersion, "rv1").parsed_spec = {"automatic_fail_conditions": [{"slug": "flag-only", "flag": "unsafe"}]}
         db.commit()
     assert reason(status(gate), "critical")["status"] == "review"
+
+
+def test_raised_critical_flag_fails_even_with_passing_evaluator_rules(gate):
+    configure(gate)
+    trace()
+    evaluation()
+    with SessionLocal() as db:
+        db.get(RubricVersion, "rv1").parsed_spec = {
+            "automatic_fail_conditions": [{"slug": "safety_violation", "evaluator_id": "safe"}],
+            "critical_flags": [{"slug": "unsafe", "auto_fail": True}],
+        }
+        db.get(EvaluationScore, "s1").raw_output = {"flags": []}
+        db.commit()
+    assert reason(status(gate), "critical")["status"] == "pass"
+    with SessionLocal() as db:
+        db.get(EvaluationScore, "s1").raw_output = {"flags": ["unsafe"]}
+        db.commit()
+    body = status(gate)
+    assert body["status"] == "fail" and reason(body, "critical")["observed"] == 1

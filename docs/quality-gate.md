@@ -22,6 +22,7 @@ de evidências. O gate adiciona uma decisão legível para quem opera agentes:
   finitos não são usados como evidência.
 - `rubrics/outcomes.py`: condições de reprovação automática compartilhadas com o
   executor de avaliações. Uma condição ligada a um avaliador que falhou é crítica.
+  Uma flag `auto_fail` levantada por um avaliador também é crítica.
 - UI usa Server Components, API autenticada e Server Action; CSS puro e componentes
   Card/Badge existentes. A ação resolve o projeto autenticado pelos slugs da URL,
   em vez de aceitar um ID arbitrário enviado pelo formulário.
@@ -64,7 +65,7 @@ A política pertence ao projeto; janela e ambiente são filtros de leitura.
 | Alucinação / sem suporte | Média por trace RAG de `ungrounded/(grounded+ungrounded)`; sem claims usa `1-support_rate` válido | Review se algum trace RAG não tiver grounding; sem RAG é não aplicável |
 | Custo médio | Soma de `Trace.total_cost_usd` dividida pelo número de traces | Review se não houver traces |
 | p95 | Percentil nearest-rank de `Trace.duration_ms`, como overview | Review se não houver traces |
-| Regras críticas | Número de traces com ao menos uma condição automática executável violada | Review se a exigência estiver ativa e faltar cobertura de regras executáveis |
+| Regras críticas | Número de traces com ao menos uma condição automática violada ou flag `auto_fail` levantada | Review se a exigência estiver ativa e faltar cobertura das regras |
 
 A avaliação mais recente por **trace e rubrica** vence (desempate estável por ID).
 Uma nova tentativa com erro/running não é escondida por um resultado antigo.
@@ -163,9 +164,9 @@ Upgrade/downgrade/reupgrade foi testado em SQLite temporário preservando projet
 - Custo usa o total já registrado, incluindo as estimativas/defaults do pipeline
   atual. Zero registrado não garante custo real zero. Não inclui custo separado
   de execução das avaliações/judges.
-- O executor atual não fornece resultados persistidos para condições baseadas
-  apenas em `flag`. Essas condições pedem revisão quando a exigência crítica está
-  ativa. Nenhuma classificação de segurança nova é inventada no gate.
+- Regras por `flag` só contam como verificadas quando um avaliador registra a
+  lista `flags` no resultado. Sem ela, pedem revisão quando a exigência crítica
+  está ativa. Nenhuma classificação de segurança nova é inventada no gate.
 - Sem amostra mínima configurável, alertas, histórico de decisões ou bloqueio
   automático de chamadas/deployments nesta primeira entrega.
 - Leituras são em lote e a janela é limitada a 30 dias; agregação ainda ocorre em

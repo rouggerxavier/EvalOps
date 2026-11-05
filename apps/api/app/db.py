@@ -12,8 +12,7 @@ Supported URL forms:
     ``postgresql+psycopg`` since the project uses sync SQLAlchemy.
   * ``postgresql://...`` — accepted; SQLAlchemy chooses the default driver.
 
-For Postgres deployments install the driver explicitly: ``pip install
-'psycopg[binary]>=3.2'`` (already wired in ``docker-compose.prod.yml``).
+The ``psycopg`` driver is a regular dependency in ``pyproject.toml``.
 
 Schema management (Phase 7A): production targets opt into Alembic by setting
 ``EVALOPS_USE_ALEMBIC=1``; the FastAPI lifespan then runs

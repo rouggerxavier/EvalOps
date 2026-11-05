@@ -27,7 +27,7 @@ services:
       API_HOST: 0.0.0.0
       API_PORT: 8000
     command: >
-      sh -c "pip install --no-cache-dir -e . &&
+      sh -c "pip install --no-cache-dir -c requirements.lock -e . &&
              uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
     depends_on:
       - postgres
@@ -47,7 +47,7 @@ services:
       REDIS_URL: redis://redis:6379/0
       EVALOPS_WORKER_CONCURRENCY: "4"
     command: >
-      sh -c "pip install --no-cache-dir -e . &&
+      sh -c "pip install --no-cache-dir -c requirements.lock -e . &&
              python -m arq app.workers.settings.WorkerSettings"
     depends_on:
       - postgres
