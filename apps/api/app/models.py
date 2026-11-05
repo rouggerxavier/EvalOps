@@ -232,7 +232,7 @@ class EvaluationRun(Base):
     status: Mapped[str] = mapped_column(String(16))
     aggregate_score: Mapped[float | None] = mapped_column(Numeric(6, 4), nullable=True)
     passed: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
-    cost_usd: Mapped[float | None] = mapped_column(Numeric(12, 6), nullable=True, default=0)
+    cost_usd: Mapped[float | None] = mapped_column(Numeric(12, 6), nullable=True)
     latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -254,7 +254,7 @@ class EvaluationScore(Base):
     passed: Mapped[bool] = mapped_column(Boolean)
     reasoning: Mapped[str | None] = mapped_column(Text(), nullable=True)
     raw_output: Mapped[dict | None] = mapped_column(JSON, nullable=True)
-    cost_usd: Mapped[float | None] = mapped_column(Numeric(12, 6), nullable=True, default=0)
+    cost_usd: Mapped[float | None] = mapped_column(Numeric(12, 6), nullable=True)
     latency_ms: Mapped[int] = mapped_column(Integer, default=0)
 
     run: Mapped["EvaluationRun"] = relationship(back_populates="scores")
