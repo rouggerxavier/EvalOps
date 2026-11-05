@@ -12,7 +12,7 @@ from app.domain.rubrics.parser import parse_rubric_yaml
 from app.domain.services import eval_service
 from app.infra.llm import cli_judge
 from app.infra.llm.pricing import split_provider_model
-from app.models import EvaluatorRow
+from app.models import EvaluationRun, EvaluationScore, EvaluatorRow
 from app.workers import replay_worker
 
 CONTEXT = {"trace": {"output": {"text": "hi", "assistant_message": "hi"}}}
@@ -231,3 +231,10 @@ def _version_row(model):
 def test_cli_judge_does_not_spend_org_budget():
     assert eval_service._spends_judge_budget(_version_row("cli:claude/m")) is False
     assert eval_service._spends_judge_budget(_version_row("openrouter/m")) is True
+
+
+@pytest.mark.parametrize("model", [EvaluationRun, EvaluationScore])
+def test_unknown_cost_is_not_replaced_by_a_column_default(model):
+    # The ORM swaps an explicit None for a column default on INSERT, which would store unknown as 0.
+    column = model.__table__.c.cost_usd
+    assert column.nullable is True and column.default is None
