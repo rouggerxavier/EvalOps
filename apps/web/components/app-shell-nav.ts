@@ -14,9 +14,9 @@ export const APP_SHELL_NAV_SECTIONS: AppShellNavSection[] = [
   {
     label: "Projeto",
     items: [
-      { id: "overview", label: "Overview", path: "", shortcut: "G O" },
+      { id: "overview", label: "Visão geral", path: "", shortcut: "G O" },
       { id: "traces", label: "Traces", path: "/traces", shortcut: "G T" },
-      { id: "evaluations", label: "Avaliacoes", path: "/evaluations", shortcut: "G E" },
+      { id: "evaluations", label: "Avaliações", path: "/evaluations", shortcut: "G E" },
     ],
   },
   {
@@ -29,11 +29,11 @@ export const APP_SHELL_NAV_SECTIONS: AppShellNavSection[] = [
     ],
   },
   {
-    label: "Operacao",
+    label: "Operação",
     items: [
-      { id: "keys", label: "Chaves API", path: "/keys", shortcut: "G K" },
+      { id: "keys", label: "Chaves de API", path: "/keys", shortcut: "G K" },
       { id: "exports", label: "Exports", path: "/exports" },
-      { id: "settings", label: "Settings", path: "/settings", shortcut: "G S" },
+      { id: "settings", label: "Ajustes", path: "/settings", shortcut: "G S" },
     ],
   },
 ];
@@ -57,8 +57,12 @@ export function getPageTitle(pathname: string, base: string): string {
   const activeItem = getActiveNavItem(pathname, base);
   const subPath = pathname.startsWith(base) ? pathname.slice(base.length).replace(/\/$/, "") : "";
 
+  if (subPath === "/traces/compare") {
+    return "Comparar traces";
+  }
+
   if (subPath.startsWith("/traces/")) {
-    return "Trace detail";
+    return "Detalhe do trace";
   }
 
   return activeItem.label;

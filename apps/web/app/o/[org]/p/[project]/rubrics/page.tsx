@@ -1,26 +1,26 @@
-import { ChevronLeft, GitBranch, Plus, Target } from "lucide-react";
 import Link from "next/link";
+import { Clock, Plus } from "lucide-react";
 
 import { AuthRequiredPanel } from "@/components/AuthRequiredPanel";
 import { createRubricAction, createRubricVersionAction } from "@/lib/actions";
 import { getRubrics, getRubricVersions, hasAuthToken, resolveProject } from "@/lib/api";
-import { ignoredFieldsNotice } from "@/lib/safe-error";
-import type { RubricVersion } from "@/lib/types";
+import { getActiveEnvironment } from "@/lib/active-env";
+import { ignoredFieldsNotice, safeErrorMessage } from "@/lib/safe-error";
+import type { Rubric, RubricVersion } from "@/lib/types";
+
+import { getRubricReport } from "../rubric-report";
 
 type Props = {
   params: Promise<{ org: string; project: string }>;
-  searchParams: Promise<{ ignored?: string; rubric?: string; error?: string; created?: string; versioned?: string }>;
+  searchParams: Promise<{
+    ignored?: string;
+    rubric?: string;
+    error?: string;
+    created?: string;
+    versioned?: string;
+    environment?: string;
+  }>;
 };
-
-function relTime(iso: string): string {
-  const diff = Date.now() - Date.parse(iso);
-  const mins = Math.floor(diff / 60_000);
-  if (mins < 1) return "agora";
-  if (mins < 60) return `${mins}m atrás`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h atrás`;
-  return `${Math.floor(hrs / 24)}d atrás`;
-}
 
 const DEFAULT_YAML = `slug: answer-quality
 name: Answer Quality
@@ -37,655 +37,202 @@ evaluators:
       min: 20
       max: 800`;
 
-function YamlBlock({ code }: { code: string }) {
-  const lines = code.split("\n");
-  return (
-    <div style={{ overflowX: "auto" }}>
-      <pre
-        style={{
-          margin: 0,
-          fontFamily: "var(--font-mono)",
-          fontSize: 12,
-          lineHeight: "20px",
-          color: "var(--text-dim)",
-          minWidth: "max-content",
-        }}
-      >
-        {lines.map((line, i) => (
-          <div key={i} style={{ display: "flex" }}>
-            <span
-              style={{
-                display: "inline-block",
-                minWidth: 36,
-                paddingLeft: 12,
-                paddingRight: 10,
-                textAlign: "right",
-                color: "var(--text-faint)",
-                userSelect: "none",
-                borderRight: "1px solid var(--border-subtle)",
-                flexShrink: 0,
-              }}
-            >
-              {i + 1}
-            </span>
-            <span style={{ paddingLeft: 14, whiteSpace: "pre" }}>{line || " "}</span>
-          </div>
-        ))}
-      </pre>
-    </div>
-  );
+function relTime(iso: string): string {
+  const diff = Date.now() - Date.parse(iso);
+  const mins = Math.floor(diff / 60_000);
+  if (mins < 1) return "agora";
+  if (mins < 60) return `há ${mins} min`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `há ${hrs} h`;
+  return `há ${Math.floor(hrs / 24)} dias`;
 }
 
-function VersionsList({ versions, currentVersion }: { versions: RubricVersion[]; currentVersion: number }) {
-  const formatDate = (s: string) =>
-    new Date(s).toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric" });
-
-  return (
-    <div className="card__body" style={{ padding: "4px 0" }}>
-      {versions.length === 0 ? (
-        <div style={{ padding: "12px 20px", color: "var(--text-faint)", fontSize: 13 }}>Nenhuma versão.</div>
-      ) : (
-        [...versions].reverse().map((v, i) => {
-          const isLatest = v.version === currentVersion;
-          return (
-            <div
-              key={v.id}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 10,
-                padding: "10px 20px",
-                borderTop: i > 0 ? "1px solid var(--border-subtle)" : "none",
-              }}
-            >
-              <span
-                style={{
-                  fontFamily: "var(--font-mono)",
-                  fontSize: 12,
-                  color: isLatest ? "var(--accent)" : "var(--text-dim)",
-                  fontWeight: isLatest ? 600 : 500,
-                  minWidth: 28,
-                }}
-              >
-                v{v.version}
-              </span>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 12, color: "var(--text-dim)" }}>{formatDate(v.created_at)}</div>
-                <div
-                  style={{
-                    fontSize: 11,
-                    color: "var(--text-faint)",
-                    fontFamily: "var(--font-mono)",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  {v.created_by}
-                </div>
-              </div>
-              {isLatest && (
-                <span
-                  className="badge badge--ok"
-                  style={{ fontSize: 10, padding: "2px 7px" }}
-                >
-                  ativa
-                </span>
-              )}
-            </div>
-          );
-        })
-      )}
-    </div>
-  );
+function fmtPct(value: number | null): string {
+  return value === null ? "Sem dados" : `${Math.round(value * 100)}%`;
 }
 
-const inputStyle = {
-  background: "var(--bg-2)",
-  border: "1px solid var(--border)",
-  borderRadius: 6,
-  padding: "6px 10px",
-  color: "var(--text)",
-  fontSize: 13,
-  width: "100%",
-} as const;
-
-const labelStyle = {
-  display: "flex",
-  flexDirection: "column",
-  gap: 4,
-  fontSize: 13,
-} as const;
+function latestVersionFor(rubric: Rubric, versions: RubricVersion[]): RubricVersion | null {
+  return versions.find((version) => version.version === rubric.current_version) ?? versions[versions.length - 1] ?? null;
+}
 
 export default async function RubricsPage({ params, searchParams }: Props) {
   const { org, project } = await params;
   const qp = await searchParams;
 
-  if (!(await hasAuthToken())) {
-    return <AuthRequiredPanel layout="main" />;
-  }
+  if (!(await hasAuthToken())) return <AuthRequiredPanel layout="main" />;
 
   const resolved = await resolveProject(org, project);
+  const environment = await getActiveEnvironment(qp.environment);
   const { data: rubrics } = await getRubrics(resolved.project_id);
+  const selectedId = qp.rubric ?? rubrics[0]?.id ?? null;
+  const selected = rubrics.find((rubric) => rubric.id === selectedId) ?? rubrics[0] ?? null;
 
-  const selectedId = qp.rubric ?? null;
-  const selected = selectedId ? (rubrics.find((r) => r.id === selectedId) ?? null) : null;
+  const reports = await Promise.all(
+    rubrics.map((rubric) =>
+      getRubricReport(resolved.project_id, rubric.id, "7d", environment).catch(() => null),
+    ),
+  );
+  const reportsByRubric = new Map(rubrics.map((rubric, index) => [rubric.id, reports[index]]));
 
-  let versions: RubricVersion[] = [];
-  if (selected) {
-    versions = (await getRubricVersions(selected.id)).data;
-  }
-
-  const latestVersion = versions.length > 0 ? versions[versions.length - 1] : null;
+  const versions: RubricVersion[] = selected ? (await getRubricVersions(selected.id)).data : [];
+  const latestVersion = selected ? latestVersionFor(selected, versions) : null;
   const evaluators = latestVersion?.parsed_spec?.evaluators ?? [];
-
+  const report = selected ? reportsByRubric.get(selected.id) ?? null : null;
   const baseUrl = `/o/${org}/p/${project}/rubrics`;
-
-  const totalRubrics = rubrics.length;
-  const totalVersions = rubrics.reduce((acc, r) => acc + (r.current_version ?? 0), 0);
-  const latestActivity = (() => {
-    let mostRecent: string | null = null;
-    for (const r of rubrics) {
-      if (!mostRecent || Date.parse(r.created_at) > Date.parse(mostRecent)) {
-        mostRecent = r.created_at;
-      }
-    }
-    for (const v of versions) {
-      if (!mostRecent || Date.parse(v.created_at) > Date.parse(mostRecent)) {
-        mostRecent = v.created_at;
-      }
-    }
-    return mostRecent;
-  })();
-
-  const formatDate = (s: string) =>
-    new Date(s).toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric" });
+  const errorMessage = qp.error ? safeErrorMessage(qp.error, "Falha ao salvar rubrica.") : null;
+  const successMessage = qp.created ? "Rubrica criada." : qp.versioned ? "Nova versão salva." : null;
+  const ignoredNotice = ignoredFieldsNotice(qp.ignored);
 
   return (
-    <div className="page">
-      {/* Page Header */}
-      <div className="page-header">
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <p className="page-header__eyebrow">Operação · Rubrics</p>
-          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>
-            {selected && (
-              <Link
-                href={baseUrl}
-                style={{
-                  color: "var(--text-faint)",
-                  display: "inline-flex",
-                  alignItems: "center",
-                  marginRight: 2,
-                  textDecoration: "none",
-                }}
-              >
-                <ChevronLeft size={15} />
-              </Link>
-            )}
-            <h1 className="page-header__title">{selected ? selected.slug : "Rubrics"}</h1>
-          </div>
-          <p className="page-header__subtitle">
-            {selected
-              ? `Rubric · versão ${selected.current_version} · ${evaluators.length} avaliador${evaluators.length !== 1 ? "es" : ""}`
-              : `${rubrics.length} rubric${rubrics.length !== 1 ? "s" : ""} · critérios de avaliação versionados em YAML`}
+    <div className="page ops-page">
+      <header className="ops-page-header">
+        <div className="ops-page-header__copy">
+          <h1 className="ops-page-header__title">Rubricas</h1>
+          <p className="ops-page-header__subtitle">
+            O que a IA deveria fazer. Cada execução é avaliada com base nisso.
           </p>
         </div>
-        <div className="page-header__actions">
-          {!selected && rubrics.length > 0 && (
-            <span style={{ fontSize: 12, color: "var(--text-faint)" }}>
-              Clique em uma rubrica para ver detalhes
-            </span>
-          )}
-        </div>
-      </div>
+        <details className="ops-create" open={rubrics.length === 0}>
+          <summary className="btn btn--sm btn--primary"><Plus size={12} /> Nova rubrica</summary>
+          <form action={createRubricAction} className="ops-form">
+            <input type="hidden" name="org" value={org} />
+            <input type="hidden" name="project" value={project} />
+            <input type="hidden" name="project_id" value={resolved.project_id} />
+            <label className="ops-form__field">
+              <span>YAML da rubrica</span>
+              <textarea name="yaml_source" required rows={12} defaultValue={DEFAULT_YAML} />
+            </label>
+            <button type="submit" className="btn btn--sm btn--primary">Criar rubrica</button>
+          </form>
+        </details>
+      </header>
 
-      {/* Flash messages */}
-      {qp.error && (
-        <div
-          style={{
-            background: "var(--err-bg)",
-            border: "1px solid var(--err-border)",
-            borderRadius: 6,
-            padding: "10px 14px",
-            fontSize: 13,
-            color: "var(--err)",
-            marginBottom: 12,
-          }}
-        >
-          {qp.error}
+      {errorMessage && <div className="ops-flash ops-flash--error" role="alert">{errorMessage}</div>}
+      {successMessage && (
+        <div className="ops-flash ops-flash--success" role="status">
+          {successMessage}{ignoredNotice ? ` ${ignoredNotice}` : ""}
         </div>
       )}
-      {(qp.created || qp.versioned) && (
-        <div
-          style={{
-            background: "var(--ok-bg)",
-            border: "1px solid var(--ok-border)",
-            borderRadius: 6,
-            padding: "10px 14px",
-            fontSize: 13,
-            color: "var(--ok)",
-            marginBottom: 12,
-          }}
-        >
-          {qp.created ? "Rubrica criada com sucesso." : "Nova versão criada."}
-          {ignoredFieldsNotice(qp.ignored) ? ` ${ignoredFieldsNotice(qp.ignored)}` : ""}
-        </div>
-      )}
-
-      {/* Summary row — só dados reais do payload */}
-      <section className="module-summary" aria-label="Resumo de rubricas">
-        <div className="summary-card">
-          <p className="summary-card__label">Rubricas</p>
-          <div className="summary-card__value">{totalRubrics.toLocaleString("pt-BR")}</div>
-          <div className="summary-card__hint">critérios versionados em YAML</div>
-        </div>
-        <div className="summary-card">
-          <p className="summary-card__label">Versões</p>
-          <div className="summary-card__value">{totalVersions.toLocaleString("pt-BR")}</div>
-          <div className="summary-card__hint">soma das current_version</div>
-        </div>
-        <div className="summary-card">
-          <p className="summary-card__label">Última atividade</p>
-          <div className="summary-card__value">
-            {latestActivity ? relTime(latestActivity) : "—"}
-          </div>
-          <div className="summary-card__hint">rubrica ou versão</div>
-        </div>
-      </section>
 
       {selected ? (
-        /* ---- DETAIL VIEW ---- */
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 360px", gap: 12 }}>
-          {/* Left: YAML code block */}
-          <div className="card">
-            <div className="card__header">
-              <h3 className="card__title">Definição</h3>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <span className="badge badge--info">YAML</span>
-                <span style={{ fontSize: 11, color: "var(--text-faint)" }}>
-                  versão {latestVersion?.version ?? "—"}
-                </span>
-              </div>
-            </div>
-            <div
-              className="card__body"
-              style={{ padding: 0, maxHeight: 520, overflowY: "auto" }}
-            >
-              {latestVersion ? (
-                <YamlBlock code={latestVersion.yaml_source} />
-              ) : (
-                <div style={{ padding: 24, color: "var(--text-faint)", fontSize: 13 }}>
-                  Nenhuma versão encontrada.
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Right: Versions + Evaluators + New version form */}
-          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            <div className="card">
-              <div className="card__header">
-                <h3 className="card__title">Versões</h3>
-                <span style={{ fontSize: 11, color: "var(--text-faint)" }}>
-                  {versions.length} versão{versions.length !== 1 ? "ões" : ""}
-                </span>
-              </div>
-              <VersionsList versions={versions} currentVersion={selected.current_version} />
-            </div>
-
-            {evaluators.length > 0 && (
-              <div className="card">
-                <div className="card__header">
-                  <h3 className="card__title">Avaliadores</h3>
-                  <span style={{ fontSize: 11, color: "var(--text-faint)" }}>
-                    {evaluators.length} ativo{evaluators.length !== 1 ? "s" : ""}
-                  </span>
-                </div>
-                <div className="card__body" style={{ padding: "4px 0" }}>
-                  {evaluators.map((ev, i) => (
-                    <div
-                      key={ev.id}
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 10,
-                        padding: "10px 20px",
-                        borderTop: i > 0 ? "1px solid var(--border-subtle)" : "none",
-                      }}
-                    >
-                      <Target
-                        size={14}
-                        style={{ color: "var(--text-muted)", flexShrink: 0 }}
-                      />
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 13, color: "var(--text-dim)" }}>{ev.id}</div>
-                        <div
-                          style={{
-                            fontSize: 11,
-                            color: "var(--text-faint)",
-                            fontFamily: "var(--font-mono)",
-                          }}
-                        >
-                          {ev.type}
-                        </div>
-                      </div>
-                      {ev.weight != null && (
-                        <span
-                          style={{
-                            fontSize: 11,
-                            color: "var(--text-faint)",
-                            fontFamily: "var(--font-mono)",
-                          }}
-                        >
-                          ×{ev.weight}
-                        </span>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Nova versão collapsible */}
-            <details
-              style={{
-                background: "var(--surface-1)",
-                border: "1px solid var(--border)",
-                borderRadius: 8,
-              }}
-            >
-              <summary
-                style={{
-                  padding: "12px 16px",
-                  cursor: "pointer",
-                  fontSize: 13,
-                  fontWeight: 500,
-                  color: "var(--text-dim)",
-                  listStyle: "none",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 8,
-                }}
-              >
-                <GitBranch size={13} /> Nova versão — {selected.slug}
-              </summary>
-              <div style={{ padding: "0 16px 20px" }}>
-                <form
-                  action={createRubricVersionAction}
-                  style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 12 }}
+        <div className="ops-rubrics-layout">
+          <nav className="ops-rubrics-list ops-panel" aria-label="Lista de rubricas">
+            <header className="ops-panel__header"><h2>{rubrics.length} rubricas</h2></header>
+            {rubrics.map((rubric) => {
+              const active = rubric.id === selected.id;
+              const itemReport = reportsByRubric.get(rubric.id);
+              return (
+                <Link
+                  key={rubric.id}
+                  href={`${baseUrl}?rubric=${encodeURIComponent(rubric.id)}`}
+                  className={`ops-rubrics-list__item${active ? " is-active" : ""}`}
+                  aria-current={active ? "page" : undefined}
                 >
-                  <input type="hidden" name="org" value={org} />
-                  <input type="hidden" name="project" value={project} />
-                  <input type="hidden" name="rubric_id" value={selected.id} />
-                  <label style={labelStyle}>
-                    <span style={{ color: "var(--text-muted)" }}>YAML</span>
-                    <textarea
-                      name="yaml_source"
-                      required
-                      rows={12}
-                      defaultValue={latestVersion?.yaml_source ?? ""}
-                      style={{
-                        ...inputStyle,
-                        fontFamily: "var(--font-mono)",
-                        fontSize: 12,
-                        resize: "vertical",
-                      }}
-                    />
-                  </label>
-                  <div style={{ display: "flex", justifyContent: "flex-end" }}>
-                    <button type="submit" className="btn btn--sm btn--primary">
-                      Criar versão
-                    </button>
-                  </div>
-                </form>
-              </div>
-            </details>
-          </div>
-        </div>
-      ) : rubrics.length === 0 ? (
-        /* ---- EMPTY STATE ---- */
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-          <div className="card">
-            <div className="card__header">
-              <h3 className="card__title">Criar primeira rubrica</h3>
-            </div>
-            <div className="card__body">
-              <p
-                style={{
-                  fontSize: 13,
-                  color: "var(--text-dim)",
-                  marginBottom: 20,
-                  lineHeight: 1.6,
-                }}
-              >
-                Rubricas são critérios de avaliação escritos em YAML. Cada rubrica define
-                avaliadores e um threshold de aprovação.
-              </p>
-              <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 24 }}>
-                {[
-                  "Defina slug, threshold e evaluators no YAML.",
-                  "Crie a rubrica — versão v1 é gerada automaticamente.",
-                  "Vincule a rubrica a uma Evaluation para pontuar traces.",
-                ].map((step, i) => (
-                  <div key={i} style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
-                    <span
-                      style={{
-                        display: "inline-flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        width: 20,
-                        height: 20,
-                        borderRadius: "50%",
-                        background: "var(--accent-bg)",
-                        color: "var(--accent)",
-                        fontSize: 11,
-                        fontWeight: 600,
-                        flexShrink: 0,
-                        marginTop: 1,
-                      }}
-                    >
-                      {i + 1}
-                    </span>
-                    <span style={{ fontSize: 13, color: "var(--text-dim)", lineHeight: 1.5 }}>
-                      {step}
-                    </span>
-                  </div>
-                ))}
-              </div>
-              <form
-                action={createRubricAction}
-                style={{ display: "flex", flexDirection: "column", gap: 12 }}
-              >
-                <input type="hidden" name="org" value={org} />
-                <input type="hidden" name="project" value={project} />
-                <input type="hidden" name="project_id" value={resolved.project_id} />
-                <label style={labelStyle}>
-                  <span style={{ color: "var(--text-muted)" }}>YAML da rubrica</span>
-                  <textarea
-                    name="yaml_source"
-                    required
-                    rows={12}
-                    defaultValue={DEFAULT_YAML}
-                    style={{
-                      ...inputStyle,
-                      fontFamily: "var(--font-mono)",
-                      fontSize: 12,
-                      resize: "vertical",
-                    }}
-                  />
-                </label>
-                <button type="submit" className="btn btn--sm btn--primary">
-                  Criar rubrica
-                </button>
-              </form>
-            </div>
-          </div>
+                  <span className="ops-rubrics-list__top">
+                    <strong>{rubric.slug}</strong>
+                    <span className="ops-status ops-status--unknown"><Clock size={13} aria-hidden="true" /> Sem meta</span>
+                  </span>
+                  <span className="ops-rubrics-list__meta">
+                    v{rubric.current_version} · aprovação {fmtPct(itemReport?.totals.pass_rate ?? null)}
+                  </span>
+                </Link>
+              );
+            })}
+          </nav>
 
-          <div className="card" style={{ background: "var(--bg-2)" }}>
-            <div className="card__header">
-              <h3 className="card__title" style={{ color: "var(--text-muted)" }}>
-                Exemplo de rubrica
-              </h3>
-              <span className="badge badge--info">YAML</span>
-            </div>
-            <div className="card__body" style={{ padding: 0 }}>
-              <YamlBlock code={DEFAULT_YAML} />
+          <div className="ops-rubric-detail">
+            <section className="ops-panel">
+              <header className="ops-rubric-detail__header">
+                <div>
+                  <h2>{selected.slug}</h2>
+                  <p>{selected.description ?? "Sem descrição disponível."}</p>
+                </div>
+                <details className="ops-create ops-create--version">
+                  <summary className="btn btn--sm">Salvar nova versão</summary>
+                  <form action={createRubricVersionAction} className="ops-form">
+                    <input type="hidden" name="org" value={org} />
+                    <input type="hidden" name="project" value={project} />
+                    <input type="hidden" name="rubric_id" value={selected.id} />
+                    <label className="ops-form__field">
+                      <span>YAML</span>
+                      <textarea
+                        name="yaml_source"
+                        required
+                        rows={12}
+                        defaultValue={latestVersion?.yaml_source ?? ""}
+                      />
+                    </label>
+                    <button type="submit" className="btn btn--sm btn--primary">Criar versão</button>
+                  </form>
+                </details>
+              </header>
+              <div className="ops-rubric-metrics">
+                <div className="ops-rubric-metric">
+                  <span>Corte de aprovação</span>
+                  <strong>{selected.threshold.toFixed(2)}</strong>
+                </div>
+                <div className="ops-rubric-metric">
+                  <span>Aprovação, 7 dias</span>
+                  <strong>{fmtPct(report?.totals.pass_rate ?? null)}</strong>
+                </div>
+                <div className="ops-rubric-metric">
+                  <span>Execuções avaliadas</span>
+                  <strong>{report?.totals.runs.toLocaleString("pt-BR") ?? "Sem dados"}</strong>
+                </div>
+              </div>
+            </section>
+
+            <section className="ops-panel">
+              <header className="ops-panel__header">
+                <h3>Definição</h3>
+                <span className="ops-mono">YAML</span>
+              </header>
+              <pre className="ops-code">{latestVersion?.yaml_source ?? "Sem dados de YAML para esta versão."}</pre>
+            </section>
+
+            <div className="ops-rubric-bottom">
+              <section className="ops-panel">
+                <header className="ops-panel__header"><h3>Avaliadores</h3></header>
+                {evaluators.length ? (
+                  evaluators.map((evaluator) => {
+                    const model = evaluator.config?.model;
+                    return (
+                      <div className="ops-rubric-row" key={evaluator.id}>
+                        <div>
+                          <span className="ops-mono">{evaluator.id}</span>
+                          <span className="ops-rubric-row__secondary">{evaluator.type}</span>
+                        </div>
+                        {typeof model === "string" && <span className="ops-mono">{model}</span>}
+                      </div>
+                    );
+                  })
+                ) : (
+                  <p className="ops-panel__empty">Sem dados de avaliadores.</p>
+                )}
+              </section>
+
+              <section className="ops-panel">
+                <header className="ops-panel__header"><h3>Versões</h3></header>
+                {versions.length ? (
+                  [...versions].reverse().map((version) => (
+                    <div className="ops-rubric-row" key={version.id}>
+                      <strong>v{version.version}{version.version === selected.current_version ? " (atual)" : ""}</strong>
+                      <span className="ops-panel__muted">{relTime(version.created_at)}</span>
+                    </div>
+                  ))
+                ) : (
+                  <p className="ops-panel__empty">Sem dados de versões.</p>
+                )}
+              </section>
             </div>
           </div>
         </div>
       ) : (
-        /* ---- LIST VIEW ---- */
-        <>
-          <div className="table-wrap">
-            <table className="t">
-              <thead>
-                <tr>
-                  <th>Rubrica</th>
-                  <th>Descrição</th>
-                  <th>Versão</th>
-                  <th>Threshold</th>
-                  <th>Criada</th>
-                  <th style={{ width: 32 }}></th>
-                </tr>
-              </thead>
-              <tbody>
-                {rubrics.map((r) => (
-                  <tr key={r.id}>
-                    <td>
-                      <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                        <Link
-                          href={`${baseUrl}?rubric=${r.id}`}
-                          className="t__name"
-                          style={{ color: "var(--text)", textDecoration: "none" }}
-                        >
-                          {r.slug}
-                        </Link>
-                        <span
-                          style={{
-                            fontSize: 11,
-                            color: "var(--text-faint)",
-                            fontFamily: "var(--font-mono)",
-                          }}
-                        >
-                          {r.id}
-                        </span>
-                      </div>
-                    </td>
-                    <td style={{ color: "var(--text-muted)", fontSize: 13 }}>
-                      {r.description ?? (
-                        <span style={{ color: "var(--text-faint)" }}>—</span>
-                      )}
-                    </td>
-                    <td>
-                      <span
-                        style={{
-                          fontFamily: "var(--font-mono)",
-                          fontSize: 12,
-                          color: "var(--accent)",
-                          fontWeight: 600,
-                        }}
-                      >
-                        v{r.current_version}
-                      </span>
-                    </td>
-                    <td>
-                      <span
-                        style={{
-                          fontFamily: "var(--font-mono)",
-                          fontSize: 12,
-                          color:
-                            r.threshold >= 0.8
-                              ? "var(--ok)"
-                              : r.threshold >= 0.6
-                              ? "var(--warn)"
-                              : "var(--err)",
-                        }}
-                      >
-                        {r.threshold.toFixed(2)}
-                      </span>
-                    </td>
-                    <td className="t__muted">{formatDate(r.created_at)}</td>
-                    <td>
-                      <Link
-                        href={`${baseUrl}?rubric=${r.id}`}
-                        style={{ color: "var(--text-faint)", display: "flex" }}
-                      >
-                        <svg
-                          width={14}
-                          height={14}
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth={2}
-                        >
-                          <polyline points="9 18 15 12 9 6" />
-                        </svg>
-                      </Link>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Create form */}
-          <details
-            style={{
-              background: "var(--surface-1)",
-              border: "1px solid var(--border)",
-              borderRadius: 8,
-              marginTop: 16,
-            }}
-          >
-            <summary
-              style={{
-                padding: "12px 16px",
-                cursor: "pointer",
-                fontSize: 13,
-                fontWeight: 500,
-                color: "var(--text-dim)",
-                listStyle: "none",
-                display: "flex",
-                alignItems: "center",
-                gap: 8,
-              }}
-            >
-              <Plus size={13} /> Criar nova rubrica
-            </summary>
-            <div style={{ padding: "0 16px 20px" }}>
-              <form
-                action={createRubricAction}
-                style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 12 }}
-              >
-                <input type="hidden" name="org" value={org} />
-                <input type="hidden" name="project" value={project} />
-                <input type="hidden" name="project_id" value={resolved.project_id} />
-                <label style={labelStyle}>
-                  <span style={{ color: "var(--text-muted)" }}>YAML da rubrica</span>
-                  <textarea
-                    name="yaml_source"
-                    required
-                    rows={14}
-                    defaultValue={DEFAULT_YAML}
-                    style={{
-                      ...inputStyle,
-                      fontFamily: "var(--font-mono)",
-                      fontSize: 12,
-                      resize: "vertical",
-                    }}
-                  />
-                </label>
-                <div style={{ display: "flex", justifyContent: "flex-end" }}>
-                  <button type="submit" className="btn btn--sm btn--primary">
-                    Criar rubrica
-                  </button>
-                </div>
-              </form>
-            </div>
-          </details>
-        </>
+        <section className="ops-panel ops-empty">
+          <h2 className="ops-empty__title">Nenhuma rubrica</h2>
+          <p className="ops-empty__description">Crie uma rubrica para avaliar execuções do projeto.</p>
+        </section>
       )}
-
     </div>
   );
 }

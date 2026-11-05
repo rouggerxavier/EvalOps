@@ -6,6 +6,10 @@ const page = readFileSync(
   new URL("../app/o/[org]/p/[project]/datasets/page.tsx", import.meta.url),
   "utf8",
 );
+const itemForm = readFileSync(
+  new URL("../app/o/[org]/p/[project]/datasets/DatasetItemForm.tsx", import.meta.url),
+  "utf8",
+);
 
 test("datasets: page wires real server actions and API calls", () => {
   assert.match(page, /addDatasetItemAction/);
@@ -16,14 +20,17 @@ test("datasets: page wires real server actions and API calls", () => {
 
 test("datasets: forms expose required fields per backend contract", () => {
   assert.match(page, /action=\{createDatasetAction\}/);
-  assert.match(page, /action=\{addDatasetItemAction\}/);
   assert.match(page, /action=\{buildDatasetFromTracesAction\}/);
   assert.match(page, /name="slug"/);
-  assert.match(page, /name="input_json"/);
-  assert.match(page, /name="expected_output_json"/);
-  assert.match(page, /name="metadata_json"/);
-  assert.match(page, /name="dataset_id"/);
   assert.match(page, /name="project_id"/);
+  assert.match(page, /formData\.set\("input_json"/);
+  assert.match(page, /formData\.set\("expected_output_json"/);
+  assert.match(page, /formData\.set\("metadata_json"/);
+  assert.match(page, /<DatasetItemForm/);
+  assert.match(itemForm, /action=\{action\}/);
+  assert.match(itemForm, /name="dataset_id"/);
+  assert.match(itemForm, /name="question"/);
+  assert.match(itemForm, /name="expected_answer"/);
 });
 
 test("datasets: planned 'Exportar dataset' placeholder removed (Fase 7)", () => {

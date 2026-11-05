@@ -8,17 +8,20 @@ import {
   Database,
   Download,
   FlaskConical,
-  Home,
+  LayoutDashboard,
   KeyRound,
   List,
+  SlidersHorizontal,
   Sparkles,
   Target,
 } from "lucide-react";
 
 import { APP_SHELL_NAV_SECTIONS, projectHref } from "@/components/app-shell-nav";
+import { WorkspaceSwitcher } from "@/components/ui/WorkspaceSwitcher";
+import { formatCount } from "@/lib/format";
 
 const NAV_ICONS: Record<string, ElementType> = {
-  overview: Home,
+  overview: LayoutDashboard,
   traces: Activity,
   evaluations: Target,
   prompts: Sparkles,
@@ -27,12 +30,32 @@ const NAV_ICONS: Record<string, ElementType> = {
   experiments: FlaskConical,
   keys: KeyRound,
   exports: Download,
+  settings: SlidersHorizontal,
 };
 
-export function Sidebar({ org, project }: { org: string; project: string }) {
+type WorkspaceProject = { org: string; project: string; label: string };
+
+export function Sidebar({
+  org,
+  project,
+  projects,
+  attentionCount,
+  usage,
+  mobileMenuOpen,
+  onNavigate,
+}: {
+  org: string;
+  project: string;
+  projects: WorkspaceProject[];
+  attentionCount: number | null;
+  usage: { used: number; limit: number } | null;
+  mobileMenuOpen: boolean;
+  onNavigate: () => void;
+}) {
   const pathname = usePathname();
   const base = `/o/${org}/p/${project}`;
-  const initials = (project || org).slice(0, 2).toUpperCase();
+  const usagePercent = usage?.limit ? Math.min(100, Math.round((usage.used / usage.limit) * 100)) : 0;
+  const attentionLabel = attentionCount !== null && attentionCount >= 25 ? "25+" : String(attentionCount ?? "");
 
   function isActive(path: string) {
     if (path === "") return pathname === base || pathname === `${base}/`;
@@ -40,27 +63,23 @@ export function Sidebar({ org, project }: { org: string; project: string }) {
   }
 
   return (
-    <aside className="sidebar" aria-label="Navegacao principal">
+    <aside
+      id="ops-sidebar"
+      className="sidebar ops-sidebar"
+      aria-label="Navegação principal"
+      role={mobileMenuOpen ? "dialog" : undefined}
+      aria-modal={mobileMenuOpen ? true : undefined}
+    >
       <Link className="sb-brand" href={base}>
-        <span className="sb-brand__logo" aria-hidden="true">
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-            <path d="M2 3.5 L7 1 L12 3.5 L12 10.5 L7 13 L2 10.5 Z" stroke="currentColor" strokeWidth="1.4" />
-            <circle cx="7" cy="7" r="1.5" fill="currentColor" />
-          </svg>
-        </span>
-        <span className="sb-brand__name">EvalOps</span>
-        <span className="sb-brand__ver">v0.7</span>
+        <span className="sb-brand__logo" aria-hidden="true">E</span>
+        <span className="sb-brand__name">EvalOps Studio</span>
       </Link>
 
-      <Link className="sb-workspace" href={base} aria-label="Projeto ativo">
-        <span className="sb-workspace__avatar" aria-hidden="true">{initials}</span>
-        <span style={{ flex: 1, minWidth: 0 }}>
-          <span className="sb-workspace__org">Workspace - {org}</span>
-          <span className="sb-workspace__proj">{project}</span>
-        </span>
-      </Link>
+      <div className="ops-sidebar__project">
+        <WorkspaceSwitcher current={`${org}/${project}`} projects={projects} />
+      </div>
 
-      <nav style={{ flex: 1, minHeight: 0 }} aria-label="Secoes do projeto">
+      <nav className="ops-sidebar__nav" aria-label="Seções do projeto">
         {APP_SHELL_NAV_SECTIONS.map((section) => (
           <section className="sb-section" key={section.label}>
             <div className="sb-section__label">{section.label}</div>
@@ -73,10 +92,18 @@ export function Sidebar({ org, project }: { org: string; project: string }) {
                   href={projectHref(base, path)}
                   className={`sb-nav-item${active ? " is-active" : ""}`}
                   aria-current={active ? "page" : undefined}
+                  onClick={onNavigate}
                 >
                   <Icon size={15} aria-hidden="true" />
                   <span>{label}</span>
-                  {shortcut ? <span className="sb-nav-item__shortcut">{shortcut}</span> : null}
+                  {id === "overview" && attentionCount !== null && attentionCount > 0 ? (
+                    <span
+                      className="ops-attention-count"
+                      aria-label={`${attentionLabel} traces precisam de atenção nas últimas 24 horas`}
+                    >
+                      {attentionLabel}
+                    </span>
+                  ) : shortcut ? <span className="sb-nav-item__shortcut">{shortcut}</span> : null}
                 </Link>
               );
             })}
@@ -84,17 +111,22 @@ export function Sidebar({ org, project }: { org: string; project: string }) {
         ))}
       </nav>
 
-      <div className="sb-footer">
-        {/* Status was previously a hardcoded "online — ingestão pronta" string
-            even when the API was down. Now it links to /health, which probes
-            liveness + readiness in real time. No claim of "online" lives in
-            the shell unless that probe confirms it. */}
-        <Link href="/health" className="sb-status" prefetch={false}>
-          <span style={{ minWidth: 0 }}>
-            <span className="sb-status__name">Status do EvalOps</span>
-            <span className="sb-status__meta">probes vivos em /health</span>
-          </span>
-        </Link>
+      <div className="sb-footer ops-sidebar__usage">
+        <div className="ops-sidebar__usage-label">
+          <span>Traces no mês</span>
+          <strong>{usage ? `${usagePercent}%` : "Sem dados"}</strong>
+        </div>
+        <div
+          className="ops-sidebar__usage-track"
+          role="progressbar"
+          aria-label="Uso mensal de traces"
+          aria-valuemin={0}
+          aria-valuemax={usage?.limit ?? 100}
+          aria-valuenow={usage ? Math.min(usage.used, usage.limit) : 0}
+          aria-valuetext={usage ? `${formatCount(usage.used)} de ${formatCount(usage.limit)} traces` : "Sem dados"}
+        >
+          <span style={{ width: `${usagePercent}%` }} />
+        </div>
       </div>
     </aside>
   );

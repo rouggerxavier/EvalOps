@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { FlaskConical, Play, Plus, Rocket } from "lucide-react";
+import { Play } from "lucide-react";
 
 import { AuthRequiredPanel } from "@/components/AuthRequiredPanel";
 import { createExperimentAction, runExperimentAction } from "@/lib/actions";
@@ -11,7 +11,8 @@ import {
   hasAuthToken,
   resolveProject,
 } from "@/lib/api";
-import type { ExperimentRun } from "@/lib/types";
+import type { Experiment, ExperimentRun } from "@/lib/types";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 type Props = {
   params: Promise<{ org: string; project: string }>;
@@ -25,158 +26,129 @@ type Props = {
 };
 
 function relTime(iso: string | null): string {
-  if (!iso) return "—";
-  const diff = Date.now() - Date.parse(iso);
-  const mins = Math.floor(diff / 60_000);
-  if (mins < 1) return "agora";
-  if (mins < 60) return `${mins}m atrás`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h atrás`;
-  return `${Math.floor(hrs / 24)}d atrás`;
+  if (!iso) return "Sem dados";
+  const minutes = Math.floor((Date.now() - Date.parse(iso)) / 60_000);
+  if (minutes < 1) return "agora";
+  if (minutes < 60) return `${minutes} min atrás`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} h atrás`;
+  return `${Math.floor(hours / 24)} d atrás`;
 }
 
-function RunResultCard({ run }: { run: ExperimentRun }) {
+function runBaseline(run: ExperimentRun, experiment: Experiment | undefined): string | null {
+  const fromRun = run.run_metadata.baseline_variant;
+  if (typeof fromRun === "string") return fromRun;
+  return experiment?.baseline_variant ?? Object.keys(run.by_variant)[0] ?? null;
+}
+
+function formatScore(value: number): string {
+  return value.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function ExperimentRunCard({
+  run,
+  experiment,
+  org,
+  project,
+}: {
+  run: ExperimentRun;
+  experiment: Experiment | undefined;
+  org: string;
+  project: string;
+}) {
   const variants = Object.entries(run.by_variant);
-  const baselineScore = variants[0]?.[1]?.avg_score ?? 0;
+  const baselineName = runBaseline(run, experiment);
+  const baseline = variants.find(([name]) => name === baselineName)?.[1];
+  const highestScore = Math.max(...variants.map(([, metrics]) => metrics.avg_score));
+  const highestVariant = variants.find(([, metrics]) => metrics.avg_score === highestScore);
+  const runIsSynthetic = run.run_metadata.synthetic === true;
+  const runStatus = run.passed === true ? "Aprovado" : run.passed === false ? "Não aprovado" : "Sem dados";
 
   return (
-    <div className="card" style={{ marginBottom: 16 }}>
+    <section className="card">
       <div className="card__header">
         <div>
-          <h3 className="card__title">Resultado da run</h3>
-          <div className="card__subtitle">
-            {relTime(run.completed_at ?? run.created_at)} · {variants.length} variantes
-          </div>
+          <h2 className="card__title">
+            {highestVariant ? `Maior score: ${highestVariant[0]} (${formatScore(highestVariant[1].avg_score)})` : "Sem dados de variantes"}
+          </h2>
+          <p className="card__subtitle">
+            {experiment?.name ?? "Execução"} · {variants.length} variantes · terminou {relTime(run.completed_at ?? run.created_at)}
+          </p>
         </div>
-        <span
-          className={`badge ${run.passed ? "badge--ok" : "badge--err"}`}
-        >
-          <span className="badge__dot" />
-          {run.passed ? "Aprovado (simulado)" : "Falhou (simulado)"}
+        <span className={`badge ${run.passed === true ? "badge--ok" : run.passed === false ? "badge--err" : ""}`}>
+          {runStatus}
         </span>
+        {experiment ? (
+          <form action={runExperimentAction}>
+            <input type="hidden" name="org" value={org} />
+            <input type="hidden" name="project" value={project} />
+            <input type="hidden" name="experiment_id" value={experiment.id} />
+            <button type="submit" className="btn">Rodar de novo</button>
+          </form>
+        ) : null}
       </div>
-      <div className="card__body card__body--flush">
+      {runIsSynthetic ? (
+        <p className="ops-note">
+          A resposta da variante é sintetizada. Um avaliador `llm_judge` ainda pode chamar um modelo e consumir orçamento.
+        </p>
+      ) : null}
+      <div className="table-wrap">
         <table className="t">
           <thead>
             <tr>
+              <th>Resultado</th>
               <th>Variante</th>
-              <th>Score</th>
-              <th>Custo / call</th>
-              <th>p95 latência</th>
-              <th>Δ baseline</th>
-              <th>Status</th>
-              <th style={{ width: 32 }} />
+              <th className="t__num">Score</th>
+              <th className="t__num">Custo médio por item</th>
+              <th className="t__num">Latência p95</th>
+              <th className="t__num">Em relação à referência</th>
             </tr>
           </thead>
           <tbody>
-            {variants.map(([name, metrics], i) => {
-              const isBaseline = i === 0;
-              const delta = metrics.avg_score - baselineScore;
-              const isWinner =
-                !isBaseline &&
-                metrics.avg_score ===
-                  Math.max(...variants.map(([, m]) => m.avg_score));
+            {variants.length === 0 ? (
+              <tr><td className="empty-row" colSpan={6}>Sem dados de variantes nesta execução.</td></tr>
+            ) : variants.map(([name, metrics]) => {
+              const variant = experiment?.variants.find((item) => item.name === name);
+              const isBaseline = name === baselineName;
+              const scoreDelta = baseline ? metrics.avg_score - baseline.avg_score : null;
+              const costDelta = baseline ? metrics.avg_cost_usd_per_item - baseline.avg_cost_usd_per_item : null;
+              const costText = costDelta === null || !baseline || baseline.avg_cost_usd_per_item === 0
+                ? "Sem dados"
+                : `${Math.round((costDelta / baseline.avg_cost_usd_per_item) * 100).toLocaleString("pt-BR")}% custo`;
+              const scoreText = scoreDelta === null
+                ? "Sem dados"
+                : `${scoreDelta >= 0 ? "+" : ""}${(scoreDelta * 100).toFixed(1).replace(".", ",")} pp score`;
+
               return (
-                <tr
-                  key={name}
-                  style={
-                    isWinner ? { background: "rgba(34,211,168,0.06)" } : undefined
-                  }
-                >
+                <tr key={name}>
                   <td>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      {isWinner && (
-                        <Rocket size={14} style={{ color: "var(--ok)", flexShrink: 0 }} />
-                      )}
-                      <span className="t__name">{name}</span>
+                    <span className={`badge ${isBaseline ? "" : metrics.avg_score === highestScore ? "badge--ok" : ""}`}>
+                      {isBaseline ? "Referência" : metrics.avg_score === highestScore ? "Maior score" : "Comparada"}
+                    </span>
+                  </td>
+                  <td>
+                    <strong>{name}</strong>
+                    <div className="t__muted">
+                      {variant
+                        ? [variant.prompt_version_ref, variant.model].filter(Boolean).join(", ") || "Sem dados"
+                        : "Sem dados"}
                     </div>
                   </td>
-                  <td>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <div
-                        style={{
-                          width: 80,
-                          height: 6,
-                          background: "var(--bg-2)",
-                          borderRadius: 3,
-                          overflow: "hidden",
-                        }}
-                      >
-                        <div
-                          style={{
-                            width: `${metrics.avg_score * 100}%`,
-                            height: "100%",
-                            background: isWinner ? "var(--ok)" : "var(--accent)",
-                          }}
-                        />
-                      </div>
-                      <span
-                        style={{
-                          fontFamily: "var(--font-mono)",
-                          fontSize: 13,
-                          color: isWinner ? "var(--ok)" : "var(--text-dim)",
-                        }}
-                      >
-                        {metrics.avg_score.toFixed(2)}
-                      </span>
-                    </div>
-                  </td>
+                  <td className="t__num">{formatScore(metrics.avg_score)}</td>
+                  <td className="t__num">US$ {metrics.avg_cost_usd_per_item.toFixed(3)}</td>
                   <td className="t__num">
-                    ${metrics.avg_cost_usd_per_item.toFixed(5)}
+                    Sem dados
+                    <div className="t__muted">Média: {metrics.avg_latency_ms} ms</div>
                   </td>
-                  <td className="t__num">
-                    {metrics.avg_latency_ms.toFixed(0)}ms
-                  </td>
-                  <td>
-                    {isBaseline ? (
-                      <span className="t__faint" style={{ fontSize: 12 }}>
-                        baseline
-                      </span>
-                    ) : (
-                      <span
-                        style={{
-                          fontFamily: "var(--font-mono)",
-                          fontSize: 12,
-                          color: delta >= 0 ? "var(--ok)" : "var(--err)",
-                        }}
-                      >
-                        {delta >= 0 ? "+" : ""}
-                        {(delta * 100).toFixed(1)}pp
-                      </span>
-                    )}
-                  </td>
-                  <td>
-                    {isWinner ? (
-                      <span className="badge badge--ok">
-                        <span className="badge__dot" /> winner
-                      </span>
-                    ) : (
-                      <span className="badge">
-                        <span className="badge__dot" /> avaliada
-                      </span>
-                    )}
-                  </td>
-                  <td />
+                  <td className="t__num">{isBaseline ? "—" : `${costText} · ${scoreText}`}</td>
                 </tr>
               );
             })}
           </tbody>
         </table>
-        {run.criteria_failures.length > 0 && (
-          <div
-            style={{
-              padding: "10px 16px",
-              borderTop: "1px solid var(--border-subtle)",
-              fontSize: 12,
-              color: "var(--err)",
-              fontFamily: "var(--font-mono)",
-            }}
-          >
-            Falhas nos critérios: {run.criteria_failures.join(", ")}
-          </div>
-        )}
       </div>
-    </div>
+      <p className="ops-note">Latência p95: Sem dados. A média está disponível; o custo é a média por item.</p>
+    </section>
   );
 }
 
@@ -184,9 +156,7 @@ export default async function ExperimentosPage({ params, searchParams }: Props) 
   const { org, project } = await params;
   const qp = await searchParams;
 
-  if (!(await hasAuthToken())) {
-    return <AuthRequiredPanel layout="main" />;
-  }
+  if (!(await hasAuthToken())) return <AuthRequiredPanel layout="main" />;
 
   const resolved = await resolveProject(org, project);
   const [datasetsRes, rubricsRes, experimentsRes] = await Promise.all([
@@ -195,147 +165,118 @@ export default async function ExperimentosPage({ params, searchParams }: Props) 
     getExperiments(resolved.project_id),
   ]);
 
-  let runDetail: Awaited<ReturnType<typeof getExperimentRun>> | null = null;
+  let runDetail: { run: ExperimentRun } | null = null;
+  let runError = false;
   if (qp.run_id && qp.experiment_id) {
     try {
       runDetail = await getExperimentRun(qp.experiment_id, qp.run_id);
     } catch {
-      runDetail = null;
+      runError = true;
     }
   }
 
   const experiments = experimentsRes.data;
-
-  const totalVariants = experiments.reduce((acc, exp) => acc + exp.variants.length, 0);
-  const withBaseline = experiments.filter((exp) => exp.baseline_variant !== null).length;
-  const latestActivity = experiments.reduce<string | null>((acc, exp) => {
-    if (!acc || Date.parse(exp.created_at) > Date.parse(acc)) return exp.created_at;
-    return acc;
-  }, null);
-
+  const experimentForRun = experiments.find((experiment) => experiment.id === qp.experiment_id);
+  const datasetName = new Map(datasetsRes.data.map((dataset) => [dataset.id, dataset.slug]));
+  const rubricName = new Map(rubricsRes.data.map((rubric) => [rubric.id, rubric.slug]));
   return (
     <div className="page">
-      {/* Header */}
-      <div className="page-header">
+      <header className="page-header">
         <div>
-          <p className="page-header__eyebrow">Operação · Experimentos</p>
           <h1 className="page-header__title">Experimentos</h1>
           <p className="page-header__subtitle">
-            Simulação de variantes de prompt sobre datasets, com critérios de aprovação por rubrica.
+            Teste versões de prompt e modelo no mesmo dataset, antes de publicar.
           </p>
         </div>
-        <div className="row">
-          <Link href="#create-experiment" className="btn btn--sm btn--primary">
-            <Plus size={13} /> Novo experimento
-          </Link>
-        </div>
-      </div>
+        <details className="ops-inline">
+          <summary className="btn btn--primary">Novo experimento</summary>
+          {datasetsRes.data.length > 0 && rubricsRes.data.length > 0 ? (
+            <form action={createExperimentAction} className="card ops-form">
+              <input type="hidden" name="org" value={org} />
+              <input type="hidden" name="project" value={project} />
+              <input type="hidden" name="project_id" value={resolved.project_id} />
+              <label className="ops-form__field">
+                <span>Nome</span>
+                <input name="name" placeholder="q2-model-comparison" minLength={2} required />
+              </label>
+              <label className="ops-form__field">
+                <span>Dataset</span>
+                <select name="dataset_id" defaultValue={datasetsRes.data[0]?.id} required>
+                  {datasetsRes.data.map((dataset) => <option key={dataset.id} value={dataset.id}>{dataset.slug}</option>)}
+                </select>
+              </label>
+              <label className="ops-form__field">
+                <span>Rubrica</span>
+                <select name="rubric_id" defaultValue={rubricsRes.data[0]?.id} required>
+                  {rubricsRes.data.map((rubric) => <option key={rubric.id} value={rubric.id}>{rubric.slug}</option>)}
+                </select>
+              </label>
+              <label className="ops-form__field">
+                <span>Referência</span>
+                <input name="baseline_variant" defaultValue="control" />
+              </label>
+              <label className="ops-form__field">
+                <span>Variantes JSON</span>
+                <textarea
+                  name="variants_json"
+                  rows={5}
+                  defaultValue={JSON.stringify([
+                    { name: "control", model: "openai/gpt-4o-mini", params: { temperature: 0.2 } },
+                    { name: "candidate", model: "openai/gpt-4.1", params: { temperature: 0.2 } },
+                  ], null, 2)}
+                  required
+                />
+              </label>
+              <label className="ops-form__field">
+                <span>Critérios JSON</span>
+                <textarea
+                  name="pass_criteria_json"
+                  rows={3}
+                  defaultValue={JSON.stringify({ min_pass_rate: 0.7, no_regression_vs: "control", no_regression_delta: 0.02 }, null, 2)}
+                />
+              </label>
+              <p className="ops-note">A criação exige variantes. Depois de criar, use “Rodar” na tabela.</p>
+              <button type="submit" className="btn btn--primary">Criar experimento</button>
+            </form>
+          ) : (
+            <div className="card ops-form">
+              <p className="ops-empty">Crie ao menos um dataset e uma rubrica antes de começar.</p>
+              {datasetsRes.data.length === 0 ? <Link href={`/o/${org}/p/${project}/datasets`}>Criar dataset</Link> : null}
+              {rubricsRes.data.length === 0 ? <Link href={`/o/${org}/p/${project}/rubrics`}>Criar rubrica</Link> : null}
+            </div>
+          )}
+        </details>
+      </header>
 
-      <div
-        role="note"
-        style={{
-          padding: "10px 14px",
-          background: "var(--warning-soft)",
-          border: "1px solid var(--warning-border)",
-          borderRadius: 6,
-          color: "var(--warning)",
-          fontSize: 13,
-          marginBottom: 12,
-        }}
-      >
-        Resultados simulados: nenhum modelo é chamado. A saída de cada variante é o prompt renderizado, então estas
-        notas não medem o seu agente. Para medir respostas reais, envie traces e use Avaliações.
-      </div>
+      <p className="ops-note">
+        As respostas das variantes são sintetizadas a partir do prompt. Um avaliador `llm_judge` pode chamar um modelo; esta execução não mede respostas reais do agente.
+      </p>
+      {qp.error ? <p className="ops-note" role="alert">{safeErrorMessage(qp.error, "Falha ao executar ação.")}</p> : null}
+      {qp.created ? <p className="ops-note" role="status">Experimento criado.</p> : null}
+      {qp.run ? <p className="ops-note" role="status">Execução concluída.</p> : null}
 
-      {/* Flash */}
-      {qp.error && (
-        <div
-          style={{
-            padding: "10px 14px",
-            background: "var(--err-bg)",
-            border: "1px solid var(--err-border)",
-            borderRadius: 6,
-            color: "var(--err)",
-            fontSize: 13,
-            marginBottom: 12,
-          }}
-        >
-          {qp.error}
-        </div>
-      )}
-      {(qp.created || qp.run) && (
-        <div
-          style={{
-            padding: "10px 14px",
-            background: "var(--ok-bg)",
-            border: "1px solid var(--ok-border)",
-            borderRadius: 6,
-            color: "var(--ok)",
-            fontSize: 13,
-            marginBottom: 12,
-          }}
-        >
-          {qp.created ? "Experimento criado com sucesso." : "Run executada com sucesso."}
-        </div>
-      )}
-
-      {/* Summary row — só dados reais do payload */}
-      <section className="module-summary" aria-label="Resumo de experimentos">
-        <div className="summary-card">
-          <p className="summary-card__label">Experimentos</p>
-          <div className="summary-card__value">{experiments.length.toLocaleString("pt-BR")}</div>
-          <div className="summary-card__hint">total no projeto</div>
-        </div>
-        <div className="summary-card">
-          <p className="summary-card__label">Variantes</p>
-          <div className="summary-card__value">{totalVariants.toLocaleString("pt-BR")}</div>
-          <div className="summary-card__hint">soma das variantes</div>
-        </div>
-        <div className="summary-card">
-          <p className="summary-card__label">Com baseline</p>
-          <div className="summary-card__value">{withBaseline.toLocaleString("pt-BR")}</div>
-          <div className="summary-card__hint">baseline configurado</div>
-        </div>
-        <div className="summary-card">
-          <p className="summary-card__label">Última atividade</p>
-          <div className="summary-card__value">
-            {latestActivity ? relTime(latestActivity) : "—"}
-          </div>
-          <div className="summary-card__hint">experimento criado</div>
-        </div>
-      </section>
-
-      {/* Run result */}
-      {runDetail?.run && <RunResultCard run={runDetail.run} />}
-
-      {/* Experiments table */}
-      {experiments.length === 0 ? (
-        <div className="card" style={{ padding: "48px 24px", textAlign: "center" }}>
-          <FlaskConical
-            size={32}
-            style={{ color: "var(--text-faint)", margin: "0 auto 12px" }}
-          />
-          <p style={{ color: "var(--text-muted)", marginBottom: 6, fontWeight: 600 }}>
-            Nenhum experimento ainda
-          </p>
-          <p style={{ color: "var(--text-faint)", fontSize: 13, maxWidth: 400, margin: "0 auto 20px" }}>
-            Crie variantes para comparar prompts, modelos ou parâmetros no mesmo dataset com critérios de aprovação por rubrica.
-          </p>
-          <ol
-            style={{
-              textAlign: "left",
-              display: "inline-block",
-              fontSize: 13,
-              color: "var(--text-muted)",
-              lineHeight: "1.8",
-            }}
-          >
-            <li>Garanta que exista ao menos um dataset e uma rubrica.</li>
-            <li>Crie variantes <code style={{ fontFamily: "var(--font-mono)", fontSize: 12 }}>control</code> e <code style={{ fontFamily: "var(--font-mono)", fontSize: 12 }}>candidate</code>.</li>
-            <li>Rode o experimento e compare pass rate, custo e latência.</li>
-          </ol>
-        </div>
+      {runDetail ? (
+        <ExperimentRunCard
+          run={runDetail.run}
+          experiment={experimentForRun}
+          org={org}
+          project={project}
+        />
       ) : (
+        <section className="card ops-empty">
+          <div>
+            <h2>Resultado mais recente</h2>
+            <p role={runError ? "alert" : undefined}>
+              {runError
+                ? "Não foi possível carregar esta execução. Sem dados do resultado."
+                : "Sem dados. A API só retorna uma execução quando o ID é conhecido. Rode um experimento para ver o resultado."}
+            </p>
+          </div>
+        </section>
+      )}
+
+      <section className="card">
+        <div className="card__header"><h2 className="card__title">Todos os experimentos</h2></div>
         <div className="table-wrap">
           <table className="t">
             <thead>
@@ -343,269 +284,37 @@ export default async function ExperimentosPage({ params, searchParams }: Props) 
                 <th>Experimento</th>
                 <th>Dataset</th>
                 <th>Rubrica</th>
-                <th>Variantes</th>
-                <th>Baseline</th>
-                <th className="">Criado</th>
-                <th style={{ width: 140 }} />
+                <th className="t__num">Variantes</th>
+                <th>Referência</th>
+                <th className="t__num">Criado</th>
+                <th>Ações</th>
               </tr>
             </thead>
             <tbody>
-              {experiments.map((exp) => (
-                <tr key={exp.id}>
+              {experiments.length === 0 ? (
+                <tr><td className="empty-row" colSpan={7}>Sem dados. Crie um experimento para comparar variantes.</td></tr>
+              ) : experiments.map((experiment) => (
+                <tr key={experiment.id}>
+                  <td><span className="t__name">{experiment.name}</span></td>
+                  <td>{datasetName.get(experiment.dataset_id) ?? "Sem dados"}</td>
+                  <td>{rubricName.get(experiment.rubric_id) ?? "Sem dados"}</td>
+                  <td className="t__num">{experiment.variants.length}</td>
+                  <td>{experiment.baseline_variant ?? experiment.variants[0]?.name ?? "Sem dados"}</td>
+                  <td className="t__num">{relTime(experiment.created_at)}</td>
                   <td>
-                    <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                      <span className="t__name">{exp.name}</span>
-                      <span
-                        style={{
-                          fontSize: 11,
-                          color: "var(--text-faint)",
-                          fontFamily: "var(--font-mono)",
-                        }}
-                      >
-                        {exp.id.slice(0, 16)}…
-                      </span>
-                    </div>
-                  </td>
-                  <td>
-                    <span className="mono t__muted" style={{ fontSize: 12 }}>
-                      {exp.dataset_id.slice(0, 16)}…
-                    </span>
-                  </td>
-                  <td>
-                    <span className="mono t__muted" style={{ fontSize: 12 }}>
-                      {exp.rubric_id.slice(0, 16)}…
-                    </span>
-                  </td>
-                  <td>
-                    <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-                      {exp.variants.map((v) => (
-                        <span key={v.name} className="tag">
-                          {v.name}
-                        </span>
-                      ))}
-                    </div>
-                  </td>
-                  <td>
-                    <span className="mono t__muted" style={{ fontSize: 12 }}>
-                      {exp.baseline_variant ?? "—"}
-                    </span>
-                  </td>
-                  <td className="t__muted" style={{ fontSize: 12 }}>
-                    {relTime(exp.created_at)}
-                  </td>
-                  <td>
-                    <div className="row" style={{ gap: 4, justifyContent: "flex-end" }}>
-                      <form action={runExperimentAction} style={{ display: "inline" }}>
-                        <input type="hidden" name="org" value={org} />
-                        <input type="hidden" name="project" value={project} />
-                        <input type="hidden" name="experiment_id" value={exp.id} />
-                        <button type="submit" className="btn btn--sm">
-                          <Play size={12} /> Rodar
-                        </button>
-                      </form>
-                    </div>
+                    <form action={runExperimentAction}>
+                      <input type="hidden" name="org" value={org} />
+                      <input type="hidden" name="project" value={project} />
+                      <input type="hidden" name="experiment_id" value={experiment.id} />
+                      <button type="submit" className="btn btn--sm"><Play size={12} aria-hidden="true" /> Rodar</button>
+                    </form>
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
-      )}
-
-      {/* Create form (collapsible) */}
-      {datasetsRes.data.length > 0 && rubricsRes.data.length > 0 && (
-        <details
-          id="create-experiment"
-          style={{
-            background: "var(--surface-1)",
-            border: "1px solid var(--border)",
-            borderRadius: 8,
-            marginTop: 16,
-          }}
-        >
-          <summary
-            style={{
-              padding: "12px 16px",
-              cursor: "pointer",
-              fontSize: 13,
-              fontWeight: 500,
-              color: "var(--text-dim)",
-              listStyle: "none",
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-            }}
-          >
-            <Plus size={13} /> Criar novo experimento
-          </summary>
-          <div style={{ padding: "0 16px 20px" }}>
-            <form
-              action={createExperimentAction}
-              style={{ display: "flex", flexDirection: "column", gap: 14, marginTop: 12 }}
-            >
-              <input type="hidden" name="org" value={org} />
-              <input type="hidden" name="project" value={project} />
-              <input type="hidden" name="project_id" value={resolved.project_id} />
-
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-                <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13 }}>
-                  <span style={{ color: "var(--text-muted)" }}>Nome</span>
-                  <input
-                    name="name"
-                    placeholder="q2-model-comparison"
-                    required
-                    style={{
-                      background: "var(--bg-2)",
-                      border: "1px solid var(--border)",
-                      borderRadius: 6,
-                      padding: "6px 10px",
-                      color: "var(--text)",
-                      fontSize: 13,
-                    }}
-                  />
-                </label>
-
-                <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13 }}>
-                  <span style={{ color: "var(--text-muted)" }}>Variante baseline</span>
-                  <input
-                    name="baseline_variant"
-                    defaultValue="control"
-                    style={{
-                      background: "var(--bg-2)",
-                      border: "1px solid var(--border)",
-                      borderRadius: 6,
-                      padding: "6px 10px",
-                      color: "var(--text)",
-                      fontSize: 13,
-                    }}
-                  />
-                </label>
-
-                <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13 }}>
-                  <span style={{ color: "var(--text-muted)" }}>Dataset</span>
-                  <select
-                    name="dataset_id"
-                    defaultValue={datasetsRes.data[0]?.id ?? ""}
-                    required
-                    style={{
-                      background: "var(--bg-2)",
-                      border: "1px solid var(--border)",
-                      borderRadius: 6,
-                      padding: "6px 10px",
-                      color: "var(--text)",
-                      fontSize: 13,
-                    }}
-                  >
-                    {datasetsRes.data.map((d) => (
-                      <option key={d.id} value={d.id}>
-                        {d.slug}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-
-                <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13 }}>
-                  <span style={{ color: "var(--text-muted)" }}>Rubrica</span>
-                  <select
-                    name="rubric_id"
-                    defaultValue={rubricsRes.data[0]?.id ?? ""}
-                    required
-                    style={{
-                      background: "var(--bg-2)",
-                      border: "1px solid var(--border)",
-                      borderRadius: 6,
-                      padding: "6px 10px",
-                      color: "var(--text)",
-                      fontSize: 13,
-                    }}
-                  >
-                    {rubricsRes.data.map((r) => (
-                      <option key={r.id} value={r.id}>
-                        {r.slug} (v{r.current_version})
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </div>
-
-              <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13 }}>
-                <span style={{ color: "var(--text-muted)" }}>Variantes JSON</span>
-                <textarea
-                  name="variants_json"
-                  rows={6}
-                  defaultValue={JSON.stringify(
-                    [
-                      { name: "control", model: "openai/gpt-4o-mini", params: { temperature: 0.2 } },
-                      { name: "candidate", model: "openai/gpt-4.1", params: { temperature: 0.2 } },
-                    ],
-                    null,
-                    2,
-                  )}
-                  style={{
-                    background: "var(--bg-2)",
-                    border: "1px solid var(--border)",
-                    borderRadius: 6,
-                    padding: "8px 10px",
-                    color: "var(--text)",
-                    fontSize: 12,
-                    fontFamily: "var(--font-mono)",
-                    resize: "vertical",
-                  }}
-                />
-              </label>
-
-              <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13 }}>
-                <span style={{ color: "var(--text-muted)" }}>Critérios de aprovação JSON</span>
-                <textarea
-                  name="pass_criteria_json"
-                  rows={4}
-                  defaultValue={JSON.stringify(
-                    { min_pass_rate: 0.7, no_regression_vs: "control", no_regression_delta: 0.02 },
-                    null,
-                    2,
-                  )}
-                  style={{
-                    background: "var(--bg-2)",
-                    border: "1px solid var(--border)",
-                    borderRadius: 6,
-                    padding: "8px 10px",
-                    color: "var(--text)",
-                    fontSize: 12,
-                    fontFamily: "var(--font-mono)",
-                    resize: "vertical",
-                  }}
-                />
-              </label>
-
-              <div>
-                <button type="submit" className="btn btn--primary">
-                  <FlaskConical size={13} /> Criar experimento
-                </button>
-              </div>
-            </form>
-          </div>
-        </details>
-      )}
-
-      {/* No datasets/rubrics warning */}
-      {(datasetsRes.data.length === 0 || rubricsRes.data.length === 0) && (
-        <div
-          style={{
-            marginTop: 16,
-            padding: "12px 16px",
-            background: "var(--warn-bg)",
-            border: "1px solid var(--warn-border)",
-            borderRadius: 8,
-            fontSize: 13,
-            color: "var(--warn)",
-          }}
-        >
-          {datasetsRes.data.length === 0
-            ? "Crie ao menos um dataset antes de criar um experimento."
-            : "Crie ao menos uma rubrica antes de criar um experimento."}
-        </div>
-      )}
-
+      </section>
     </div>
   );
 }

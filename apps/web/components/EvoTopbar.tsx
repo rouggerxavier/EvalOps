@@ -1,46 +1,51 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import Link from "next/link";
-import { BookOpen, ChevronRight, Search, Settings } from "lucide-react";
+import { ChevronRight, Menu, Search, X } from "lucide-react";
 import { usePathname } from "next/navigation";
 
 import { getActiveNavItem, getPageTitle, projectHref } from "@/components/app-shell-nav";
 import { NotificationsBell } from "@/components/ui/NotificationsBell";
-import { WorkspaceSwitcher } from "@/components/ui/WorkspaceSwitcher";
 import { setEnvironmentAction } from "@/lib/actions";
 import { logoutAction } from "@/lib/auth-actions";
 import type { NotificationItem } from "@/lib/types";
 
-type WorkspaceProject = { org: string; project: string; label: string };
-
 const ENVIRONMENTS = ["all", "prod", "staging", "dev"] as const;
 
 function envLabel(env: (typeof ENVIRONMENTS)[number]): string {
-  return env === "all" ? "todos" : env;
+  if (env === "all") return "Todos os ambientes";
+  if (env === "prod") return "Produção";
+  if (env === "staging") return "Staging";
+  return "Dev";
 }
 
 export function EvoTopbar({
   org,
   project,
+  orgLabel,
+  projectLabel,
   initials,
   notifications = [],
-  projects = [],
   projectId = null,
   environment = "all",
+  mobileMenuOpen,
+  onMenuToggle,
 }: {
   org: string;
   project: string;
+  orgLabel: string;
+  projectLabel: string;
   initials: string;
   notifications?: NotificationItem[];
-  projects?: WorkspaceProject[];
   projectId?: string | null;
   environment?: (typeof ENVIRONMENTS)[number];
+  mobileMenuOpen: boolean;
+  onMenuToggle: () => void;
 }) {
   const pathname = usePathname();
   const base = `/o/${org}/p/${project}`;
   const searchRef = useRef<HTMLInputElement>(null);
-  const [envOpen, setEnvOpen] = useState(false);
   const activeItem = getActiveNavItem(pathname, base);
   const pageName = getPageTitle(pathname, base);
   const isDetailPage = pageName !== activeItem.label;
@@ -63,11 +68,24 @@ export function EvoTopbar({
   }, []);
 
   return (
-    <header className="topbar">
-      <nav className="crumbs" aria-label="Breadcrumb">
-        <span>{org}</span>
+    <header className="topbar ops-topbar">
+      <div className="ops-mobile-brand">
+        <strong>EvalOps Studio</strong>
+        <button
+          type="button"
+          className="ops-mobile-menu-toggle"
+          onClick={onMenuToggle}
+          aria-controls="ops-sidebar"
+          aria-label={mobileMenuOpen ? "Fechar menu" : "Abrir menu"}
+          aria-expanded={mobileMenuOpen}
+        >
+          {mobileMenuOpen ? <X size={22} aria-hidden="true" /> : <Menu size={22} aria-hidden="true" />}
+        </button>
+      </div>
+      <nav className="crumbs ops-crumbs" aria-label="Caminho">
+        <span>{orgLabel}</span>
         <span className="crumbs__sep"><ChevronRight size={12} /></span>
-        <Link href={base}><strong>{project}</strong></Link>
+        <Link href={base}><strong>{projectLabel}</strong></Link>
         <span className="crumbs__sep"><ChevronRight size={12} /></span>
         {isDetailPage ? (
           <>
@@ -78,54 +96,27 @@ export function EvoTopbar({
         <strong>{pageName}</strong>
       </nav>
 
-      <form className="topbar__search" action={`${base}/traces`} method="get">
+      <form className="topbar__search ops-topbar__search" action={`${base}/traces`} method="get">
         <Search className="topbar__search-icon" size={14} />
-        <input ref={searchRef} name="name" placeholder="Buscar traces por nome..." />
+        <input ref={searchRef} name="name" aria-label="Buscar traces pelo nome" placeholder="Buscar traces pelo nome" />
         <span className="topbar__search-kbd">CmdK</span>
       </form>
 
-      <div className="topbar__right">
-        <div style={{ position: "relative" }}>
-          <button
-            type="button"
-            className="env-chip"
-            onClick={() => setEnvOpen((value) => !value)}
-            aria-expanded={envOpen}
-            aria-label="Ambiente ativo"
+      <div className="topbar__right ops-topbar__right">
+        <form action={setEnvironmentAction} className="ops-environment-form">
+          <input type="hidden" name="org" value={org} />
+          <input type="hidden" name="project" value={project} />
+          <input type="hidden" name="current_path" value={pathname ?? `/o/${org}/p/${project}`} />
+          <select
+            className="filter-select ops-environment-select"
+            name="environment"
+            aria-label="Ambiente"
+            value={environment}
+            onChange={(event) => event.currentTarget.form?.requestSubmit()}
           >
-            <span className="env-chip__dot" aria-hidden="true" />
-            {envLabel(environment)}
-          </button>
-          {envOpen ? (
-            <div className="card" style={{ position: "absolute", right: 0, top: 34, width: 148, zIndex: 20 }}>
-              <div className="card__body" style={{ display: "grid", gap: 6, padding: 8 }}>
-                {ENVIRONMENTS.map((env) => (
-                  <form key={env} action={setEnvironmentAction} style={{ margin: 0 }}>
-                    <input type="hidden" name="org" value={org} />
-                    <input type="hidden" name="project" value={project} />
-                    <input type="hidden" name="environment" value={env} />
-                    <input
-                      type="hidden"
-                      name="current_path"
-                      value={pathname ?? `/o/${org}/p/${project}`}
-                    />
-                    <button
-                      type="submit"
-                      className={`btn btn--sm${env === environment ? " btn--primary" : " btn--ghost"}`}
-                      style={{ width: "100%" }}
-                    >
-                      {envLabel(env)}
-                    </button>
-                  </form>
-                ))}
-              </div>
-            </div>
-          ) : null}
-        </div>
-
-        {/* Always render the switcher so the "+ Novo projeto…" entry is
-            reachable even from accounts with a single project. */}
-        <WorkspaceSwitcher current={`${org}/${project}`} projects={projects} />
+            {ENVIRONMENTS.map((env) => <option key={env} value={env}>{envLabel(env)}</option>)}
+          </select>
+        </form>
         <NotificationsBell
           notifications={notifications}
           org={org}
@@ -134,13 +125,7 @@ export function EvoTopbar({
           currentPath={pathname ?? `/o/${org}/p/${project}`}
         />
 
-        <Link className="icon-btn" href="/docs" aria-label="Documentacao">
-          <BookOpen size={15} />
-        </Link>
-        <Link className="icon-btn" href={`${base}/settings`} aria-label="Settings">
-          <Settings size={15} />
-        </Link>
-        <form action={logoutAction} style={{ display: "inline-flex" }}>
+        <form action={logoutAction} className="ops-account-form">
           <button type="submit" className="user-avatar" title="Sair" aria-label="Sair">
             {initials}
           </button>

@@ -4,6 +4,7 @@ import { JsonBlock } from "@/components/ui/JsonBlock";
 import { formatCost, formatLatency } from "@/lib/format";
 import { messageText } from "@/lib/trace-display";
 import type { TraceSpan } from "@/lib/types";
+import { highlightUnsupported } from "../trace-answer";
 
 type Message = Record<string, unknown>;
 
@@ -17,18 +18,19 @@ const SECTION_STYLE = {
 
 const SUMMARY_STYLE = { cursor: "pointer", fontSize: 12, color: "var(--fg-3)" } as const;
 
-function MessageBlock({ message }: { message: Message }) {
+function MessageBlock({ message, unsupportedClaims = [] }: { message: Message; unsupportedClaims?: string[] }) {
   const text = messageText(message);
   const toolCalls = message.tool_calls;
   const role = typeof message.role === "string" ? message.role : "mensagem";
+  const label = role === "user" ? "Cliente perguntou" : role === "assistant" ? "A IA respondeu" : role;
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-      <span className="mono" style={{ fontSize: 11, color: role === "assistant" ? "var(--primary-400)" : "var(--fg-3)" }}>
-        {role}
+      <span className="ops-detail__conversation-label">
+        {label}
       </span>
       {text ? (
-        <p style={{ margin: 0, maxWidth: "72ch", fontSize: 14, lineHeight: 1.55, color: "var(--fg-1)", whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
-          {text}
+        <p className="ops-detail__conversation-text">
+          {role === "assistant" ? highlightUnsupported(text, unsupportedClaims) : text}
         </p>
       ) : null}
       {Array.isArray(toolCalls) && toolCalls.length > 0 ? (
@@ -61,7 +63,7 @@ function SpanFacts({ span }: { span: TraceSpan }) {
   );
 }
 
-function LlmSpan({ span }: { span: TraceSpan }) {
+function LlmSpan({ span, unsupportedClaims }: { span: TraceSpan; unsupportedClaims: string[] }) {
   const input = (span.messages_in ?? []) as Message[];
   const output = (span.messages_out ?? []) as Message[];
   const earlier = input.slice(0, -1);
@@ -76,14 +78,14 @@ function LlmSpan({ span }: { span: TraceSpan }) {
           </summary>
           <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 10 }}>
             {earlier.map((message, index) => (
-              <MessageBlock key={index} message={message} />
+              <MessageBlock key={index} message={message} unsupportedClaims={unsupportedClaims} />
             ))}
           </div>
         </details>
       ) : null}
-      {last ? <MessageBlock message={last} /> : null}
+      {last ? <MessageBlock message={last} unsupportedClaims={unsupportedClaims} /> : null}
       {output.map((message, index) => (
-        <MessageBlock key={index} message={message} />
+        <MessageBlock key={index} message={message} unsupportedClaims={unsupportedClaims} />
       ))}
       {output.length === 0 && span.output ? <JsonBlock value={span.output} /> : null}
       {span.error ? <SpanError span={span} /> : null}
@@ -120,10 +122,20 @@ function hasContent(span: TraceSpan): boolean {
   return Boolean(span.messages_in?.length || span.messages_out?.length || span.input || span.output || span.error);
 }
 
-export function TraceConversation({ spans, redacted }: { spans: TraceSpan[]; redacted: boolean }) {
+export function TraceConversation({
+  spans,
+  redacted,
+  unsupportedClaims = [],
+  evaluationReason,
+}: {
+  spans: TraceSpan[];
+  redacted: boolean;
+  unsupportedClaims?: string[];
+  evaluationReason?: string | null;
+}) {
   const visible = spans.filter(hasContent);
   return (
-    <Card title="Conversa" subtitle="O que entrou e saiu de cada etapa, em ordem" flush>
+    <Card title="Conversa" subtitle="O que entrou e saiu de cada etapa, em ordem" flush className="ops-detail__responses">
       {visible.length === 0 ? (
         <div className="t__empty">
           {redacted
@@ -131,10 +143,15 @@ export function TraceConversation({ spans, redacted }: { spans: TraceSpan[]; red
             : "Este trace não tem mensagens. No SDK, registre a chamada com span.set_llm(messages_in=..., messages_out=...)."}
         </div>
       ) : (
-        visible.map((span) =>
-          span.type === "llm_call" ? <LlmSpan key={span.id} span={span} /> : <OtherSpan key={span.id} span={span} />,
+          visible.map((span) =>
+          span.type === "llm_call" ? <LlmSpan key={span.id} span={span} unsupportedClaims={unsupportedClaims} /> : <OtherSpan key={span.id} span={span} />,
         )
       )}
+      {evaluationReason ? (
+        <div className="ops-detail__why">
+          <strong>Por que foi reprovada:</strong> {evaluationReason}
+        </div>
+      ) : null}
     </Card>
   );
 }

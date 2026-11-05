@@ -2,14 +2,12 @@ import Link from "next/link";
 import { Activity, AlertCircle, Copy, Flag as FlagIcon, Layers, MessageSquare, Target, Terminal } from "lucide-react";
 
 import { AuthRequiredPanel } from "@/components/AuthRequiredPanel";
-import { Badge, StatusBadge } from "@/components/ui/Badge";
+import { Badge } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
 import { Copyable } from "@/components/ui/Copyable";
 import { JsonBlock } from "@/components/ui/JsonBlock";
 import { Metric } from "@/components/ui/Metric";
 import { RagPanel } from "@/components/ui/RagPanel";
-import { ScoreCell } from "@/components/ui/ScoreCell";
-import { Waterfall } from "@/components/ui/Waterfall";
 import { createTraceFeedbackAction } from "@/lib/actions";
 import {
   getRubrics,
@@ -25,11 +23,13 @@ import { safeErrorMessage } from "@/lib/safe-error";
 import { getTraceCauseLabel, getTraceModelLabel } from "@/lib/trace-display";
 import type { RagConsolidated } from "@/lib/types";
 
+import { EvaluationStatus, GroundingStatus, evaluationVerdict } from "../trace-status";
+import { TraceSteps } from "../trace-steps";
 import { TraceHeaderActions } from "./trace-actions";
 import { TraceConversation } from "./trace-conversation";
 import { TraceEvaluations } from "./trace-evaluations";
 
-type Tab = "conversation" | "evaluations" | "rag" | "waterfall" | "metadata" | "feedback";
+type Tab = "conversation" | "evaluations" | "sources" | "steps" | "metadata" | "feedback";
 
 type Props = {
   params: Promise<{ org: string; project: string; trace: string }>;
@@ -53,18 +53,18 @@ function costSourceLabel(source: string | null | undefined): string | undefined 
   return undefined;
 }
 
-function parseTab(value: string | undefined, hasRag: boolean): Tab {
-  if (value === "rag" && hasRag) return "rag";
+function parseTab(value: string | undefined): Tab {
+  if (value === "rag" || value === "sources") return "sources";
+  if (value === "waterfall" || value === "steps") return "steps";
   if (
     value === "conversation" ||
     value === "evaluations" ||
-    value === "waterfall" ||
     value === "metadata" ||
     value === "feedback"
   ) {
     return value;
   }
-  return hasRag ? "rag" : "conversation";
+  return "conversation";
 }
 
 export default async function TraceDetailPage({ params, searchParams }: Props) {
@@ -77,7 +77,7 @@ export default async function TraceDetailPage({ params, searchParams }: Props) {
   const t = detail.trace;
   const ragEnabled = isRagTrace(detail);
 
-  const tab = parseTab(qp.tab, ragEnabled);
+  const tab = parseTab(qp.tab);
   const safeQueryError = qp.error ? safeErrorMessage(qp.error, "Falha em ação.") : null;
 
   const [rubricsRes, compareList, ragData, evaluations] = await Promise.all([
@@ -90,6 +90,25 @@ export default async function TraceDetailPage({ params, searchParams }: Props) {
   const compareCandidates = compareList.data.filter((row) => row.id !== t.id).slice(0, 10);
   const traceCause = getTraceCauseLabel(t);
   const traceModel = getTraceModelLabel(t);
+  const orderedEvaluations = evaluations?.data
+    .slice()
+    .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at)) ?? [];
+  const latestEvaluation = orderedEvaluations[0];
+  const latestRubric = latestEvaluation
+    ? rubricsRes.data.find((rubric) => rubric.id === latestEvaluation.rubric_id)?.slug ?? latestEvaluation.rubric_id.slice(0, 12)
+    : null;
+  const evaluationReason = latestEvaluation?.passed === false
+    ? latestEvaluation.scores.find((score) => score.passed === false && score.reasoning)?.reasoning ?? null
+    : null;
+  const unsupportedClaims = ragData?.claims.filter((claim) => !claim.grounded).map((claim) => claim.text) ?? [];
+  const verdict = evaluationVerdict(latestEvaluation);
+  const summaryText = latestEvaluation?.passed === false
+    ? { lead: `Reprovado na rubrica ${latestRubric}:`, body: evaluationReason ?? "Sem dados sobre o motivo da reprovação." }
+    : latestEvaluation?.passed === true
+      ? { lead: `Aprovado na rubrica ${latestRubric}.`, body: "" }
+      : verdict === "partial"
+        ? { lead: "Avaliação parcial.", body: "A execução não tem um veredito completo." }
+        : { lead: "Sem dados de avaliação.", body: "A API não trouxe um veredito para este trace." };
 
   const replayOf = typeof t.metadata?.replay_of === "string" ? (t.metadata.replay_of as string) : null;
   const replayStatusRaw = typeof t.metadata?.replay_status === "string" ? (t.metadata.replay_status as string) : null;
@@ -112,17 +131,11 @@ export default async function TraceDetailPage({ params, searchParams }: Props) {
 
   return (
     <div className="page">
-      <header className="page-header">
+      <header className="page-header ops-detail__header">
         <div>
-          <div className="page-header__eyebrow">
-            <Link href={`/o/${org}/p/${project}/traces`} style={{ color: "var(--primary-400)" }}>
-              ← Traces
-            </Link>
-          </div>
-          <h1 className="page-header__title" style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <span className="mono" style={{ fontSize: 17, fontWeight: 500 }}>{t.name}</span>
-            <StatusBadge status={t.status} />
-            <span className="tag">{t.environment}</span>
+          <h1 className="page-header__title ops-detail__title">
+            {t.name}
+            <EvaluationStatus verdict={verdict} />
             {ragEnabled ? <Badge variant="rag">RAG</Badge> : null}
             {t.redacted ? <span className="tag">redigido</span> : null}
             {detail.flags.length > 0 ? <Badge variant="warn">marcado</Badge> : null}
@@ -130,11 +143,10 @@ export default async function TraceDetailPage({ params, searchParams }: Props) {
               <Badge variant={replayBadgeVariant}>replay · {replayStatus}</Badge>
             ) : null}
           </h1>
-          <div
-            className="page-header__subtitle row"
-            style={{ gap: 10, fontFamily: "var(--font-mono)", fontSize: 11.5 }}
-          >
+          <div className="page-header__subtitle ops-detail__meta">
             <Copyable value={t.id} display={`${t.id.slice(0, 18)}…`} />
+            <span>{t.environment}</span>
+            <span>ingestão: {t.status}</span>
             {t.service ? <><span>·</span><span>{t.service}</span></> : null}
             {traceModel ? <><span>·</span><span>{traceModel}</span></> : null}
             <span>·</span>
@@ -143,12 +155,14 @@ export default async function TraceDetailPage({ params, searchParams }: Props) {
           </div>
         </div>
         <div className="page-header__actions">
+          <Link href={`/o/${org}/p/${project}/traces`} className="btn">Voltar</Link>
           <TraceHeaderActions
             org={org}
             project={project}
             traceId={t.id}
             rubrics={rubricsRes.data}
             compareCandidates={compareCandidates}
+            flagged={detail.flags.length > 0}
           />
         </div>
       </header>
@@ -239,6 +253,10 @@ export default async function TraceDetailPage({ params, searchParams }: Props) {
         </div>
       ) : null}
 
+      <section className="card ops-detail__summary" aria-label="Resumo do trace">
+        <p><strong>{summaryText.lead}</strong>{summaryText.body ? <> {summaryText.body}</> : null}</p>
+      </section>
+
       <section className="kpi-grid kpi-grid--5">
         <Metric label="Duração" value={formatLatency(t.duration_ms)} delta="tempo total" deltaTone="neutral" />
         <Metric
@@ -259,42 +277,41 @@ export default async function TraceDetailPage({ params, searchParams }: Props) {
           delta={costSourceLabel(t.cost_source) ?? (traceModel ?? "sem modelo")}
           deltaTone={t.cost_source && t.cost_source !== "priced" ? "down" : "neutral"}
         />
-        <Metric
-          label="Spans / Eventos"
-          value={`${detail.spans.length}`}
-          unit={`/ ${detail.events_count}`}
-          delta="capturados"
-          deltaTone="neutral"
-        />
+        <Metric label="Passos" value={`${detail.spans.length}`} />
       </section>
 
-      <nav className="tabs">
-        {ragEnabled ? (
-          <Link href={tabHref("rag")} className={`tab${tab === "rag" ? " is-active" : ""}`}>
-            <Layers size={11} /> RAG
-          </Link>
-        ) : null}
-        <Link href={tabHref("conversation")} className={`tab${tab === "conversation" ? " is-active" : ""}`}>
+      <nav className="tabs" aria-label="Seções do trace">
+        <Link href={tabHref("conversation")} className={`tab${tab === "conversation" ? " is-active" : ""}`} aria-current={tab === "conversation" ? "page" : undefined}>
           <MessageSquare size={11} /> Conversa
         </Link>
-        <Link href={tabHref("evaluations")} className={`tab${tab === "evaluations" ? " is-active" : ""}`}>
+        <Link href={tabHref("evaluations")} className={`tab${tab === "evaluations" ? " is-active" : ""}`} aria-current={tab === "evaluations" ? "page" : undefined}>
           <Target size={11} /> Avaliações
           {evaluations ? <span className="tab__count">{evaluations.data.length}</span> : null}
         </Link>
-        <Link href={tabHref("waterfall")} className={`tab${tab === "waterfall" ? " is-active" : ""}`}>
-          <Activity size={11} /> Waterfall
+        <Link href={tabHref("steps")} className={`tab${tab === "steps" ? " is-active" : ""}`} aria-current={tab === "steps" ? "page" : undefined}>
+          <Activity size={11} /> Passos
           <span className="tab__count">{detail.spans.length}</span>
         </Link>
-        <Link href={tabHref("metadata")} className={`tab${tab === "metadata" ? " is-active" : ""}`}>
+        <Link href={tabHref("sources")} className={`tab${tab === "sources" ? " is-active" : ""}`} aria-current={tab === "sources" ? "page" : undefined}>
+          <Layers size={11} /> Fontes
+        </Link>
+        <Link href={tabHref("metadata")} className={`tab${tab === "metadata" ? " is-active" : ""}`} aria-current={tab === "metadata" ? "page" : undefined}>
           <Terminal size={11} /> Metadata
         </Link>
-        <Link href={tabHref("feedback")} className={`tab${tab === "feedback" ? " is-active" : ""}`}>
+        <Link href={tabHref("feedback")} className={`tab${tab === "feedback" ? " is-active" : ""}`} aria-current={tab === "feedback" ? "page" : undefined}>
           <FlagIcon size={11} /> Feedback
           <span className="tab__count">{detail.feedback.length + detail.flags.length}</span>
         </Link>
       </nav>
 
-      {tab === "conversation" ? <TraceConversation spans={detail.spans} redacted={t.redacted} /> : null}
+      {tab === "conversation" ? (
+        <TraceConversation
+          spans={detail.spans}
+          redacted={t.redacted}
+          unsupportedClaims={unsupportedClaims}
+          evaluationReason={evaluationReason}
+        />
+      ) : null}
 
       {tab === "evaluations" ? (
         evaluations ? (
@@ -306,113 +323,89 @@ export default async function TraceDetailPage({ params, searchParams }: Props) {
         )
       ) : null}
 
-      {tab === "rag" && ragEnabled ? (
-        ragData ? (
-          <div className="col">
-            <div className="rag-header">
-              <div className="rag-header__title">
-                <Badge variant="rag">RAG</Badge>
-                <strong>Grounding</strong>
-              </div>
-              <div>
-                <div className="rag-stat__label">Docs recuperados</div>
-                <div className="rag-stat__value">{ragData.retrieved_docs}</div>
-              </div>
-              <div>
-                <div className="rag-stat__label">Score médio</div>
-                <div className="rag-stat__value">
-                  {ragData.avg_score === null ? "—" : ragData.avg_score.toFixed(2)}
-                </div>
-              </div>
-              <div>
-                <div className="rag-stat__label">Claims grounded</div>
-                <div className="rag-stat__value">
-                  <span style={{ color: "var(--success)" }}>{ragData.grounded_claims}</span>
-                  <span className="faint"> / {ragData.grounded_claims + ragData.ungrounded_claims}</span>
-                </div>
-              </div>
-              <div>
-                <div className="rag-stat__label">Risco</div>
-                <div
-                  className="rag-stat__value"
-                  style={{
-                    color:
-                      ragData.hallucination_risk === "low"
-                        ? "var(--success)"
-                        : ragData.hallucination_risk === "medium"
-                        ? "var(--warning)"
-                        : "var(--danger)",
-                    textTransform: "capitalize",
-                  }}
-                >
-                  {ragData.hallucination_risk}
-                </div>
-              </div>
-            </div>
-            <RagPanel
-              retrievedDocs={ragData.retrieved_docs}
-              avgScore={ragData.avg_score ?? undefined}
-              groundedClaims={ragData.grounded_claims}
-              hallucinationRisk={ragData.hallucination_risk}
-              answerPreview={ragData.answer_preview ?? undefined}
-              citations={ragData.citations.map((c) => ({
-                rank: c.rank,
-                title: c.title ?? "—",
-                score: c.score ?? undefined,
-                source: c.source ?? undefined,
-                chunk: c.chunk ?? undefined,
-              }))}
-              claims={ragData.claims.map((cl) => ({
-                text: cl.text,
-                grounded: cl.grounded,
-                cite: cl.cite ?? undefined,
-              }))}
-            />
-            {ragData.claim_to_chunk.length > 0 ? (
-              <Card title="Citação por claim" subtitle="qual claim usou qual chunk" flush>
+      {tab === "sources" ? (
+        ragEnabled && ragData ? (
+          <Card
+            title="Fontes"
+            subtitle={`${ragData.retrieved_docs} documento${ragData.retrieved_docs === 1 ? "" : "s"} recuperado${ragData.retrieved_docs === 1 ? "" : "s"}`}
+            flush
+            className="ops-detail__sources"
+          >
+            {ragData.claims.length > 0 ? (
+              <div className="table-wrap">
                 <table className="t">
                   <thead>
-                    <tr><th>Claim</th><th>Chunk</th><th>Score</th></tr>
+                    <tr>
+                      <th>Situação</th>
+                      <th>Afirmação</th>
+                      <th>Trecho usado</th>
+                      <th className="t__num">Score</th>
+                    </tr>
                   </thead>
                   <tbody>
-                    {ragData.claim_to_chunk.map((row, i) => (
-                      <tr key={i}>
-                        <td className="t__name">{row.claim}</td>
-                        <td className="t__mono">{row.chunk}</td>
-                        <td>
-                          {row.score === null ? (
-                            <span className="faint mono">ungrounded</span>
-                          ) : (
-                            <ScoreCell value={row.score} />
-                          )}
-                        </td>
-                      </tr>
-                    ))}
+                    {ragData.claims.map((claim, index) => {
+                      const chunk = ragData.claim_to_chunk.find((item) => item.claim === claim.text);
+                      const citation = ragData.citations.find((item) => item.chunk === claim.cite || item.source === claim.cite);
+                      const sourceText = chunk?.chunk ?? claim.cite ?? citation?.source ?? "Sem dados";
+                      const score = chunk?.score ?? citation?.score;
+                      return (
+                        <tr key={`${claim.text}:${index}`}>
+                          <td><GroundingStatus grounded={claim.grounded} /></td>
+                          <td>{claim.text}</td>
+                          <td className="t__mono">{sourceText}</td>
+                          <td className="t__num">{score === null || score === undefined ? "Sem dados" : score.toLocaleString("pt-BR", { maximumFractionDigits: 2 })}</td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
-              </Card>
-            ) : null}
-          </div>
-        ) : (
-          <Card title="RAG" subtitle="sem dados consolidados">
+              </div>
+            ) : (
+              <p className="t__empty">Sem dados de afirmações para verificar neste trace.</p>
+            )}
+            <details className="ops-detail__source-details">
+              <summary>Detalhes de grounding</summary>
+              <RagPanel
+                retrievedDocs={ragData.retrieved_docs}
+                avgScore={ragData.avg_score ?? undefined}
+                groundedClaims={ragData.grounded_claims}
+                hallucinationRisk={ragData.hallucination_risk}
+                answerPreview={ragData.answer_preview ?? undefined}
+                citations={ragData.citations.map((citation) => ({
+                  rank: citation.rank,
+                  title: citation.title ?? "—",
+                  score: citation.score ?? undefined,
+                  source: citation.source ?? undefined,
+                  chunk: citation.chunk ?? undefined,
+                }))}
+                claims={ragData.claims.map((claim) => ({
+                  text: claim.text,
+                  grounded: claim.grounded,
+                  cite: claim.cite ?? undefined,
+                }))}
+              />
+            </details>
+          </Card>
+        ) : ragEnabled ? (
+          <Card title="Fontes" subtitle="Sem dados consolidados">
             <p className="muted" style={{ margin: 0 }}>
-              Endpoint <span className="mono">/v1/traces/{`{id}`}/rag</span> não retornou dados.
+              O endpoint <span className="mono">/v1/traces/{`{id}`}/rag</span> não retornou dados.
             </p>
+          </Card>
+        ) : (
+          <Card title="Fontes" subtitle="Sem dados">
+            <p className="muted" style={{ margin: 0 }}>Este trace não contém informações de fontes.</p>
           </Card>
         )
       ) : null}
 
-      {tab === "waterfall" ? (
-        <Card title="Waterfall" subtitle={`${detail.spans.length} spans · escala absoluta`} flush>
-          {detail.spans.length === 0 ? (
-            <div className="t__empty">Nenhum span capturado neste trace.</div>
-          ) : (
-            <Waterfall
-              spans={detail.spans}
-              traceDurationMs={t.duration_ms}
-              traceStartedAt={t.started_at}
-            />
-          )}
+      {tab === "steps" ? (
+        <Card title="Passos" subtitle={`${detail.spans.length} passos da execução`} flush className="ops-detail__steps-panel">
+          <TraceSteps
+            spans={detail.spans}
+            traceDurationMs={t.duration_ms}
+            traceStartedAt={t.started_at}
+          />
         </Card>
       ) : null}
 

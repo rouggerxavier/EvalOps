@@ -29,10 +29,13 @@ test("experiments: forms expose backend-required fields", () => {
   assert.match(page, /name="project_id"/);
 });
 
-test("experiments: run result block surfaces criteria + variant breakdown", () => {
-  assert.match(page, /Resultado da run/);
-  assert.match(page, /criteria_failures/);
-  assert.match(page, /by_variant/);
+test("experiments: run result uses API variant data and marks unsupported p95", () => {
+  assert.match(page, /Resultado mais recente/);
+  assert.match(page, /run\.by_variant/);
+  assert.match(page, /metrics\.avg_score/);
+  assert.match(page, /Latência p95: Sem dados/);
+  assert.match(page, /run_metadata\.synthetic/);
+  assert.doesNotMatch(page, /criteria_failures/);
 });
 
 test("experiments: no preview-bundle leakage", () => {

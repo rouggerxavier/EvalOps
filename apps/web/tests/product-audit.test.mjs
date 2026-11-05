@@ -30,14 +30,17 @@ test("docs quickstart records the model call", () => {
 
 test("trace page shows the conversation and evaluation results", () => {
   const page = read(`${PROJECT}/traces/[trace]/page.tsx`);
-  assert.match(page, /<TraceConversation /);
+  assert.match(page, /<TraceConversation\s/);
   assert.match(page, /<TraceEvaluations /);
   assert.match(page, /getTraceEvaluations\(/);
-  assert.match(page, /return hasRag \? "rag" : "conversation"/);
+  assert.match(page, /value === "rag" \|\| value === "sources"/);
+  assert.match(page, /return "conversation"/);
   assert.match(page, /detail\.flags\.map/);
   const evaluations = read(`${PROJECT}/traces/[trace]/trace-evaluations.tsx`);
+  assert.match(evaluations, /score\.raw_output/);
   assert.match(evaluations, /score\.reasoning/);
-  assert.match(evaluations, /raised_flags/);
+  assert.match(evaluations, /score\.passed/);
+  assert.doesNotMatch(evaluations, /raised_flags/);
   assert.match(read(`${PROJECT}/traces/[trace]/trace-conversation.tsx`), /messages_out/);
 });
 
@@ -55,14 +58,18 @@ test("empty environment filter beats the cookie, and the chip can clear it", () 
 });
 
 test("evaluate scope can be created on screen and is not preselected", () => {
-  assert.match(read(`${PROJECT}/keys/page.tsx`), /name="scopes" value="evaluate" style/);
+  const keys = read(`${PROJECT}/keys/page.tsx`);
+  assert.match(keys, /name="scopes" value="evaluate"/);
+  const evaluateScope = keys.match(/name="scopes" value="evaluate"[^>]*/)?.[0] ?? "";
+  assert.doesNotMatch(evaluateScope, /defaultChecked/);
 });
 
 test("settings shows plan and usage instead of linking to a missing page", () => {
   const settings = read(`${PROJECT}/settings/page.tsx`);
-  assert.match(settings, /<PlanUsage/);
+  assert.match(settings, /<PlanAndUsage/);
   assert.doesNotMatch(settings, /\/usage`/);
-  assert.match(read(`${PROJECT}/exports/page.tsx`), /<PlanUsage/);
+  assert.match(settings, /monthly_judge_budget_usd/);
+  assert.doesNotMatch(read(`${PROJECT}/exports/page.tsx`), /<PlanUsage/);
 });
 
 test("rubric form starts from YAML the parser accepts", () => {

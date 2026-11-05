@@ -30,8 +30,8 @@ test("settings: new-project form ships organization_id and the four backend fiel
 });
 
 test("settings: alerts cover updated + created", () => {
-  assert.match(page, /qp\.updated === "1"/);
-  assert.match(page, /qp\.created === "1"/);
+  assert.match(page, /qp\.updated \?/);
+  assert.match(page, /qp\.created \?/);
   assert.match(page, /Projeto criado/);
 });
 

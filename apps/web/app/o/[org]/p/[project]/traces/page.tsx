@@ -1,12 +1,14 @@
 import Link from "next/link";
-import { AlertCircle, Clock, Download, Flag, Layers, Search } from "lucide-react";
+import { Clock, Download, GitCompareArrows, Layers, Search } from "lucide-react";
 
 import { AuthRequiredPanel } from "@/components/AuthRequiredPanel";
 import { getActiveEnvironment } from "@/lib/active-env";
-import { getTraces, hasAuthToken, resolveProject } from "@/lib/api";
+import { getProjectEvaluations, getTraces, hasAuthToken, resolveProject } from "@/lib/api";
+import type { EvaluationRun } from "@/lib/types";
 
 import { TracesAutoRefresh } from "./traces-auto-refresh";
 import { TracesEmpty, TracesTable } from "./traces-table";
+import { evaluationVerdict } from "./trace-status";
 
 type Tab = "all" | "errors" | "partial" | "slow" | "rag" | "flagged";
 type SlowKind = "trace" | "llm" | "retrieval";
@@ -20,6 +22,7 @@ type Props = {
     tab?: string;
     cursor?: string;
     slow_kind?: string;
+    verdict?: string;
   }>;
 };
 
@@ -42,26 +45,44 @@ export default async function TracesListPage({ params, searchParams }: Props) {
 
   const resolved = await resolveProject(org, project);
 
-  const tabStatus = tab === "errors" ? "error" : tab === "partial" ? "partial" : qp.status;
+  const tabStatus = tab === "errors" ? "error,partial" : tab === "partial" ? "partial" : qp.status;
   const slowKind: SlowKind = tab === "slow" ? parseSlowKind(qp.slow_kind) : "trace";
   const environment = await getActiveEnvironment(qp.environment);
-  const traces = await getTraces({
-    projectId: resolved.project_id,
-    status: tabStatus,
-    environment,
-    name: tab !== "rag" ? qp.name : undefined,
-    limit: 50,
-    cursor: qp.cursor,
-    duration_gt: tab === "slow" ? 2000 : undefined,
-    slow_kind: tab === "slow" ? slowKind : undefined,
-    rag: tab === "rag" ? true : undefined,
-    flagged: tab === "flagged" ? true : undefined,
-  });
+  const [traces, evaluations] = await Promise.all([
+    getTraces({
+      projectId: resolved.project_id,
+      status: tabStatus,
+      environment,
+      name: tab !== "rag" ? qp.name : undefined,
+      limit: 50,
+      cursor: qp.cursor,
+      duration_gt: tab === "slow" ? 2000 : undefined,
+      slow_kind: tab === "slow" ? slowKind : undefined,
+      rag: tab === "rag" ? true : undefined,
+      flagged: tab === "flagged" ? true : undefined,
+    }),
+    getProjectEvaluations(resolved.project_id, 100, environment).catch(() => ({ data: [] })),
+  ]);
 
+  const verdictFilter = ["approved", "partial", "rejected", "unknown"].includes(qp.verdict ?? "")
+    ? qp.verdict
+    : undefined;
   const rows = traces.data;
-  const displayRows = rows;
-
-  const activeCount = rows.length;
+  const latestEvaluationByTrace = new Map<string, EvaluationRun>();
+  for (const run of evaluations.data) {
+    if (!latestEvaluationByTrace.has(run.trace_id)) latestEvaluationByTrace.set(run.trace_id, run);
+  }
+  const verdicts = Object.fromEntries(rows.map((trace) => [
+    trace.id,
+    evaluationVerdict(latestEvaluationByTrace.get(trace.id)),
+  ]));
+  const displayRows = rows.filter((trace) => {
+    if (!verdictFilter) return true;
+    const verdict = verdicts[trace.id];
+    return verdictFilter === "unknown"
+      ? verdict === null || verdict === "unknown"
+      : verdict === verdictFilter;
+  });
 
   const tabBase = `/o/${org}/p/${project}/traces`;
   const baseParams = new URLSearchParams();
@@ -71,6 +92,7 @@ export default async function TracesListPage({ params, searchParams }: Props) {
   else if (qp.environment === "") baseParams.set("environment", "");
   if (qp.name && tab !== "rag") baseParams.set("name", qp.name);
   if (qp.status && tab !== "errors" && tab !== "partial") baseParams.set("status", qp.status);
+  if (verdictFilter) baseParams.set("verdict", verdictFilter);
   // Persist slow_kind across pagination, filter submit and refresh links so a
   // user that picked "LLM call" / "Retrieval" doesn't silently fall back to
   // "Trace inteiro" after the next click.
@@ -112,16 +134,18 @@ export default async function TracesListPage({ params, searchParams }: Props) {
   const hasCursor = Boolean(qp.cursor);
   const autoRefreshEnabled = !hasCursor && rows.length > 0;
   const autoRefreshDisabledReason = hasCursor ? "Pausado em página paginada" : undefined;
+  const hasFilters = Boolean(qp.name || qp.status || verdictFilter);
+  const clearParams = new URLSearchParams();
+  if (environment) clearParams.set("environment", environment);
+  if (tab !== "all") clearParams.set("tab", tab);
+  const clearFiltersHref = clearParams.toString() ? `${tabBase}?${clearParams}` : tabBase;
 
   return (
     <div className="page">
       <header className="page-header">
         <div>
-          <div className="page-header__eyebrow">Observabilidade</div>
           <h1 className="page-header__title">Traces</h1>
-          <div className="page-header__subtitle">
-            {rows.length.toLocaleString("pt-BR")} trace{rows.length === 1 ? "" : "s"} na página atual · auto-refresh 30s
-          </div>
+          <div className="page-header__subtitle">Cada trace é uma execução da IA, do pedido à resposta</div>
         </div>
         <div className="page-header__actions">
           {autoRefreshEnabled ? (
@@ -130,8 +154,11 @@ export default async function TracesListPage({ params, searchParams }: Props) {
               ao vivo
             </span>
           ) : null}
-          <Link href={exportsHref} className="btn btn--sm">
-            <Download size={12} /> Exportar JSONL
+          <Link href={`/o/${org}/p/${project}/traces/compare`} className="btn">
+            <GitCompareArrows size={14} /> Comparar
+          </Link>
+          <Link href={exportsHref} className="btn">
+            <Download size={14} /> Exportar
           </Link>
           <TracesAutoRefresh
             enabledByDefault={autoRefreshEnabled}
@@ -141,112 +168,89 @@ export default async function TracesListPage({ params, searchParams }: Props) {
         </div>
       </header>
 
-      <nav className="tabs" aria-label="Segmentos de traces">
-        <Link href={tabHref("all")} className={`tab${tab === "all" ? " is-active" : ""}`}>
-          Todos
-          {tab === "all" ? <span className="tab__count">{activeCount}</span> : null}
-        </Link>
-        <Link href={tabHref("errors")} className={`tab${tab === "errors" ? " is-active" : ""}`}>
-          <AlertCircle size={11} /> Erros
-          {tab === "errors" ? <span className="tab__count">{activeCount}</span> : null}
-        </Link>
-        <Link href={tabHref("partial")} className={`tab${tab === "partial" ? " is-active" : ""}`}>
-          <Flag size={11} /> Parciais
-          {tab === "partial" ? <span className="tab__count">{activeCount}</span> : null}
-        </Link>
-        <Link href={tabHref("slow")} className={`tab${tab === "slow" ? " is-active" : ""}`}>
-          <Clock size={11} /> Lentos
-          {tab === "slow" ? <span className="tab__count">{activeCount}</span> : null}
-        </Link>
-        <Link
-          href={tabHref("rag")}
-          className={`tab${tab === "rag" ? " is-active" : ""}`}
-          data-testid="trace-list-rag-tab"
-        >
-          <Layers size={11} /> RAG
-          {tab === "rag" ? <span className="tab__count">{activeCount}</span> : null}
-        </Link>
-        <Link href={tabHref("flagged")} className={`tab${tab === "flagged" ? " is-active" : ""}`}>
-          <Flag size={11} /> Marcados
-          {tab === "flagged" ? <span className="tab__count">{activeCount}</span> : null}
-        </Link>
-      </nav>
-
-      {tab === "slow" ? (
-        <nav
-          className="tabs tabs--sub"
-          aria-label="Origem da lentidão"
-          data-testid="slow-kind-tabs"
-          style={{ marginTop: 4, fontSize: 12 }}
-        >
-          <Link
-            href={slowKindHref("trace")}
-            className={`tab${slowKind === "trace" ? " is-active" : ""}`}
-          >
-            Trace inteiro
+      <section className="card ops-traces__panel">
+        <nav className="tabs" aria-label="Segmentos de traces">
+          <Link href={tabHref("all")} className={`tab${tab === "all" ? " is-active" : ""}`} aria-current={tab === "all" ? "page" : undefined}>
+            Todos
           </Link>
-          <Link
-            href={slowKindHref("llm")}
-            className={`tab${slowKind === "llm" ? " is-active" : ""}`}
-          >
-            LLM call
+          <Link href={tabHref("errors")} className={`tab${tab === "errors" || tab === "partial" ? " is-active" : ""}`} aria-current={tab === "errors" || tab === "partial" ? "page" : undefined}>
+            Com problema
           </Link>
-          <Link
-            href={slowKindHref("retrieval")}
-            className={`tab${slowKind === "retrieval" ? " is-active" : ""}`}
-          >
-            Retrieval
+          <Link href={tabHref("flagged")} className={`tab${tab === "flagged" ? " is-active" : ""}`} aria-current={tab === "flagged" ? "page" : undefined}>
+            Marcados
+          </Link>
+          <Link href={tabHref("slow")} className={`tab${tab === "slow" ? " is-active" : ""}`} aria-current={tab === "slow" ? "page" : undefined}>
+            <Clock size={13} /> Lentos
           </Link>
         </nav>
-      ) : null}
 
-      <form method="get" className="filters" action={tabBase}>
-        {tab !== "all" ? <input type="hidden" name="tab" value={tab} /> : null}
-        {tab === "slow" && slowKind !== "trace" ? (
-          <input type="hidden" name="slow_kind" value={slowKind} />
+        {tab === "slow" ? (
+          <nav className="tabs tabs--sub" aria-label="Origem da lentidão" data-testid="slow-kind-tabs">
+            <Link href={slowKindHref("trace")} className={`tab${slowKind === "trace" ? " is-active" : ""}`}>Trace inteiro</Link>
+            <Link href={slowKindHref("llm")} className={`tab${slowKind === "llm" ? " is-active" : ""}`}>LLM call</Link>
+            <Link href={slowKindHref("retrieval")} className={`tab${slowKind === "retrieval" ? " is-active" : ""}`}>Retrieval</Link>
+          </nav>
         ) : null}
-        <label className="filter-group">
-          <Search size={12} />
-          <input
-            className="filter-input"
-            name="name"
-            defaultValue={qp.name ?? ""}
-            placeholder="buscar por nome (ex: refund, chat.answer)"
-          />
-        </label>
-        <select className="filter-select" name="status" defaultValue={qp.status ?? ""}>
-          <option value="">qualquer status</option>
-          <option value="ok">ok</option>
-          <option value="partial">parcial</option>
-          <option value="error">erro</option>
-        </select>
-        <select className="filter-select" name="environment" defaultValue={environment ?? ""}>
-          <option value="">qualquer env</option>
-          <option value="prod">prod</option>
-          <option value="staging">staging</option>
-          <option value="dev">dev</option>
-        </select>
-        <button type="submit" className="btn btn--sm">
-          Aplicar
-        </button>
-        <span className="spacer" />
-        <span className="faint mono" style={{ fontSize: 11 }}>
-          {displayRows.length} de {rows.length}
-        </span>
-      </form>
 
-      {displayRows.length === 0 ? (
-        <TracesEmpty project={project} />
-      ) : (
-        <TracesTable org={org} project={project} rows={displayRows} />
-      )}
+        <form method="get" className="filters ops-traces__filters" action={tabBase}>
+          {tab !== "all" ? <input type="hidden" name="tab" value={tab} /> : null}
+          {tab === "slow" && slowKind !== "trace" ? <input type="hidden" name="slow_kind" value={slowKind} /> : null}
+          <label className="filter-group">
+            <Search size={13} />
+            <input className="filter-input" name="name" defaultValue={qp.name ?? ""} placeholder="Buscar por nome" aria-label="Buscar por nome" />
+          </label>
+          <select className="filter-select" name="verdict" defaultValue={qp.verdict ?? ""} aria-label="Situação da avaliação">
+            <option value="">Qualquer situação</option>
+            <option value="approved">Aprovado</option>
+            <option value="partial">Parcial</option>
+            <option value="rejected">Reprovado</option>
+            <option value="unknown">Sem dados</option>
+          </select>
+          <select className="filter-select" name="status" defaultValue={qp.status ?? ""} aria-label="Status de ingestão">
+            <option value="">Qualquer status de ingestão</option>
+            <option value="ok">ok</option>
+            <option value="partial">parcial</option>
+            <option value="error">erro</option>
+          </select>
+          <select className="filter-select" name="environment" defaultValue={environment ?? ""} aria-label="Ambiente">
+            <option value="">Qualquer ambiente</option>
+            <option value="prod">Produção</option>
+            <option value="staging">Staging</option>
+            <option value="dev">Desenvolvimento</option>
+          </select>
+          <select className="filter-select" aria-label="Período" disabled defaultValue="">
+            <option value="">Período sem dados na API</option>
+          </select>
+          <Link
+            href={tabHref("rag")}
+            className={`btn${tab === "rag" ? " btn--primary" : ""}`}
+            aria-current={tab === "rag" ? "page" : undefined}
+            data-testid="trace-list-rag-tab"
+          >
+            <Layers size={14} /> RAG
+          </Link>
+          <button type="submit" className="btn">Aplicar</button>
+        </form>
+
+        {displayRows.length === 0 && hasFilters ? (
+          <div className="empty ops-traces__empty">
+            <div className="empty__title">Nenhum trace com esses filtros</div>
+            <p className="empty__desc">Tente outro nome ou situação, ou limpe os filtros.</p>
+            <Link href={clearFiltersHref} className="btn">Limpar filtros</Link>
+          </div>
+        ) : displayRows.length === 0 ? (
+          <TracesEmpty project={project} />
+        ) : (
+          <TracesTable org={org} project={project} rows={displayRows} verdicts={verdicts} />
+        )}
+      </section>
 
       <div
         style={{
           display: "flex",
           justifyContent: "space-between",
           marginTop: 12,
-          fontSize: 11.5,
+          fontSize: 12,
           color: "var(--fg-3)",
         }}
       >

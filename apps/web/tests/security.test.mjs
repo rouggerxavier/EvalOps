@@ -527,15 +527,16 @@ for (const section of ["datasets", "exports", "keys"]) {
 test("Fix-7B.7: exports page uses real authenticated download route", () => {
   const src = readFileSync(new URL("../app/o/[org]/p/[project]/exports/page.tsx", import.meta.url), "utf8");
   assert.match(src, /getExportDownloadPath\(/);
-  assert.match(src, /href=\{getExportDownloadPath\(row\.job\.id,\s*currentViewHref\)\}/);
+  assert.match(src, /href=\{getExportDownloadPath\(row\.job\.id,\s*returnPath\)\}/);
   assert.match(src, /download/);
 });
 
 test("Fix-7B.7: export pending or failed state does not expose clickable fake download", () => {
   const src = readFileSync(new URL("../app/o/[org]/p/[project]/exports/page.tsx", import.meta.url), "utf8");
   assert.match(src, /disabled/);
-  assert.match(src, /Processando/);
+  assert.match(src, /Gerando/);
   assert.match(src, /Falhou/);
+  assert.match(src, /status === "ready" && Boolean\(row\.job\.file_path\)/);
 });
 
 test("Fix-7B.7: exports copy does not claim download endpoint is missing", () => {
@@ -588,12 +589,21 @@ test("Fix-7B.7: touched pages sanitize query-driven error surfaces", () => {
   const exportsPage = readFileSync(new URL("../app/o/[org]/p/[project]/exports/page.tsx", import.meta.url), "utf8");
   const evaluations = readFileSync(new URL("../app/o/[org]/p/[project]/evaluations/page.tsx", import.meta.url), "utf8");
   const traceDetail = readFileSync(new URL("../app/o/[org]/p/[project]/traces/[trace]/page.tsx", import.meta.url), "utf8");
+  const datasets = readFileSync(new URL("../app/o/[org]/p/[project]/datasets/page.tsx", import.meta.url), "utf8");
+  const experiments = readFileSync(new URL("../app/o/[org]/p/[project]/experiments/page.tsx", import.meta.url), "utf8");
+  const keys = readFileSync(new URL("../app/o/[org]/p/[project]/keys/page.tsx", import.meta.url), "utf8");
 
   assert.match(exportsPage, /safeErrorMessage\(qp\.error/);
   assert.match(evaluations, /safeErrorMessage\(qp\.error/);
   assert.match(traceDetail, /safeErrorMessage\(qp\.error/);
+  assert.match(datasets, /safeErrorMessage\(qp\.error/);
+  assert.match(experiments, /safeErrorMessage\(qp\.error/);
+  assert.match(keys, /safeErrorMessage\(qp\.error/);
   assert.equal(/\{qp\.error\}/.test(evaluations), false);
   assert.equal(/\{qp\.error\}/.test(traceDetail), false);
+  assert.equal(/\{qp\.error\}/.test(datasets), false);
+  assert.equal(/\{qp\.error\}/.test(experiments), false);
+  assert.equal(/\{qp\.error\}/.test(keys), false);
 });
 
 test("Fix-7B.7: exports usage panel surfaces judge budget safely", () => {

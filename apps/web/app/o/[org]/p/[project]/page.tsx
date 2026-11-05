@@ -1,29 +1,10 @@
 import Link from "next/link";
-import {
-  Activity,
-  AlertCircle,
-  ArrowRight,
-  Check,
-  Clock,
-  Coins,
-  RefreshCw,
-  Target,
-} from "lucide-react";
+import { Activity, AlertCircle, ArrowRight, Clock3, Coins, RefreshCw, Target } from "lucide-react";
 
 import { AuthRequiredPanel } from "@/components/AuthRequiredPanel";
-import {
-  AreaChart,
-  AttentionStrip,
-  Badge,
-  Card,
-  Copyable,
-  Metric,
-  PageHeader,
-  StatusBadge,
-} from "@/components/ui/index";
+import { AreaChart, Card, Metric } from "@/components/ui/index";
 import {
   getAttention,
-  getCoverage,
   getOverview,
   getRubrics,
   getSdkStatus,
@@ -32,372 +13,319 @@ import {
   resolveProject,
 } from "@/lib/api";
 import { getActiveEnvironment } from "@/lib/active-env";
-import { formatCost, formatLatency, formatPercent } from "@/lib/format";
-import { getTraceCauseLabel, getTraceModelLabel } from "@/lib/trace-display";
 import type { Trace } from "@/lib/types";
 
-import {
-  EvaluateHeaderButton,
-  OverviewSuggestions,
-  WindowSelect,
-} from "./overview-actions";
+import { getRubricReport, type RubricReport } from "./rubric-report";
+import { EvaluateHeaderButton, OverviewMobileFilters, WindowSelect } from "./overview-actions";
 
 type Window = "24h" | "7d" | "30d";
-
 type Props = {
   params: Promise<{ org: string; project: string }>;
   searchParams: Promise<{ environment?: string; window?: string }>;
 };
 
-function fmtInteger(n: number): string {
-  return new Intl.NumberFormat("pt-BR").format(n);
+const CAUSE_LABELS: Record<string, string> = {
+  schema_mismatch: "Incompatibilidade de schema",
+  timeout: "Timeout",
+  partial_trace: "Trace parcial",
+  trace_error: "Erro no trace",
+};
+
+function fmtInteger(value: number): string {
+  return new Intl.NumberFormat("pt-BR").format(value);
 }
 
-function fmtCompact(n: number): string {
-  return new Intl.NumberFormat("pt-BR", {
-    notation: n >= 10000 ? "compact" : "standard",
-    maximumFractionDigits: 1,
-  }).format(n);
+function fmtCompact(value: number): string {
+  return new Intl.NumberFormat("pt-BR", { notation: "compact", maximumFractionDigits: 1 }).format(value);
 }
 
-function fmtShortDate(value: string): string {
-  return new Date(value).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", timeZone: "UTC" });
+function fmtPercent(value: number): string {
+  return new Intl.NumberFormat("pt-BR", { style: "percent", maximumFractionDigits: 1 }).format(value);
 }
 
-function fmtScore(value: number | null): string {
-  return value === null ? "—" : value.toFixed(2);
+function fmtCost(value: number): string {
+  return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "USD", maximumFractionDigits: 2 }).format(value);
 }
 
-function timeAgo(value: string): string {
-  const delta = Date.now() - new Date(value).getTime();
-  const minutes = Math.max(0, Math.round(delta / 60000));
+function fmtLatency(value: number): string {
+  return value < 1000
+    ? `${fmtInteger(Math.round(value))} ms`
+    : `${new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 1 }).format(value / 1000)} s`;
+}
+
+function fmtDate(value: string): string {
+  return new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "short", timeZone: "UTC" }).format(new Date(value));
+}
+
+function fmtTime(value: string): string {
+  return new Intl.DateTimeFormat("pt-BR", { hour: "2-digit", minute: "2-digit" }).format(new Date(value));
+}
+
+function fmtRelativeTime(value: string): string {
+  const minutes = Math.max(0, Math.round((Date.now() - new Date(value).getTime()) / 60000));
   if (minutes < 1) return "agora";
-  if (minutes < 60) return `${minutes}min`;
+  if (minutes < 60) return `há ${minutes} min`;
   const hours = Math.round(minutes / 60);
-  if (hours < 24) return `${hours}h`;
-  const days = Math.round(hours / 24);
-  return `${days}d`;
-}
-
-function windowLabel(window: Window): string {
-  if (window === "24h") return "24 horas";
-  if (window === "30d") return "30 dias";
-  return "7 dias";
+  if (hours < 24) return `há ${hours} h`;
+  return `há ${Math.round(hours / 24)} d`;
 }
 
 function parseWindow(value: string | undefined): Window {
-  if (value === "24h" || value === "30d") return value;
-  return "7d";
+  if (value === "7d" || value === "30d") return value;
+  return "24h";
 }
 
-function isRagTrace(trace: Trace): boolean {
-  return trace.name?.startsWith("rag.") ?? false;
+function aggregateApproval(reports: Array<{ rubric: { id: string; slug: string }; report: RubricReport | null }>) {
+  const passed = reports.reduce((sum, item) => sum + (item.report?.totals.passed ?? 0), 0);
+  const failed = reports.reduce((sum, item) => sum + (item.report?.totals.failed ?? 0), 0);
+  const verdicts = passed + failed;
+  const byDay = new Map<string, { passed: number; verdicts: number }>();
+
+  for (const { report } of reports) {
+    for (const point of report?.by_day ?? []) {
+      const verdictsForDay = point.passed + point.failed;
+      if (verdictsForDay === 0) continue;
+      const aggregate = byDay.get(point.day) ?? { passed: 0, verdicts: 0 };
+      aggregate.passed += point.passed;
+      aggregate.verdicts += verdictsForDay;
+      byDay.set(point.day, aggregate);
+    }
+  }
+
+  return {
+    passed,
+    verdicts,
+    rate: verdicts > 0 ? passed / verdicts : null,
+    trend: [...byDay.entries()]
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([day, result]) => ({ label: fmtDate(day), value: result.passed / result.verdicts })),
+  };
 }
 
-const CAUSE_LABELS: Record<string, string> = {
-  schema_mismatch: "schema mismatch",
-  timeout: "timeout",
-  partial_trace: "trace parcial",
-  trace_error: "erro",
-};
+function TraceStatus({ status }: { status: "error" | "partial" }) {
+  const label = status === "partial" ? "Parcial" : "Erro";
+  return (
+    <span className={`ops-status ops-status--${status === "partial" ? "partial" : "rejected"}`}>
+      <AlertCircle size={13} aria-hidden="true" />{label}
+    </span>
+  );
+}
 
 export default async function ProjectOverviewPage({ params, searchParams }: Props) {
   const { org, project } = await params;
-  const qp = await searchParams;
-  const environment = await getActiveEnvironment(qp.environment);
-  const window_ = parseWindow(qp.window);
+  const query = await searchParams;
+  const environment = await getActiveEnvironment(query.environment);
+  const window_ = parseWindow(query.window);
 
   if (!(await hasAuthToken())) return <AuthRequiredPanel layout="main" />;
 
   const resolved = await resolveProject(org, project);
   const projectId = resolved.project_id;
-
-  const [overview, attention, coverage, sdk, rubricsRes, flaggedRes] = await Promise.all([
+  const [overview, attention, sdk, rubricsRes, flaggedRes] = await Promise.all([
     getOverview(projectId, environment, window_),
-    getAttention(projectId).catch(() => ({ count: 0, items: [] as const })),
-    getCoverage(projectId, window_).catch(() => ({ data: [] as const })),
+    getAttention(projectId).catch(() => null),
     getSdkStatus(projectId).catch(() => null),
     getRubrics(projectId).catch(() => ({ data: [] })),
-    getTraces({ projectId, limit: 4, status: "error,partial", environment }).catch(() => ({ data: [] as Trace[], next_cursor: null })),
+    getTraces({ projectId, limit: 25, status: "error,partial", environment }).catch(() => ({ data: [] as Trace[], next_cursor: null })),
   ]);
 
-  const { kpis, cost_by_day, model_breakdown, recent_flagged } = overview;
-  const totalCalls = model_breakdown.reduce((sum, m) => sum + m.calls, 0) || 1;
-  const flaggedTraces = (flaggedRes.data.length > 0 ? flaggedRes.data : recent_flagged).slice(0, 4);
-
-  const costSeries = cost_by_day.slice(-14).map((d) => ({ label: fmtShortDate(d.day), value: d.cost_usd }));
-  const traceSpark = cost_by_day.slice(-14).map((d) => d.traces);
-  const costSpark = cost_by_day.slice(-14).map((d) => d.cost_usd);
-
+  const rubricReports = await Promise.all(
+    rubricsRes.data.map(async (rubric) => ({
+      rubric,
+      report: await getRubricReport(projectId, rubric.id, window_, environment).catch(() => null),
+    })),
+  );
+  const approval = aggregateApproval(rubricReports);
+  const rubrics = rubricsRes.data.map((rubric) => ({ id: rubric.id, slug: rubric.slug, current_version: rubric.current_version }));
+  const flaggedTraces = flaggedRes.data;
+  const traceById = new Map(flaggedTraces.map((trace) => [trace.id, trace]));
+  const attentionItems = attention?.items.slice(0, 3) ?? [];
   const tracesHref = `/o/${org}/p/${project}/traces${environment ? `?environment=${encodeURIComponent(environment)}` : ""}`;
+  const exportHref = `/o/${org}/p/${project}/exports`;
   const refreshHref = `/o/${org}/p/${project}?window=${window_}${environment ? `&environment=${encodeURIComponent(environment)}` : ""}`;
-
-  const rubrics = rubricsRes.data.map((r) => ({ id: r.id, slug: r.slug, current_version: r.current_version }));
-  const candidateTraces = flaggedTraces.map((t) => ({ id: t.id, name: t.name }));
-  const actionsCtx = { org, project, projectId, environment, rubrics, candidateTraces };
+  const actionsCtx = {
+    org,
+    project,
+    projectId,
+    environment,
+    rubrics,
+    candidateTraces: flaggedTraces.slice(0, 4).map((trace) => ({ id: trace.id, name: trace.name })),
+  };
+  const modelBreakdown = overview.model_breakdown;
+  const totalCalls = modelBreakdown.reduce((sum, model) => sum + model.calls, 0);
+  const traceSpark = overview.cost_by_day.slice(-14).map((point) => point.traces);
+  const costSpark = overview.cost_by_day.slice(-14).map((point) => point.cost_usd);
+  const windowLabel = window_ === "24h" ? "últimas 24 horas" : window_ === "7d" ? "últimos 7 dias" : "últimos 30 dias";
+  const environmentLabel = environment === "prod" ? "Produção" : environment === "staging" ? "Staging" : environment === "dev" ? "Dev" : "Todos os ambientes";
 
   return (
-    <div className="page">
-      <PageHeader
-        eyebrow={`Workspace · ${resolved.org_name}`}
-        title={resolved.project_name}
-        subtitle={`Resumo de operação · janela: últimos ${windowLabel(window_)} · env: ${environment ?? "todos"}`}
-        actions={
-          <>
-            <WindowSelect org={org} project={project} current={window_} environment={environment} />
-            <Link href={refreshHref} className="btn btn--sm" title="Atualizar overview">
-              <RefreshCw size={12} /> Atualizar
-            </Link>
-            <EvaluateHeaderButton ctx={actionsCtx} />
-          </>
-        }
-      />
+    <main className="page ops-page ops-overview">
+      <OverviewMobileFilters org={org} project={project} current={window_} environment={environment} />
 
-      {attention.count > 0 ? (
-        <AttentionStrip
-          title={`${fmtInteger(attention.count)} traces precisam de atenção nas últimas 24h`}
-          description="Schema mismatch, timeouts e baixa confiança em respostas RAG. Concentre-se nesta lista antes do próximo deploy."
-          action={
-            <Link href={tracesHref} className="btn btn--sm">
-              Revisar traces <ArrowRight size={11} />
-            </Link>
-          }
-        />
-      ) : null}
+      <header className="ops-overview__header">
+        <div className="ops-overview__header-copy">
+          <h1>Visão geral</h1>
+          <p>{resolved.project_name} · {environmentLabel} · {windowLabel}</p>
+        </div>
+        <div className="ops-overview__actions">
+          <WindowSelect org={org} project={project} current={window_} environment={environment} />
+          <Link href={exportHref} className="btn btn--sm">Exportar</Link>
+          <EvaluateHeaderButton ctx={actionsCtx} />
+        </div>
+      </header>
 
-      <section className="kpi-grid kpi-grid--5">
-        <Metric
-          label="Traces"
-          icon={<Activity size={12} />}
-          value={fmtCompact(kpis.traces)}
-          spark={traceSpark.length > 1 ? traceSpark : undefined}
-        />
-        <Metric
-          label="p95 latência"
-          icon={<Clock size={12} />}
-          value={(kpis.latency_p95_ms / 1000).toFixed(2)}
-          unit="s"
-          sparkColor="var(--warning)"
-        />
-        <Metric
-          label="Custo"
-          icon={<Coins size={12} />}
-          value={formatCost(kpis.cost_usd)}
-          spark={costSpark.length > 1 ? costSpark : undefined}
-          sparkColor="var(--info)"
-        />
-        <Metric
-          label="Taxa de erro"
-          icon={<AlertCircle size={12} />}
-          value={formatPercent(kpis.error_rate)}
-          sparkColor="var(--danger)"
-        />
-        <Metric
-          label="Score médio"
-          icon={<Target size={12} />}
-          value={fmtScore(kpis.avg_score)}
-          sparkColor="var(--success)"
-        />
+      <section className="ops-overview__summary" aria-live="polite">
+        <span className={`ops-overview__summary-mark${attention?.count ? " ops-overview__summary-mark--attention" : ""}`}>
+          {attention?.count ? <AlertCircle size={14} aria-hidden="true" /> : <Target size={14} aria-hidden="true" />}
+          {attention?.count ? "Atenção" : "Resumo"}
+        </span>
+        <strong>
+          {approval.verdicts > 0
+            ? `${fmtInteger(approval.passed)} de ${fmtInteger(approval.verdicts)} avaliações concluídas foram aprovadas.`
+            : "Sem dados de aprovação no período selecionado."}
+        </strong>
+        {attention?.count ? (
+          <span>{attention.count >= 25 ? "25+" : fmtInteger(attention.count)} traces com erro ou parciais nas últimas 24h · todos os ambientes.</span>
+        ) : attention ? (
+          <span>Nenhum trace com erro ou parcial nas últimas 24h.</span>
+        ) : (
+          <span>Contagem de atenção indisponível.</span>
+        )}
       </section>
 
-      <section className="grid-2" style={{ marginBottom: 12 }}>
-        <Card
-          title="Custo & volume por dia"
-          subtitle="USD · últimos 14 dias"
-          action={<Badge variant="info">cost</Badge>}
-        >
-          <AreaChart data={costSeries} color="var(--info)" />
-        </Card>
+      <section className="kpi-grid kpi-grid--5 ops-overview__metrics" aria-label="Indicadores do período">
+        <Metric label="Taxa de aprovação" icon={<Target size={13} aria-hidden="true" />} value={approval.rate === null ? "Sem dados" : fmtPercent(approval.rate)} />
+        <Metric label="Traces" icon={<Activity size={13} aria-hidden="true" />} value={fmtCompact(overview.kpis.traces)} spark={traceSpark.length > 1 ? traceSpark : undefined} />
+        <Metric label="Latência p95" icon={<Clock3 size={13} aria-hidden="true" />} value={fmtLatency(overview.kpis.latency_p95_ms)} />
+        <Metric label="Custo" icon={<Coins size={13} aria-hidden="true" />} value={fmtCost(overview.kpis.cost_usd)} spark={costSpark.length > 1 ? costSpark : undefined} />
+        <Metric label="Taxa de erro" icon={<AlertCircle size={13} aria-hidden="true" />} value={fmtPercent(overview.kpis.error_rate)} />
+      </section>
 
+      <section className="ops-overview__grid ops-overview__grid--top">
         <Card
-          title="Custo por modelo"
-          action={
-            <Link href={tracesHref} className="btn btn--ghost btn--sm">
-              Ver detalhes <ArrowRight size={11} />
-            </Link>
-          }
+          title="Precisa de atenção"
+          subtitle="últimas 24 horas · todos os ambientes"
+          action={<Link href={tracesHref} className="ops-overview__text-link">Ver todos os traces</Link>}
           flush
         >
-          <table className="t">
-            <thead>
-              <tr>
-                <th>Modelo</th>
-                <th className="t__num">Calls</th>
-                <th className="t__num">Custo</th>
-                <th>Share</th>
-              </tr>
-            </thead>
-            <tbody>
-              {model_breakdown.length === 0 ? (
-                <tr><td colSpan={4} className="t__empty">Sem chamadas LLM na janela.</td></tr>
-              ) : model_breakdown.map((m) => {
-                const share = m.calls / totalCalls;
+          {attention === null ? (
+            <div className="ops-overview__empty">
+              <strong>Não foi possível carregar os traces que precisam de atenção.</strong>
+              <Link href={tracesHref}>Abrir traces <ArrowRight size={12} /></Link>
+            </div>
+          ) : attentionItems.length === 0 ? (
+            <div className="ops-overview__empty">
+              <strong>Nenhum trace com erro ou parcial nas últimas 24 horas.</strong>
+              <Link href={tracesHref}>Abrir traces <ArrowRight size={12} /></Link>
+            </div>
+          ) : (
+            <div className="table-wrap ops-overview__table-wrap">
+              <table className="t ops-overview__attention-table">
+                <thead>
+                  <tr><th>Situação</th><th>Assunto</th><th>Serviço</th><th>Trace</th><th>Desde</th></tr>
+                </thead>
+                <tbody>
+                  {attentionItems.map((item) => {
+                    const trace = traceById.get(item.trace_id);
+                    const status = item.cause === "partial_trace" || trace?.status === "partial" ? "partial" : "error";
+                    const cause = item.cause;
+                    const label = CAUSE_LABELS[cause] ?? cause.replaceAll("_", " ");
+                    return (
+                      <tr key={item.trace_id}>
+                        <td><TraceStatus status={status} /></td>
+                        <td>
+                          <span className="ops-overview__attention-title">{label}</span>
+                          <span className="ops-overview__attention-note">{trace?.name ?? "Trace listado pela API"}</span>
+                        </td>
+                        <td className="t__mono">{item.service ?? "—"}</td>
+                        <td>
+                          <Link className="ops-overview__trace-link" href={`/o/${org}/p/${project}/traces/${item.trace_id}`}>
+                            {item.trace_id.slice(0, 10)}
+                          </Link>
+                        </td>
+                        <td className="t__faint">{fmtTime(item.at)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+              {attention.count >= 25 ? <p className="ops-overview__table-note">A API lista no máximo 25 traces nesta seção.</p> : null}
+            </div>
+          )}
+        </Card>
+
+        <Card title="Aprovação por rubrica" action={<Link href={`/o/${org}/p/${project}/evaluations`} className="ops-overview__text-link">Detalhes</Link>}>
+          {rubricReports.length === 0 ? (
+            <div className="ops-overview__empty ops-overview__empty--compact">
+              <strong>Sem dados de aprovação.</strong>
+              <Link href={`/o/${org}/p/${project}/rubrics`}>Ver rubricas <ArrowRight size={12} /></Link>
+            </div>
+          ) : (
+            <div className="ops-overview__rubrics">
+              {rubricReports.slice(0, 5).map(({ rubric, report }) => {
+                const rate = report?.totals.pass_rate ?? null;
+                const results = (report?.totals.passed ?? 0) + (report?.totals.failed ?? 0);
                 return (
-                  <tr key={`${m.provider}-${m.model}`}>
-                    <td>
-                      <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
-                        <span className="t__name">{m.model ?? "—"}</span>
-                        <span className="t__faint mono" style={{ fontSize: 10 }}>{m.provider ?? "—"}</span>
-                      </div>
-                    </td>
-                    <td className="t__num t__muted">{fmtInteger(m.calls)}</td>
-                    <td className="t__num">{formatCost(m.cost_usd)}</td>
-                    <td>
-                      <span className="share">
-                        <span className="share__bar"><i style={{ width: `${(share * 100).toFixed(0)}%` }} /></span>
-                        <span className="share__pct">{Math.round(share * 100)}%</span>
-                      </span>
-                    </td>
-                  </tr>
+                  <div className="ops-overview__rubric" key={rubric.id}>
+                    <div className="ops-overview__rubric-head">
+                      <span>{rubric.slug}</span>
+                      <strong>{rate === null ? "Sem dados" : fmtPercent(rate)}</strong>
+                    </div>
+                    <div className="ops-overview__progress" role="progressbar" aria-label={`Taxa de aprovação de ${rubric.slug}`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={rate === null ? 0 : Math.round(rate * 100)} aria-valuetext={rate === null ? "Sem dados" : fmtPercent(rate)}>
+                      <span className={rate !== null && rate < 0.7 ? "is-low" : ""} style={{ width: `${rate === null ? 0 : Math.round(rate * 100)}%` }} />
+                    </div>
+                    <span className="ops-overview__rubric-meta">{results > 0 ? `${fmtInteger(results)} avaliações concluídas` : "Sem dados no período"}</span>
+                  </div>
                 );
               })}
-            </tbody>
-          </table>
+            </div>
+          )}
         </Card>
       </section>
 
-      <Card
-        title="Últimos traces com problema"
-        subtitle="status diferente de ok · ordenado por mais recente"
-        action={
-          <Link href={tracesHref} className="btn btn--sm">
-            Ver todos os traces <ArrowRight size={11} />
-          </Link>
-        }
-        flush
-      >
-        <table className="t">
-          <thead>
-            <tr>
-              <th>Trace</th>
-              <th>ID</th>
-              <th>Status</th>
-              <th>Causa</th>
-              <th className="t__num">Duração</th>
-              <th className="t__num">Custo</th>
-              <th>Modelo</th>
-              <th>Quando</th>
-              <th style={{ width: 32 }}></th>
-            </tr>
-          </thead>
-          <tbody>
-            {flaggedTraces.length === 0 ? (
-              <tr><td colSpan={9} className="t__empty">Nenhum trace com problema nesta janela 🎉</td></tr>
-            ) : flaggedTraces.map((t) => {
-              const cause = getTraceCauseLabel(t);
-              const model = getTraceModelLabel(t);
-              return (
-                <tr key={t.id} className="is-flagged">
-                  <td>
-                    <Link href={`/o/${org}/p/${project}/traces/${t.id}`} style={{ display: "flex", flexDirection: "column", gap: 1, color: "inherit", textDecoration: "none" }}>
-                      <span className="t__name">{t.name}</span>
-                      <span className="t__faint mono" style={{ fontSize: 10 }}>
-                        {t.service ?? "—"}{isRagTrace(t) ? " · RAG" : ""}
-                      </span>
-                    </Link>
-                  </td>
-                  <td><Copyable value={t.id} display={t.id.slice(0, 12)} /></td>
-                  <td><StatusBadge status={t.status} /></td>
-                  <td>
-                    {cause ? (
-                      <span className="tag" style={{ color: "var(--danger)" }}>{CAUSE_LABELS[cause] ?? cause}</span>
-                    ) : <span style={{ color: "var(--fg-4)" }}>—</span>}
-                  </td>
-                  <td className="t__num t__muted">{formatLatency(t.duration_ms)}</td>
-                  <td className="t__num">{formatCost(t.total_cost_usd)}</td>
-                  <td className="t__mono">{model ?? "—"}</td>
-                  <td className="t__faint" style={{ fontSize: 11 }}>{timeAgo(t.created_at)}</td>
-                  <td><ArrowRight size={12} className="t__chev" /></td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </Card>
-
-      <div style={{ height: 12 }} />
-
-      <section className="grid-3">
-        <Card title="Saúde do SDK" subtitle="ingestão · últimos 60min">
-          <SdkHealth sdk={sdk} />
-        </Card>
-
-        <Card title="Próximos passos sugeridos">
-          <OverviewSuggestions ctx={actionsCtx} />
-        </Card>
-
-        <Card title="Cobertura por avaliação" subtitle="% de traces com pelo menos uma run">
-          <CoverageList items={coverage.data} />
-        </Card>
-      </section>
-
-      <footer className="app-footer">
-        <span>© 2026 EvalOps Studio</span>
-        <span className="spacer" />
-        <Link href="/docs">Documentação</Link>
-        <Link href="/health">Status</Link>
-        <span className="row" style={{ gap: 5, color: "var(--success)" }}>
-          <Check size={11} /> Sistemas operando
-        </span>
-      </footer>
-    </div>
-  );
-}
-
-function SdkHealth({ sdk }: { sdk: Awaited<ReturnType<typeof getSdkStatus>> | null }) {
-  if (!sdk) {
-    return <div style={{ fontSize: 12, color: "var(--fg-3)" }}>Sem sinal de ingestão na última hora.</div>;
-  }
-  const services = sdk.services_seen.slice(0, 2);
-  return (
-    <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-      <div style={{ flex: 1 }}>
-        <div className="row" style={{ marginBottom: 8 }}>
-          <Badge variant="ok">ingestão ok</Badge>
-          <span className="mono" style={{ fontSize: 10, color: "var(--fg-3)" }}>
-            p95 {formatLatency(sdk.p95_ingestion_ms)}
-          </span>
-        </div>
-        <div style={{ fontSize: 12, color: "var(--fg-3)" }}>
-          {services.length > 0 ? (
-            <>Recebendo eventos de {services.map((s, i) => (
-              <span key={s} className="mono">{i > 0 ? " e " : ""}{s}</span>
-            ))}.</>
-          ) : "Aguardando primeiro serviço instrumentado."}
-        </div>
-      </div>
-      <div style={{ textAlign: "right" }}>
-        <div className="mono" style={{ fontSize: 18, color: "var(--fg-1)" }}>
-          {fmtInteger(Math.round(sdk.spans_per_minute))}
-        </div>
-        <div className="mono" style={{ fontSize: 10, color: "var(--fg-4)" }}>spans/min</div>
-      </div>
-    </div>
-  );
-}
-
-function CoverageList({ items }: { items: ReadonlyArray<{ rubric_slug: string; coverage: number; runs_7d: number }> }) {
-  if (items.length === 0) {
-    return <div style={{ fontSize: 12, color: "var(--fg-3)" }}>Sem rubricas cadastradas neste projeto.</div>;
-  }
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-      {items.slice(0, 4).map((ev) => {
-        const pct = Math.max(0, Math.min(1, ev.coverage));
-        const color = pct >= 0.7 ? "var(--success)" : pct >= 0.4 ? "var(--warning)" : "var(--danger)";
-        return (
-          <div key={ev.rubric_slug} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            <div className="row" style={{ justifyContent: "space-between" }}>
-              <span className="mono" style={{ fontSize: 12, color: "var(--fg-1)" }}>{ev.rubric_slug}</span>
-              <span className="mono" style={{ fontSize: 11, color: "var(--fg-4)" }}>{Math.round(pct * 100)}%</span>
+      <section className="ops-overview__grid ops-overview__grid--bottom">
+        <Card title="Taxa de aprovação" subtitle={`${windowLabel} · resultados concluídos`}>
+          {approval.trend.length > 0 ? (
+            <AreaChart data={approval.trend} color="var(--ops-action)" height={180} />
+          ) : (
+            <div className="ops-overview__empty">
+              <strong>Sem dados para mostrar a evolução da taxa de aprovação.</strong>
+              <Link href={`/o/${org}/p/${project}/evaluations`}>Abrir avaliações <ArrowRight size={12} /></Link>
             </div>
-            <div className="share__bar" style={{ width: "100%" }}>
-              <i style={{ width: `${(pct * 100).toFixed(0)}%`, background: color }} />
-            </div>
+          )}
+        </Card>
+
+        <Card title="Custo por modelo" flush>
+          <div className="table-wrap ops-overview__table-wrap">
+            <table className="t ops-overview__model-table">
+              <thead><tr><th>Modelo</th><th className="t__num">Chamadas</th><th className="t__num">Custo</th></tr></thead>
+              <tbody>
+                {modelBreakdown.length === 0 ? (
+                  <tr><td colSpan={3} className="t__empty">Sem dados de chamadas por modelo.</td></tr>
+                ) : modelBreakdown.map((model) => (
+                  <tr key={`${model.provider}-${model.model}`}>
+                    <td>
+                      <span className="ops-overview__model-name">{model.model ?? "Sem dados"}</span>
+                      <span className="ops-overview__model-provider">{model.provider ?? "Sem dados"}</span>
+                    </td>
+                    <td className="t__num">{fmtInteger(model.calls)}</td>
+                    <td className="t__num">{fmtCost(model.cost_usd)}</td>
+                  </tr>
+                ))}
+              </tbody>
+              {totalCalls > 0 ? <caption>{fmtInteger(totalCalls)} chamadas na janela selecionada</caption> : null}
+            </table>
           </div>
-        );
-      })}
-    </div>
+        </Card>
+      </section>
+
+      <footer className="ops-overview__footer">
+        <span>
+          SDK · {sdk ? `${fmtInteger(Math.round(sdk.spans_per_minute))} spans/min · último evento ${sdk.last_event_at ? fmtRelativeTime(sdk.last_event_at) : "sem dados"} · todos os ambientes` : "Sem dados de ingestão na última hora."}
+        </span>
+        <span className="ops-overview__footer-window">{environmentLabel} · {windowLabel}</span>
+        <Link href={refreshHref} aria-label="Atualizar visão geral" title="Atualizar visão geral"><RefreshCw size={13} /></Link>
+      </footer>
+    </main>
   );
 }
-

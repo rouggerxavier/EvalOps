@@ -21,7 +21,7 @@ export type EvaluationRowSummary = {
   type_label: "LLM-judge" | "Heurística";
   judge_model: string | null;
   avg_score: number | null;
-  runs_7d: number;
+  runs_7d: number | null;
   pass_rate: number | null;
   yaml_source: string | null;
 };
@@ -48,7 +48,7 @@ type Props = {
 };
 
 function fmtPct(value: number | null): string {
-  if (value === null || Number.isNaN(value)) return "—";
+  if (value === null || Number.isNaN(value)) return "Sem dados";
   return `${Math.round(value * 100)}%`;
 }
 
@@ -92,40 +92,39 @@ export function EvaluationsModals({ org, project, projectId, rubrics, traces, dr
         open
         onClose={close}
         title={drawerRow.slug}
-        subtitle={drawerRow.description ?? "Rubric publicada"}
+        subtitle={drawerRow.description ?? "Rubrica publicada"}
         width={640}
       >
-        <div className="kpi-grid" style={{ gridTemplateColumns: "repeat(3, 1fr)", marginBottom: 0 }}>
+        <div className="ops-modal-grid">
           <Metric
-            label="Tipo"
+            label="Tipo de avaliador"
             value={drawerRow.type_label}
-            delta={drawerRow.judge_model ?? "—"}
+            delta={drawerRow.judge_model ?? "Sem dados"}
           />
           <Metric
             label="Score médio"
-            value={drawerRow.avg_score === null ? "—" : drawerRow.avg_score.toFixed(2)}
+            value={drawerRow.avg_score === null ? "Sem dados" : drawerRow.avg_score.toFixed(2)}
             delta={`threshold ${drawerRow.threshold.toFixed(2)}`}
           />
           <Metric
-            label="Runs 7d"
-            value={drawerRow.runs_7d.toLocaleString("pt-BR")}
+            label="Execuções, 7 dias"
+            value={drawerRow.runs_7d?.toLocaleString("pt-BR") ?? "Sem dados"}
             delta={`pass ${fmtPct(drawerRow.pass_rate)}`}
-            deltaTone="up"
           />
         </div>
         <div style={{ marginTop: 16 }}>
           <div className="faint mono" style={{ fontSize: 10, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>
-            Rubric definition
+            Definição da rubrica
           </div>
-          <pre className="code">{drawerRow.yaml_source ?? "# YAML indisponível para esta versão."}</pre>
+          <pre className="code">{drawerRow.yaml_source ?? "# Sem dados de YAML para esta versão."}</pre>
         </div>
         <div style={{ marginTop: 14, display: "flex", justifyContent: "flex-end", gap: 8 }}>
           <button type="button" className="btn btn--sm" onClick={close}>Fechar</button>
           <button type="button" className="btn btn--sm" onClick={openPublish}>
-            <ArrowUp size={11} /> Publicar v{drawerRow.current_version + 1}
+            <ArrowUp size={11} /> Criar versão v{drawerRow.current_version + 1}
           </button>
           <button type="button" className="btn btn--sm btn--primary" onClick={openRunForRubric}>
-            <Play size={11} /> Rodar
+            <Play size={11} /> Rodar avaliação
           </button>
         </div>
       </Modal>
@@ -139,19 +138,19 @@ export function EvaluationsModals({ org, project, projectId, rubrics, traces, dr
         open
         onClose={close}
         title="Rodar avaliação"
-        subtitle="Seleciona rubric e trace de produção para executar agora."
+        subtitle="Selecione uma rubrica e um trace para executar agora."
         width={520}
       >
         {!canRun ? (
           <p className="faint" style={{ fontSize: 13 }}>
-            Precisa de pelo menos uma rubric publicada e um trace capturado.
+            É preciso ter uma rubrica publicada e um trace capturado.
           </p>
         ) : (
           <form action={triggerEvaluationAction} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             <input type="hidden" name="org" value={org} />
             <input type="hidden" name="project" value={project} />
             <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 12, color: "var(--fg-3)" }}>
-              <span>Rubric</span>
+              <span>Rubrica</span>
               <select name="rubric_id" defaultValue={defaultRubricId} className="filter-select">
                 {rubrics.map((r) => (
                   <option key={r.id} value={r.id}>
@@ -173,7 +172,7 @@ export function EvaluationsModals({ org, project, projectId, rubrics, traces, dr
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
               <button type="button" className="btn btn--sm" onClick={close}>Cancelar</button>
               <button type="submit" className="btn btn--sm btn--primary">
-                <Play size={11} /> Rodar agora
+                <Play size={11} /> Rodar avaliação
               </button>
             </div>
           </form>
@@ -187,8 +186,8 @@ export function EvaluationsModals({ org, project, projectId, rubrics, traces, dr
       <Modal
         open
         onClose={close}
-        title="Nova rubric"
-        subtitle="Cole o YAML da rubric. Slug e evaluators são lidos do YAML."
+        title="Nova rubrica"
+        subtitle="Cole o YAML da rubrica. Slug e avaliadores são lidos do YAML."
         width={620}
       >
         <form action={createRubricAction} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -197,7 +196,7 @@ export function EvaluationsModals({ org, project, projectId, rubrics, traces, dr
           <input type="hidden" name="project_id" value={projectId} />
           <input type="hidden" name="redirect_section" value="evaluations" />
           <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 12, color: "var(--fg-3)" }}>
-            <span>YAML</span>
+              <span>YAML da rubrica</span>
             <textarea
               name="yaml_source"
               required
@@ -209,7 +208,7 @@ export function EvaluationsModals({ org, project, projectId, rubrics, traces, dr
           <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
             <button type="button" className="btn btn--sm" onClick={close}>Cancelar</button>
             <button type="submit" className="btn btn--sm btn--primary">
-              <Plus size={11} /> Criar rubric
+              <Plus size={11} /> Criar rubrica
             </button>
           </div>
         </form>

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { ChevronRight, Flag } from "lucide-react";
+import { ChevronRight, Flag, GitCompareArrows } from "lucide-react";
 
 import { StatusBadge } from "@/components/ui/Badge";
 import { Copyable } from "@/components/ui/Copyable";
@@ -11,19 +11,20 @@ import { ScoreCell } from "@/components/ui/ScoreCell";
 import { bulkFlagTracesAction } from "@/lib/actions";
 import { formatCost, formatLatency, formatRelativeTime } from "@/lib/format";
 import {
-  formatTraceScore,
   getTraceModelLabel,
   isTraceRagCandidate,
 } from "@/lib/trace-display";
 import type { Trace } from "@/lib/types";
+import { EvaluationStatus, type EvaluationVerdict } from "./trace-status";
 
 type Props = {
   org: string;
   project: string;
   rows: Trace[];
+  verdicts: Record<string, EvaluationVerdict | null>;
 };
 
-export function TracesTable({ org, project, rows }: Props) {
+export function TracesTable({ org, project, rows, verdicts }: Props) {
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const [modalOpen, setModalOpen] = useState(false);
 
@@ -49,7 +50,7 @@ export function TracesTable({ org, project, rows }: Props) {
     <>
       {selectedIds.length > 0 ? (
         <div
-          className="row"
+          className="row ops-traces__selection"
           style={{
             position: "sticky",
             top: 0,
@@ -69,6 +70,14 @@ export function TracesTable({ org, project, rows }: Props) {
             <button type="button" className="btn btn--sm" onClick={() => setSelected(new Set())}>
               Limpar
             </button>
+            {selectedIds.length === 2 ? (
+              <Link
+                href={`/o/${org}/p/${project}/traces/compare?left=${encodeURIComponent(selectedIds[0])}&right=${encodeURIComponent(selectedIds[1])}`}
+                className="btn btn--sm"
+              >
+                <GitCompareArrows size={12} /> Comparar
+              </Link>
+            ) : null}
             <button type="button" className="btn btn--sm btn--primary" onClick={() => setModalOpen(true)}>
               <Flag size={12} /> Flagear em lote
             </button>
@@ -76,8 +85,8 @@ export function TracesTable({ org, project, rows }: Props) {
         </div>
       ) : null}
 
-      <div className="table-wrap">
-        <table className="t">
+      <div className="table-wrap ops-traces__table-scroll">
+        <table className="t ops-traces__table">
           <thead>
             <tr>
               <th style={{ width: 28 }}>
@@ -92,15 +101,13 @@ export function TracesTable({ org, project, rows }: Props) {
                   style={{ accentColor: "var(--primary-400)" }}
                 />
               </th>
+              <th>Situação</th>
               <th>Nome</th>
-              <th>Trace ID</th>
-              <th>Status</th>
-              <th>Env</th>
               <th>Modelo</th>
               <th className="t__num">Duração</th>
               <th className="t__num">Tokens</th>
               <th className="t__num">Custo</th>
-              <th>Score</th>
+              <th className="t__num">Score</th>
               <th>Quando</th>
               <th style={{ width: 28 }} />
             </tr>
@@ -110,12 +117,12 @@ export function TracesTable({ org, project, rows }: Props) {
               const model = getTraceModelLabel(trace);
               const isRag = isTraceRagCandidate(trace);
               const isChecked = selected.has(trace.id);
+              const verdict = verdicts[trace.id] ?? null;
               const href = `/o/${org}/p/${project}/traces/${trace.id}`;
               return (
                 <tr
                   key={trace.id}
-                  className={trace.status !== "ok" ? "is-flagged" : ""}
-                  style={{ cursor: "pointer" }}
+                  className={verdict === "rejected" ? "is-flagged" : ""}
                 >
                   <td onClick={(e) => e.stopPropagation()}>
                     <input
@@ -127,26 +134,19 @@ export function TracesTable({ org, project, rows }: Props) {
                     />
                   </td>
                   <td>
-                    <Link href={href} style={{ display: "flex", flexDirection: "column", gap: 1, color: "inherit", textDecoration: "none" }}>
-                      <span className="t__name">{trace.name}</span>
-                      <span className="t__faint mono" style={{ fontSize: 10 }}>
-                        {trace.service ?? "—"}
-                        {isRag ? <> · <span style={{ color: "var(--info)" }}>RAG</span></> : null}
-                        {trace.flag_count ? <> · <span style={{ color: "var(--warning)" }}>marcado</span></> : null}
-                      </span>
-                    </Link>
-                  </td>
-                  <td onClick={(e) => e.stopPropagation()}>
-                    <Copyable value={trace.id} display={`${trace.id.slice(0, 14)}…`} />
+                    <EvaluationStatus verdict={verdict} />
+                    <span className="ops-traces__ingestion">Ingestão · <StatusBadge status={trace.status} /></span>
                   </td>
                   <td>
-                    <div className="row" style={{ gap: 6 }}>
-                      <StatusBadge status={trace.status} />
-                      {trace.redacted ? <span className="tag">redigido</span> : null}
+                    <Link href={href} className="ops-traces__name-link">{trace.name}</Link>
+                    <div className="ops-traces__trace-meta">
+                      <Copyable value={trace.id} display={trace.id.slice(0, 12)} />
+                      <span>{trace.environment}</span>
+                      {trace.service ?? "—"}
+                      {isRag ? <span>RAG</span> : null}
+                      {trace.flag_count ? <span>marcado</span> : null}
+                      {trace.redacted ? <span>redigido</span> : null}
                     </div>
-                  </td>
-                  <td>
-                    <span className="tag">{trace.environment}</span>
                   </td>
                   <td className="t__mono">{model ?? "—"}</td>
                   <td
@@ -178,8 +178,10 @@ export function TracesTable({ org, project, rows }: Props) {
                     </div>
                   </td>
                   <td className="t__num t__muted">
-                    {trace.total_tokens_in.toLocaleString("pt-BR")}
-                    <span className="faint">/{trace.total_tokens_out.toLocaleString("pt-BR")}</span>
+                    {(trace.total_tokens_in + trace.total_tokens_out).toLocaleString("pt-BR")}
+                    <span className="ops-traces__token-detail">
+                      {trace.total_tokens_in.toLocaleString("pt-BR")} entrada · {trace.total_tokens_out.toLocaleString("pt-BR")} saída
+                    </span>
                   </td>
                   <td className="t__num">
                     <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
@@ -201,9 +203,9 @@ export function TracesTable({ org, project, rows }: Props) {
                       ) : null}
                     </div>
                   </td>
-                  <td>
+                  <td className="t__num">
                     {trace.last_score === null || trace.last_score === undefined ? (
-                      <span className="faint mono">—</span>
+                      <span className="t__faint">Sem dados</span>
                     ) : (
                       <ScoreCell value={trace.last_score} />
                     )}

@@ -1,10 +1,11 @@
 import Link from "next/link";
-import { GitBranch, Plus } from "lucide-react";
+import { GitBranch, HelpCircle, Plus } from "lucide-react";
 
 import { AuthRequiredPanel } from "@/components/AuthRequiredPanel";
 import { createPromptAction, createPromptVersionAction } from "@/lib/actions";
 import { getPromptUsage, getPromptVersions, getPrompts, hasAuthToken, resolveProject } from "@/lib/api";
-import type { PromptVersion } from "@/lib/types";
+import { safeErrorMessage } from "@/lib/safe-error";
+import type { Prompt, PromptUsage, PromptVersion } from "@/lib/types";
 
 type Props = {
   params: Promise<{ org: string; project: string }>;
@@ -15,123 +16,58 @@ function relTime(iso: string): string {
   const diff = Date.now() - Date.parse(iso);
   const mins = Math.floor(diff / 60_000);
   if (mins < 1) return "agora";
-  if (mins < 60) return `${mins}m atrás`;
+  if (mins < 60) return `há ${mins} min`;
   const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h atrás`;
-  return `${Math.floor(hrs / 24)}d atrás`;
+  if (hrs < 24) return `há ${hrs} h`;
+  return `há ${Math.floor(hrs / 24)} dias`;
 }
 
 function DiffView({ current, previous }: { current: PromptVersion; previous: PromptVersion | null }) {
-  const currLines = current.template.split("\n");
+  const currentLines = current.template.split("\n");
 
   if (!previous) {
     return (
-      <div style={{ padding: "12px 0" }}>
-        {currLines.map((line, i) => (
-          <div
-            key={i}
-            style={{
-              display: "flex",
-              padding: "0 16px",
-              fontFamily: "var(--font-mono)",
-              fontSize: 12,
-              lineHeight: "22px",
-              background: "rgba(34,211,168,0.06)",
-              borderLeft: "2px solid var(--ok)",
-            }}
-          >
-            <span style={{ width: 16, color: "var(--ok)", userSelect: "none" }}>+</span>
-            <span style={{ color: "var(--text-dim)", whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
-              {line || " "}
-            </span>
+      <div className="ops-diff">
+        {currentLines.map((line, index) => (
+          <div className="ops-diff__line ops-diff__line--add" key={index}>
+            <span aria-hidden="true">+</span><code>{line || " "}</code>
           </div>
         ))}
       </div>
     );
   }
 
-  const prevLines = previous.template.split("\n");
-  const maxLen = Math.max(currLines.length, prevLines.length);
+  const previousLines = previous.template.split("\n");
+  const maxLength = Math.max(currentLines.length, previousLines.length);
   const lines: Array<{ text: string; kind: "add" | "del" | "same" }> = [];
 
-  for (let i = 0; i < maxLen; i++) {
-    const c = currLines[i];
-    const p = prevLines[i];
-    if (c === p) {
-      if (c !== undefined) lines.push({ text: c, kind: "same" });
+  for (let index = 0; index < maxLength; index++) {
+    const currentLine = currentLines[index];
+    const previousLine = previousLines[index];
+    if (currentLine === previousLine) {
+      if (currentLine !== undefined) lines.push({ text: currentLine, kind: "same" });
     } else {
-      if (p !== undefined) lines.push({ text: p, kind: "del" });
-      if (c !== undefined) lines.push({ text: c, kind: "add" });
+      if (previousLine !== undefined) lines.push({ text: previousLine, kind: "del" });
+      if (currentLine !== undefined) lines.push({ text: currentLine, kind: "add" });
     }
   }
 
   return (
-    <div style={{ padding: "12px 0" }}>
-      {lines.map((line, i) => {
-        const isAdd = line.kind === "add";
-        const isDel = line.kind === "del";
-        return (
-          <div
-            key={i}
-            style={{
-              display: "flex",
-              padding: "0 16px",
-              background: isAdd
-                ? "rgba(34,211,168,0.08)"
-                : isDel
-                ? "rgba(255,107,107,0.08)"
-                : "transparent",
-              borderLeft: `2px solid ${isAdd ? "var(--ok)" : isDel ? "var(--err)" : "transparent"}`,
-              fontFamily: "var(--font-mono)",
-              fontSize: 12,
-              lineHeight: "22px",
-            }}
-          >
-            <span
-              style={{
-                width: 16,
-                color: isAdd ? "var(--ok)" : isDel ? "var(--err)" : "var(--text-faint)",
-                userSelect: "none",
-              }}
-            >
-              {isAdd ? "+" : isDel ? "−" : " "}
-            </span>
-            <span style={{ color: "var(--text-dim)", whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
-              {line.text || " "}
-            </span>
-          </div>
-        );
-      })}
+    <div className="ops-diff">
+      {lines.map((line, index) => (
+        <div className={`ops-diff__line ops-diff__line--${line.kind}`} key={index}>
+          <span aria-hidden="true">{line.kind === "add" ? "+" : line.kind === "del" ? "−" : " "}</span>
+          <code>{line.text || " "}</code>
+        </div>
+      ))}
     </div>
   );
 }
 
-const TEXTAREA_STYLE: React.CSSProperties = {
-  background: "var(--bg-2)",
-  border: "1px solid var(--border)",
-  borderRadius: 6,
-  padding: "8px 10px",
-  color: "var(--text)",
-  fontSize: 12,
-  fontFamily: "var(--font-mono)",
-  resize: "vertical",
-};
-
-const INPUT_STYLE: React.CSSProperties = {
-  background: "var(--bg-2)",
-  border: "1px solid var(--border)",
-  borderRadius: 6,
-  padding: "6px 10px",
-  color: "var(--text)",
-  fontSize: 13,
-};
-
-const LABEL_STYLE: React.CSSProperties = {
-  display: "flex",
-  flexDirection: "column",
-  gap: 4,
-  fontSize: 13,
-};
+function modelFor(version: PromptVersion | null): string {
+  const value = version?.metadata?.model_default;
+  return typeof value === "string" ? value : "Sem dados";
+}
 
 export default async function PromptsPage({ params, searchParams }: Props) {
   const { org, project } = await params;
@@ -140,397 +76,210 @@ export default async function PromptsPage({ params, searchParams }: Props) {
   if (!(await hasAuthToken())) return <AuthRequiredPanel layout="main" />;
 
   const resolved = await resolveProject(org, project);
-  const promptsRes = await getPrompts(resolved.project_id);
-  const prompts = promptsRes.data;
-
+  const prompts = (await getPrompts(resolved.project_id)).data;
   const versionsByPrompt = new Map(
     await Promise.all(
-      prompts.map(async (p) => [p.id, (await getPromptVersions(p.id)).data] as const),
+      prompts.map(async (prompt) => [prompt.id, (await getPromptVersions(prompt.id)).data] as const),
     ),
   );
-  const usageByPrompt = new Map<string, number>(
+  const usageByPrompt = new Map<string, PromptUsage | null>(
     await Promise.all(
-      prompts.map(async (p) => {
+      prompts.map(async (prompt) => {
         try {
-          const usage = await getPromptUsage(p.id, 1);
-          return [p.id, usage.usage_count] as const;
+          return [prompt.id, await getPromptUsage(prompt.id, 3)] as const;
         } catch {
-          return [p.id, 0] as const;
+          return [prompt.id, null] as const;
         }
       }),
     ),
   );
 
   const selectedId = qp.prompt ?? prompts[0]?.id;
-  const selected = prompts.find((p) => p.id === selectedId) ?? prompts[0];
-  const selectedVersions = selected ? (versionsByPrompt.get(selected.id) ?? []) : [];
+  const selected = prompts.find((prompt) => prompt.id === selectedId) ?? prompts[0] ?? null;
+  const selectedVersions = selected ? versionsByPrompt.get(selected.id) ?? [] : [];
   const latest = selectedVersions[selectedVersions.length - 1] ?? null;
   const previous = selectedVersions[selectedVersions.length - 2] ?? null;
-
-  const base = `/o/${org}/p/${project}/prompts`;
-
-  const totalPrompts = prompts.length;
-  const totalVersions = Array.from(versionsByPrompt.values()).reduce(
-    (acc, list) => acc + list.length,
-    0,
-  );
-  const latestActivity = (() => {
-    let mostRecent: string | null = null;
-    for (const p of prompts) {
-      if (!mostRecent || Date.parse(p.created_at) > Date.parse(mostRecent)) {
-        mostRecent = p.created_at;
-      }
-      const versions = versionsByPrompt.get(p.id) ?? [];
-      for (const v of versions) {
-        if (!mostRecent || Date.parse(v.created_at) > Date.parse(mostRecent)) {
-          mostRecent = v.created_at;
-        }
-      }
-    }
-    return mostRecent;
-  })();
+  const usage = selected ? usageByPrompt.get(selected.id) ?? null : null;
+  const baseUrl = `/o/${org}/p/${project}/prompts`;
+  const errorMessage = qp.error ? safeErrorMessage(qp.error, "Falha ao salvar prompt.") : null;
+  const successMessage = qp.created ? "Prompt criado." : qp.versioned ? "Nova versão publicada." : null;
 
   return (
-    <div className="page">
-      {/* Header */}
-      <div className="page-header">
-        <div>
-          <p className="page-header__eyebrow">Operação · Prompts</p>
-          <h1 className="page-header__title">Prompts</h1>
-          <p className="page-header__subtitle">
-            Templates versionados. Cada versão é referenciada por traces e experimentos.
+    <div className="page ops-page">
+      <header className="ops-page-header">
+        <div className="ops-page-header__copy">
+          <h1 className="ops-page-header__title">Prompts</h1>
+          <p className="ops-page-header__subtitle">
+            As instruções que a IA recebe, com o histórico de cada versão.
           </p>
         </div>
-        <div className="row">
-          <Link href="#prompt-create" className="btn btn--sm btn--primary">
-            <Plus size={13} /> Novo prompt
-          </Link>
-        </div>
-      </div>
-
-      {/* Flash */}
-      {qp.error && (
-        <div style={{ padding: "10px 14px", background: "var(--err-bg)", border: "1px solid var(--err-border)", borderRadius: 6, color: "var(--err)", fontSize: 13, marginBottom: 12 }}>
-          {qp.error}
-        </div>
-      )}
-      {(qp.created || qp.versioned) && (
-        <div style={{ padding: "10px 14px", background: "var(--ok-bg)", border: "1px solid var(--ok-border)", borderRadius: 6, color: "var(--ok)", fontSize: 13, marginBottom: 12 }}>
-          {qp.created ? "Prompt criado com sucesso." : "Nova versão criada com sucesso."}
-        </div>
-      )}
-
-      {/* Summary row — só dados reais do payload */}
-      <section className="module-summary" aria-label="Resumo de prompts">
-        <div className="summary-card">
-          <p className="summary-card__label">Prompts</p>
-          <div className="summary-card__value">{totalPrompts.toLocaleString("pt-BR")}</div>
-          <div className="summary-card__hint">slugs versionados ativos</div>
-        </div>
-        <div className="summary-card">
-          <p className="summary-card__label">Versões</p>
-          <div className="summary-card__value">{totalVersions.toLocaleString("pt-BR")}</div>
-          <div className="summary-card__hint">total publicado</div>
-        </div>
-        <div className="summary-card">
-          <p className="summary-card__label">Última atividade</p>
-          <div className="summary-card__value">
-            {latestActivity ? relTime(latestActivity) : "—"}
-          </div>
-          <div className="summary-card__hint">prompt ou versão</div>
-        </div>
-      </section>
-
-      {prompts.length === 0 ? (
-        /* ── Empty state + create form ── */
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-          <div className="card" style={{ padding: "40px 24px", textAlign: "center" }}>
-            <p style={{ color: "var(--text-muted)", fontWeight: 600, marginBottom: 6 }}>Nenhum prompt ainda</p>
-            <p style={{ color: "var(--text-faint)", fontSize: 13, maxWidth: 320, margin: "0 auto 16px" }}>
-              Crie um prompt versionado antes de rodar experimentos controlados.
-            </p>
-            <ol style={{ textAlign: "left", display: "inline-block", fontSize: 13, color: "var(--text-muted)", lineHeight: "1.8" }}>
-              <li>Crie um prompt com slug estável.</li>
-              <li>Publique novas versões com changelog.</li>
-              <li>Referencie versões em experimentos e traces.</li>
-            </ol>
-          </div>
-
-          <div className="card">
-            <div className="card__header">
-              <h3 className="card__title">Criar prompt</h3>
+        <details className="ops-create" open={prompts.length === 0}>
+          <summary className="btn btn--sm btn--primary"><Plus size={12} /> Novo prompt</summary>
+          <form action={createPromptAction} className="ops-form">
+            <input type="hidden" name="org" value={org} />
+            <input type="hidden" name="project" value={project} />
+            <input type="hidden" name="project_id" value={resolved.project_id} />
+            <div className="ops-form__grid">
+              <label className="ops-form__field">
+                <span>Identificador</span>
+                <input name="slug" placeholder="Identificador curto" required />
+              </label>
+              <label className="ops-form__field">
+                <span>Descrição</span>
+                <input name="description" placeholder="Para que este prompt serve" />
+              </label>
             </div>
-            <div className="card__body">
-              <form action={createPromptAction} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                <input type="hidden" name="org" value={org} />
-                <input type="hidden" name="project" value={project} />
-                <input type="hidden" name="project_id" value={resolved.project_id} />
-                <label style={LABEL_STYLE}>
-                  <span style={{ color: "var(--text-muted)" }}>Slug</span>
-                  <input name="slug" placeholder="support-answer-system" required style={INPUT_STYLE} />
-                </label>
-                <label style={LABEL_STYLE}>
-                  <span style={{ color: "var(--text-muted)" }}>Descrição</span>
-                  <input name="description" placeholder="Support answer system prompt" style={INPUT_STYLE} />
-                </label>
-                <label style={LABEL_STYLE}>
-                  <span style={{ color: "var(--text-muted)" }}>Template</span>
-                  <textarea name="template" rows={5} required defaultValue={"You are a helpful support assistant.\nUser: {{ user_message }}"} style={TEXTAREA_STYLE} />
-                </label>
-                <label style={LABEL_STYLE}>
-                  <span style={{ color: "var(--text-muted)" }}>Variáveis JSON</span>
-                  <textarea name="variables_json" rows={2} defaultValue={'{"user_message":{"type":"string","required":true}}'} style={TEXTAREA_STYLE} />
-                </label>
-                <label style={LABEL_STYLE}>
-                  <span style={{ color: "var(--text-muted)" }}>Metadata JSON</span>
-                  <textarea name="metadata_json" rows={2} defaultValue={'{"model_default":"openai/gpt-4o-mini","temperature_default":0.2}'} style={TEXTAREA_STYLE} />
-                </label>
-                <button type="submit" className="btn btn--primary" style={{ alignSelf: "flex-start" }}>
-                  Criar prompt
-                </button>
-              </form>
+            <label className="ops-form__field">
+              <span>Template</span>
+              <textarea name="template" rows={5} required />
+            </label>
+            <label className="ops-form__field">
+              <span>Variáveis JSON</span>
+              <textarea name="variables_json" rows={2} defaultValue="{}" />
+            </label>
+            <label className="ops-form__field">
+              <span>Metadata JSON</span>
+              <textarea name="metadata_json" rows={2} defaultValue="{}" />
+            </label>
+            <button type="submit" className="btn btn--sm btn--primary">Criar prompt</button>
+          </form>
+        </details>
+      </header>
+
+      {errorMessage && <div className="ops-flash ops-flash--error" role="alert">{errorMessage}</div>}
+      {successMessage && <div className="ops-flash ops-flash--success" role="status">{successMessage}</div>}
+
+      {selected ? (
+        <div className="ops-prompts-layout">
+          <nav className="ops-prompts-list ops-panel" aria-label="Lista de prompts">
+            <header className="ops-panel__header"><h2>{prompts.length} prompts</h2></header>
+            {prompts.map((prompt: Prompt) => {
+              const active = prompt.id === selected.id;
+              const promptVersions = versionsByPrompt.get(prompt.id) ?? [];
+              const promptUsage = usageByPrompt.get(prompt.id);
+              const currentVersion = promptVersions[promptVersions.length - 1];
+              return (
+                <Link
+                  key={prompt.id}
+                  href={`${baseUrl}?prompt=${encodeURIComponent(prompt.id)}`}
+                  className={`ops-prompts-list__item${active ? " is-active" : ""}`}
+                  aria-current={active ? "page" : undefined}
+                >
+                  <strong className="ops-mono">{prompt.slug}</strong>
+                  <span className="ops-prompts-list__meta">
+                    {prompt.current_version} {prompt.current_version === 1 ? "versão" : "versões"}
+                    {" · "}{promptUsage ? `${promptUsage.usage_count.toLocaleString("pt-BR")} traces` : "Sem dados de uso"}
+                    {" · "}{currentVersion ? relTime(currentVersion.created_at) : "Sem dados de versão"}
+                  </span>
+                </Link>
+              );
+            })}
+          </nav>
+
+          <div className="ops-prompt-detail">
+            <section className="ops-panel">
+              <header className="ops-prompt-detail__header">
+                <div>
+                  <h2 className="ops-mono">{selected.slug}</h2>
+                  <p>{selected.description ?? "Sem descrição disponível."}</p>
+                </div>
+                {selectedVersions.length > 0 && (
+                  <details className="ops-create ops-create--version" id="prompt-version">
+                    <summary className="btn btn--sm"><GitBranch size={12} /> Nova versão</summary>
+                    <form action={createPromptVersionAction} className="ops-form">
+                      <input type="hidden" name="org" value={org} />
+                      <input type="hidden" name="project" value={project} />
+                      <input type="hidden" name="prompt_id" value={selected.id} />
+                      <label className="ops-form__field">
+                        <span>Template</span>
+                        <textarea name="template" rows={6} required defaultValue={latest?.template ?? ""} />
+                      </label>
+                      <label className="ops-form__field">
+                        <span>Variáveis JSON</span>
+                        <textarea name="variables_json" rows={3} defaultValue={JSON.stringify(latest?.variables ?? {}, null, 2)} />
+                      </label>
+                      <label className="ops-form__field">
+                        <span>Metadata JSON</span>
+                        <textarea name="metadata_json" rows={3} defaultValue={JSON.stringify(latest?.metadata ?? {}, null, 2)} />
+                      </label>
+                      <button type="submit" className="btn btn--sm btn--primary">Publicar versão</button>
+                    </form>
+                  </details>
+                )}
+              </header>
+              <div className="ops-prompt-status" role="status">
+                <span className="ops-status ops-status--unknown"><HelpCircle size={14} aria-hidden="true" /> Sem dados</span>
+                <span>Sem dados de avaliação por versão. A API não associa scores à versão do prompt.</span>
+              </div>
+            </section>
+
+            <section className="ops-panel">
+              <header className="ops-panel__header">
+                <h3>Versão atual: v{latest?.version ?? selected.current_version}</h3>
+                <span className="ops-mono">{modelFor(latest)}</span>
+              </header>
+              {latest ? (
+                <pre className="ops-code">{latest.template}</pre>
+              ) : (
+                <p className="ops-panel__empty">Sem dados de template para esta versão.</p>
+              )}
+            </section>
+
+            <div className="ops-prompt-bottom">
+              <section className="ops-panel">
+                <header className="ops-panel__header">
+                  <h3>Versões</h3><span className="ops-panel__muted">Score médio</span>
+                </header>
+                {selectedVersions.length ? (
+                  selectedVersions.slice(-3).reverse().map((version) => (
+                    <div className="ops-prompt-row" key={version.id}>
+                      <strong>v{version.version}</strong>
+                      <span className="ops-panel__muted">{relTime(version.created_at)}</span>
+                      <span className="ops-prompt-row__score">Sem dados</span>
+                    </div>
+                  ))
+                ) : (
+                  <p className="ops-panel__empty">Sem dados de versões.</p>
+                )}
+                {previous && latest && (
+                  <details className="ops-prompt-diff">
+                    <summary>Ver diferenças com v{previous.version}</summary>
+                    <DiffView current={latest} previous={previous} />
+                  </details>
+                )}
+              </section>
+
+              <section className="ops-panel">
+                <header className="ops-panel__header">
+                  <h3>Usado por</h3>
+                  <span className="ops-panel__muted">
+                    {usage ? `${usage.usage_count.toLocaleString("pt-BR")} traces` : "Sem dados"}
+                  </span>
+                </header>
+                {usage?.traces.length ? (
+                  usage.traces.map((trace) => (
+                    <div className="ops-prompt-row ops-prompt-row--trace" key={trace.trace_id}>
+                      <span className="ops-mono">{trace.name || trace.trace_id}</span>
+                      <span className="ops-panel__muted">{trace.environment} · {trace.status}</span>
+                    </div>
+                  ))
+                ) : (
+                  <p className="ops-panel__empty">
+                    {usage ? "Nenhum trace associado a este prompt." : "Sem dados de uso."}
+                  </p>
+                )}
+                {usage && usage.traces.length < usage.usage_count && (
+                  <p className="ops-panel__note">Mostrando os 3 traces mais recentes de {usage.usage_count.toLocaleString("pt-BR")}.</p>
+                )}
+              </section>
             </div>
           </div>
         </div>
       ) : (
-        /* ── Main layout: table + detail panel ── */
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-          {/* Left: prompts table */}
-          <div className="card">
-            <div className="card__header">
-              <h3 className="card__title">Prompts</h3>
-              <span className="t__faint" style={{ fontSize: 11 }}>
-                {prompts.length} prompt{prompts.length !== 1 ? "s" : ""}
-              </span>
-            </div>
-            <div className="card__body" style={{ padding: 0 }}>
-              <table className="t">
-                <thead>
-                  <tr>
-                    <th>Nome</th>
-                    <th>Versões</th>
-                    <th>Usado por</th>
-                    <th>Atualizado</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {prompts.map((p) => {
-                    const isActive = p.id === selected?.id;
-                    return (
-                      <tr
-                        key={p.id}
-                        style={isActive ? { background: "var(--accent-bg)" } : undefined}
-                      >
-                        <td>
-                          <Link
-                            href={`${base}?prompt=${p.id}`}
-                            style={{ textDecoration: "none", display: "flex", flexDirection: "column", gap: 2 }}
-                          >
-                            <span className="t__name">{p.slug}</span>
-                            {p.description && (
-                              <span style={{ fontSize: 11, color: "var(--text-faint)" }}>
-                                {p.description}
-                              </span>
-                            )}
-                          </Link>
-                        </td>
-                        <td>
-                          <span
-                            className="mono"
-                            style={{
-                              fontSize: 12,
-                              color: isActive ? "var(--accent)" : "var(--text-dim)",
-                              fontWeight: isActive ? 600 : 500,
-                            }}
-                          >
-                            v{p.current_version}
-                          </span>
-                        </td>
-                        <td>
-                          <span className="mono t__muted" style={{ fontSize: 12 }}>
-                            {(usageByPrompt.get(p.id) ?? 0).toLocaleString("pt-BR")} traces
-                          </span>
-                        </td>
-                        <td className="t__muted" style={{ fontSize: 12 }}>
-                          {relTime(p.created_at)}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          {/* Right: diff / version detail */}
-          {selected && (
-            <div className="card">
-              <div className="card__header">
-                <div>
-                  <h3 className="card__title">{selected.slug}</h3>
-                  <div className="card__subtitle">
-                    v{selected.current_version}
-                    {previous ? ` vs v${previous.version}` : " · versão inicial"}
-                  </div>
-                </div>
-                <div className="row" style={{ gap: 6 }}>
-                  {previous && (
-                    <span className="badge badge--ok">
-                      <span className="badge__dot" />
-                      atual
-                    </span>
-                  )}
-                  <Link href="#prompt-version" className="btn btn--sm">
-                    <GitBranch size={13} /> Nova versão
-                  </Link>
-                </div>
-              </div>
-              <div className="card__body" style={{ padding: 0, maxHeight: 400, overflow: "auto" }}>
-                {latest ? (
-                  <DiffView current={latest} previous={previous} />
-                ) : (
-                  <div style={{ padding: 24, color: "var(--text-faint)", fontSize: 13 }}>
-                    Nenhuma versão encontrada.
-                  </div>
-                )}
-              </div>
-
-              {/* Version history */}
-              <div style={{ borderTop: "1px solid var(--border-subtle)" }}>
-                <div style={{ padding: "10px 16px 4px", fontSize: 11, color: "var(--text-faint)", fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase" }}>
-                  Versões
-                </div>
-                {selectedVersions.slice().reverse().map((v) => (
-                  <div
-                    key={v.id}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 10,
-                      padding: "8px 16px",
-                      borderTop: "1px solid var(--border-subtle)",
-                    }}
-                  >
-                    <span
-                      className="mono"
-                      style={{
-                        fontSize: 12,
-                        color: v.version === selected.current_version ? "var(--accent)" : "var(--text-dim)",
-                        fontWeight: v.version === selected.current_version ? 600 : 500,
-                        minWidth: 28,
-                      }}
-                    >
-                      v{v.version}
-                    </span>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 12, color: "var(--text-dim)" }}>
-                        {relTime(v.created_at)}
-                      </div>
-                      <div style={{ fontSize: 11, color: "var(--text-faint)", fontFamily: "var(--font-mono)" }}>
-                        {v.created_by}
-                      </div>
-                    </div>
-                    {v.version === selected.current_version && (
-                      <span className="badge badge--ok">
-                        <span className="badge__dot" /> ativa
-                      </span>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Create new version (collapsible) — only when prompts exist */}
-      {prompts.length > 0 && (
-        <details
-          id="prompt-create"
-          style={{
-            background: "var(--surface-1)",
-            border: "1px solid var(--border)",
-            borderRadius: 8,
-            marginTop: 12,
-          }}
-        >
-          <summary style={{ padding: "12px 16px", cursor: "pointer", fontSize: 13, fontWeight: 500, color: "var(--text-dim)", listStyle: "none" }}>
-            <Plus size={13} style={{ display: "inline", marginRight: 6 }} />
-            Criar novo prompt
-          </summary>
-          <div style={{ padding: "0 16px 20px" }}>
-            <form action={createPromptAction} style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 12 }}>
-              <input type="hidden" name="org" value={org} />
-              <input type="hidden" name="project" value={project} />
-              <input type="hidden" name="project_id" value={resolved.project_id} />
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-                <label style={LABEL_STYLE}>
-                  <span style={{ color: "var(--text-muted)" }}>Slug</span>
-                  <input name="slug" placeholder="support-answer-system" required style={INPUT_STYLE} />
-                </label>
-                <label style={LABEL_STYLE}>
-                  <span style={{ color: "var(--text-muted)" }}>Descrição</span>
-                  <input name="description" placeholder="Support answer system prompt" style={INPUT_STYLE} />
-                </label>
-              </div>
-              <label style={LABEL_STYLE}>
-                <span style={{ color: "var(--text-muted)" }}>Template</span>
-                <textarea name="template" rows={4} required defaultValue={"You are a helpful support assistant.\nUser: {{ user_message }}"} style={TEXTAREA_STYLE} />
-              </label>
-              <label style={LABEL_STYLE}>
-                <span style={{ color: "var(--text-muted)" }}>Variáveis JSON</span>
-                <textarea name="variables_json" rows={2} defaultValue={'{"user_message":{"type":"string","required":true}}'} style={TEXTAREA_STYLE} />
-              </label>
-              <label style={LABEL_STYLE}>
-                <span style={{ color: "var(--text-muted)" }}>Metadata JSON</span>
-                <textarea name="metadata_json" rows={2} defaultValue={'{"model_default":"openai/gpt-4o-mini","temperature_default":0.2}'} style={TEXTAREA_STYLE} />
-              </label>
-              <button type="submit" className="btn btn--primary" style={{ alignSelf: "flex-start" }}>
-                Criar prompt
-              </button>
-            </form>
-          </div>
-        </details>
-      )}
-
-      {/* Add version to selected prompt */}
-      {selected && selectedVersions.length > 0 && (
-        <details
-          id="prompt-version"
-          style={{
-            background: "var(--surface-1)",
-            border: "1px solid var(--border)",
-            borderRadius: 8,
-            marginTop: 8,
-          }}
-        >
-          <summary style={{ padding: "12px 16px", cursor: "pointer", fontSize: 13, fontWeight: 500, color: "var(--text-dim)", listStyle: "none" }}>
-            <GitBranch size={13} style={{ display: "inline", marginRight: 6 }} />
-            Nova versão — {selected.slug}
-          </summary>
-          <div style={{ padding: "0 16px 20px" }}>
-            <form action={createPromptVersionAction} style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 12 }}>
-              <input type="hidden" name="org" value={org} />
-              <input type="hidden" name="project" value={project} />
-              <input type="hidden" name="prompt_id" value={selected.id} />
-              <label style={LABEL_STYLE}>
-                <span style={{ color: "var(--text-muted)" }}>Template</span>
-                <textarea name="template" rows={6} required defaultValue={latest?.template ?? ""} style={TEXTAREA_STYLE} />
-              </label>
-              <label style={LABEL_STYLE}>
-                <span style={{ color: "var(--text-muted)" }}>Variáveis JSON</span>
-                <textarea name="variables_json" rows={3} defaultValue={JSON.stringify(latest?.variables ?? {}, null, 2)} style={TEXTAREA_STYLE} />
-              </label>
-              <label style={LABEL_STYLE}>
-                <span style={{ color: "var(--text-muted)" }}>Metadata JSON</span>
-                <textarea name="metadata_json" rows={3} defaultValue={JSON.stringify(latest?.metadata ?? {}, null, 2)} style={TEXTAREA_STYLE} />
-              </label>
-              <button type="submit" className="btn btn--primary" style={{ alignSelf: "flex-start" }}>
-                Publicar versão
-              </button>
-            </form>
-          </div>
-        </details>
+        <section className="ops-panel ops-empty">
+          <h2 className="ops-empty__title">Nenhum prompt</h2>
+          <p className="ops-empty__description">Crie um prompt versionado para começar.</p>
+        </section>
       )}
     </div>
   );
