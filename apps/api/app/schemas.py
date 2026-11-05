@@ -298,7 +298,7 @@ class EvaluationScoreOut(BaseModel):
     passed: bool
     reasoning: str | None = None
     raw_output: dict | None = None
-    cost_usd: float
+    cost_usd: float | None = None
     latency_ms: int
 
 
@@ -314,7 +314,7 @@ class EvaluationRunOut(BaseModel):
     status: str
     aggregate_score: float | None = None
     passed: bool | None = None
-    cost_usd: float
+    cost_usd: float | None = None
     latency_ms: int | None = None
     started_at: datetime | None = None
     completed_at: datetime | None = None
@@ -542,11 +542,22 @@ class CoverageResponse(BaseModel):
     data: list[CoverageItemOut]
 
 
+class CliJudgeOptionOut(BaseModel):
+    provider: str
+    model: str
+    status: str
+    version: str | None = None
+
+
+class CliJudgeOptionsOut(BaseModel):
+    data: list[CliJudgeOptionOut]
+
+
 class EvaluationSummaryOut(BaseModel):
     active_rubrics: int
     runs_7d: int
     pass_rate: float | None = None
-    cost_usd: float
+    cost_usd: float | None = None
 
 
 class PromptUsageTraceOut(BaseModel):

@@ -18,6 +18,7 @@ from app.domain.evaluators.base import EvaluatorResult
 from app.domain.evaluators.registry import REGISTRY
 from app.domain.rubrics.resolver import build_trace_context
 from app.domain.rubrics.templating import render_template
+from app.infra.llm.cli_judge import is_cli_model
 from app.domain.services.eval_service import (
     _aggregate,
     judge_budget_status,
@@ -275,6 +276,12 @@ def execute_experiment(experiment: Experiment, db: Session) -> dict:
     # Fix-7B.5 (A-08): same judge budget gate as the evaluation route. Without
     # this, experiments were a budget-free path to run llm_judge. Pre-check up
     # front so an already-exhausted plan never spends a cent.
+    # Experiments score a failed evaluator as 0: a CLI timeout would read as a bad variant.
+    if any(
+        row.type == "llm_judge" and is_cli_model((row.config or {}).get("model"))
+        for row in db.query(EvaluatorRow).filter(EvaluatorRow.rubric_version_id == rubric_version.id)
+    ):
+        raise ExperimentValidationError("cli_judge_not_supported_in_experiments")
     uses_judge = rubric_uses_llm_judge(rubric_version.id, db)
     judge_spent = 0.0
     judge_budget = 0.0

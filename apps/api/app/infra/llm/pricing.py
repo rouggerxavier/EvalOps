@@ -31,6 +31,8 @@ def split_provider_model(model: str | None) -> tuple[str, str]:
     """
     if not model:
         return "openai", ""
+    if model.startswith("cli:") and "/" not in model:
+        return model.strip(), ""  # must not fall through to a paid openai call
     if "/" in model:
         provider, _, name = model.partition("/")
         return (provider.strip() or "openai"), name.strip()
