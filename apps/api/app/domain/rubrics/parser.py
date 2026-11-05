@@ -7,7 +7,7 @@ from typing import Any, Literal
 import jsonschema
 import jinja2
 import yaml
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 
 from app.domain.rubrics.templating import check_template
 
@@ -266,6 +266,15 @@ def ignored_fields(spec: RubricSpec) -> list[str]:
     return ignored
 
 
+def _first_error(exc: ValidationError) -> str:
+    """One line naming the field: pydantic's own text is multi-line and echoes the input."""
+    errors = exc.errors()
+    where = ".".join(str(part) for part in errors[0]["loc"])
+    message = errors[0]["msg"].removeprefix("Value error, ")
+    more = f" (+{len(errors) - 1} erros)" if len(errors) > 1 else ""
+    return f"{where}: {message}{more}" if where else f"{message}{more}"
+
+
 def parse_rubric_yaml(yaml_source: str) -> RubricSpec:
     """Parse and validate rubric YAML. Raises ValueError with details on failure."""
     try:
@@ -282,5 +291,5 @@ def parse_rubric_yaml(yaml_source: str) -> RubricSpec:
 
     try:
         return RubricSpec.model_validate(raw)
-    except Exception as exc:
-        raise ValueError(str(exc)) from exc
+    except ValidationError as exc:
+        raise ValueError(_first_error(exc)) from exc

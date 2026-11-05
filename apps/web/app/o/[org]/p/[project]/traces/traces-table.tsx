@@ -132,6 +132,7 @@ export function TracesTable({ org, project, rows }: Props) {
                       <span className="t__faint mono" style={{ fontSize: 10 }}>
                         {trace.service ?? "—"}
                         {isRag ? <> · <span style={{ color: "var(--info)" }}>RAG</span></> : null}
+                        {trace.flag_count ? <> · <span style={{ color: "var(--warning)" }}>marcado</span></> : null}
                       </span>
                     </Link>
                   </td>

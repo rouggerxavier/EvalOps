@@ -227,18 +227,19 @@ def get_evaluation_run(
 def list_project_evaluations(
     project_id: str,
     limit: int = 100,
+    environment: str | None = Query(None, pattern=r"^(dev|staging|prod)$"),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
     project = load_project(db, user.id, project_id)
-    runs = (
+    query = (
         db.query(EvaluationRun)
         .join(Trace, EvaluationRun.trace_id == Trace.id)
         .filter(Trace.project_id == project.id, Trace.deleted_at.is_(None))
-        .order_by(EvaluationRun.created_at.desc())
-        .limit(limit)
-        .all()
     )
+    if environment:
+        query = query.filter(Trace.environment == environment)
+    runs = query.order_by(EvaluationRun.created_at.desc()).limit(limit).all()
     return {"data": [_run_detail(run, db) for run in runs]}
 
 
@@ -306,17 +307,19 @@ def get_project_coverage(
 @router.get("/projects/{project_id}/evaluations/summary", response_model=EvaluationSummaryOut)
 def get_project_evaluation_summary(
     project_id: str,
+    environment: str | None = Query(None, pattern=r"^(dev|staging|prod)$"),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
     project = load_project(db, user.id, project_id)
     seven_days_ago = datetime.now(timezone.utc) - timedelta(days=7)
     active_rubrics = db.query(func.count(Rubric.id)).filter(Rubric.project_id == project.id).scalar() or 0
-    runs = (
-        db.query(EvaluationRun)
-        .filter(EvaluationRun.project_id == project.id, EvaluationRun.created_at >= seven_days_ago)
-        .all()
+    query = db.query(EvaluationRun).filter(
+        EvaluationRun.project_id == project.id, EvaluationRun.created_at >= seven_days_ago
     )
+    if environment:
+        query = query.join(Trace, EvaluationRun.trace_id == Trace.id).filter(Trace.environment == environment)
+    runs = query.all()
     completed = [run for run in runs if run.status == "completed" and run.passed is not None]
     pass_rate = None
     if completed:

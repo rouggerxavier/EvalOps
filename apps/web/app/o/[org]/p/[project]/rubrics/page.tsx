@@ -4,11 +4,12 @@ import Link from "next/link";
 import { AuthRequiredPanel } from "@/components/AuthRequiredPanel";
 import { createRubricAction, createRubricVersionAction } from "@/lib/actions";
 import { getRubrics, getRubricVersions, hasAuthToken, resolveProject } from "@/lib/api";
+import { ignoredFieldsNotice } from "@/lib/safe-error";
 import type { RubricVersion } from "@/lib/types";
 
 type Props = {
   params: Promise<{ org: string; project: string }>;
-  searchParams: Promise<{ rubric?: string; error?: string; created?: string; versioned?: string }>;
+  searchParams: Promise<{ ignored?: string; rubric?: string; error?: string; created?: string; versioned?: string }>;
 };
 
 function relTime(iso: string): string {
@@ -267,6 +268,7 @@ export default async function RubricsPage({ params, searchParams }: Props) {
           }}
         >
           {qp.created ? "Rubrica criada com sucesso." : "Nova versão criada."}
+          {ignoredFieldsNotice(qp.ignored) ? ` ${ignoredFieldsNotice(qp.ignored)}` : ""}
         </div>
       )}
 

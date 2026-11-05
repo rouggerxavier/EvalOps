@@ -12,7 +12,7 @@ from app.deps import ensure_org_membership, get_current_user, get_project_from_a
 from app.domain.services import api_key_service
 from app.domain.services.audit_service import record_audit
 from app.domain.services.trace_ingest_service import ingest_trace_batch
-from app.models import EvaluationRun, Event, HumanFeedback, Membership, Notification, Organization, Project, Span, Trace, User, utcnow
+from app.models import EvaluationRun, Event, HumanFeedback, Membership, Notification, Organization, Project, Span, Trace, TraceFlag, User, utcnow
 from app.ownership import get_owned_project, get_owned_trace
 from app.schemas import (
     AttentionResponse,
@@ -90,6 +90,7 @@ def create_organization(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="organization_slug_taken")
     org = Organization(id=new_id("org"), name=payload.name, slug=payload.slug)
     db.add(org)
+    db.flush()
     db.add(Membership(user_id=user.id, organization_id=org.id, role="owner"))
     db.commit()
     db.refresh(org)
@@ -481,6 +482,19 @@ _COST_SOURCE_PRIORITY: dict[str, int] = {
 }
 
 
+def _bulk_model_for_traces(db: Session, trace_ids: list[str]) -> dict[str, str]:
+    """Model of each trace's newest LLM call: the one that produced the final answer."""
+    if not trace_ids:
+        return {}
+    rows = (
+        db.query(Span.trace_id, Span.model)
+        .filter(Span.trace_id.in_(trace_ids), Span.type == "llm_call", Span.model.is_not(None))
+        .order_by(Span.started_at)
+        .all()
+    )
+    return dict(rows)
+
+
 def _bulk_cost_source_for_traces(db: Session, trace_ids: list[str]) -> dict[str, str]:
     """Aggregate the per-span ``_cost_source`` metadata into a trace-level label.
 
@@ -615,6 +629,7 @@ def list_traces(
     slow_kind: str | None = Query(None, pattern="^(trace|llm|retrieval)$"),
     rag: bool | None = Query(None),
     conversation_id: str | None = Query(None, max_length=255),
+    flagged: bool | None = Query(None),
     project: Project = Depends(get_owned_project),
     db: Session = Depends(get_db),
 ) -> dict:
@@ -653,6 +668,8 @@ def list_traces(
         query = query.filter(_rag_filter_predicate())
     if conversation_id:
         query = query.filter(Trace.metadata_json["conversation_id"].as_string() == conversation_id)
+    if flagged is True:
+        query = query.filter(Trace.id.in_(select(TraceFlag.trace_id)))
     if cursor:
         cursor_created_at, cursor_id = _decode_cursor(cursor)
         query = query.filter(
@@ -686,12 +703,21 @@ def list_traces(
         for row in db.execute(latest_q):
             last_scores[row.trace_id] = float(row.aggregate_score) if row.aggregate_score is not None else None
     cost_sources = _bulk_cost_source_for_traces(db, trace_ids)
+    models = _bulk_model_for_traces(db, trace_ids)
+    flag_counts = dict(
+        db.query(TraceFlag.trace_id, func.count(TraceFlag.id))
+        .filter(TraceFlag.trace_id.in_(trace_ids))
+        .group_by(TraceFlag.trace_id)
+        .all()
+    )
     data = []
     for row in rows:
         item = TraceOut.model_validate(row).model_dump()
         item["last_score"] = last_scores.get(row.id)
         item["slow_reason"] = effective_slow_kind
         item["cost_source"] = _classify_cost_source(row, span_label=cost_sources.get(row.id))
+        item["model"] = models.get(row.id)
+        item["flag_count"] = flag_counts.get(row.id, 0)
         data.append(item)
     next_cursor = _encode_cursor(rows[-1].created_at, rows[-1].id) if has_more and rows else None
     return {"data": data, "next_cursor": next_cursor}
@@ -703,7 +729,7 @@ def get_trace(
     db: Session = Depends(get_db),
 ) -> dict:
     trace_id = trace.id
-    spans = db.query(Span).filter(Span.trace_id == trace_id).all()
+    spans = db.query(Span).filter(Span.trace_id == trace_id).order_by(Span.started_at).all()
     span_ids = [span.id for span in spans]
     events = db.query(Event).filter(Event.span_id.in_(span_ids)).all() if span_ids else []
     events_by_span: dict[str, list[Event]] = {}
@@ -766,11 +792,22 @@ def get_trace(
     cost_sources = _bulk_cost_source_for_traces(db, [trace_id])
     trace_out = TraceOut.model_validate(trace).model_dump()
     trace_out["cost_source"] = _classify_cost_source(trace, span_label=cost_sources.get(trace_id))
+    trace_out["model"] = _bulk_model_for_traces(db, [trace_id]).get(trace_id)
+    flags = (
+        db.query(TraceFlag)
+        .filter(TraceFlag.trace_id == trace_id)
+        .order_by(TraceFlag.created_at.desc())
+        .all()
+    )
     return {
         "trace": trace_out,
         "spans": span_data,
         "events_count": len(events),
         "feedback": feedback_data,
+        "flags": [
+            {"id": row.id, "reason": row.reason, "note": row.note, "created_at": row.created_at}
+            for row in flags
+        ],
     }
 
 

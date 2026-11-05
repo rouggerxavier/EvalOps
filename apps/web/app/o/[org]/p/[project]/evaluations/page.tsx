@@ -17,7 +17,9 @@ import {
   hasAuthToken,
   resolveProject,
 } from "@/lib/api";
-import { safeErrorMessage } from "@/lib/safe-error";
+import { getActiveEnvironment } from "@/lib/active-env";
+import { ignoredFieldsNotice, safeErrorMessage } from "@/lib/safe-error";
+import { runVerdict } from "@/lib/trace-display";
 import type { EvaluationRun, Rubric, RubricVersion } from "@/lib/types";
 
 import { EvaluationsModals, type EvaluationRowSummary } from "./evaluations-modals";
@@ -32,6 +34,8 @@ type Props = {
     versioned?: string;
     published?: string;
     error?: string;
+    ignored?: string;
+    environment?: string;
   }>;
 };
 
@@ -126,10 +130,11 @@ export default async function EvaluationsPage({ params, searchParams }: Props) {
   if (!(await hasAuthToken())) return <AuthRequiredPanel layout="main" />;
 
   const resolved = await resolveProject(org, project);
+  const environment = await getActiveEnvironment(qp.environment);
 
   const [summary, evalsRes, rubricsRes, tracesRes] = await Promise.all([
-    getEvaluationSummary(resolved.project_id).catch(() => null),
-    getProjectEvaluations(resolved.project_id, EVALUATION_RUNS_LIMIT),
+    getEvaluationSummary(resolved.project_id, environment).catch(() => null),
+    getProjectEvaluations(resolved.project_id, EVALUATION_RUNS_LIMIT, environment),
     getRubrics(resolved.project_id),
     getTraces({ projectId: resolved.project_id, limit: 20 }),
   ]);
@@ -181,6 +186,7 @@ export default async function EvaluationsPage({ params, searchParams }: Props) {
     : qp.versioned || qp.published
       ? "Rubric publicada."
       : null;
+  const ignoredNotice = ignoredFieldsNotice(qp.ignored);
 
   const drawerRubricId = qp.modal === "drawer" || qp.modal === "publish" ? qp.rubric ?? null : null;
   let drawerRow: EvaluationRowSummary | null = null;
@@ -214,7 +220,7 @@ export default async function EvaluationsPage({ params, searchParams }: Props) {
       <PageHeader
         eyebrow="Qualidade"
         title="Avaliações"
-        subtitle="LLM-as-judge e heurísticas executadas sobre traces de produção."
+        subtitle={`LLM-as-judge e heurísticas executadas sobre traces · ambiente: ${environment ?? "todos"}.`}
         actions={
           <>
             <Link href={modalHref("run")} className="btn btn--sm">
@@ -259,6 +265,7 @@ export default async function EvaluationsPage({ params, searchParams }: Props) {
           }}
         >
           {successMessage}
+          {ignoredNotice ? ` ${ignoredNotice}` : ""}
         </div>
       )}
 
@@ -434,7 +441,8 @@ export default async function EvaluationsPage({ params, searchParams }: Props) {
               <tbody>
                 {runs.map((run) => {
                   const rubric = rubricMap.get(run.rubric_id);
-                  const traceHref = `/o/${org}/p/${project}/traces/${run.trace_id}`;
+                  const traceHref = `/o/${org}/p/${project}/traces/${run.trace_id}?tab=evaluations`;
+                  const verdict = runVerdict(run);
                   return (
                     <tr key={run.id}>
                       <td><Copyable value={run.trace_id} /></td>
@@ -444,13 +452,7 @@ export default async function EvaluationsPage({ params, searchParams }: Props) {
                         </Link>
                       </td>
                       <td>
-                        {run.passed === true ? (
-                          <Badge variant="ok">passou</Badge>
-                        ) : run.passed === false ? (
-                          <Badge variant="err">falhou</Badge>
-                        ) : (
-                          <Badge>{run.status === "completed" ? "sem veredito" : run.status === "error" ? "erro" : run.status}</Badge>
-                        )}
+                        <Badge variant={verdict.variant}>{verdict.label}</Badge>
                       </td>
                       <td>
                         {run.aggregate_score === null ? (

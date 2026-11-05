@@ -1,13 +1,16 @@
 import Link from "next/link";
-import { AlertCircle, CheckCircle2, Cog, ExternalLink, Plus, Users } from "lucide-react";
+import { AlertCircle, CheckCircle2, Cog, Plus, Users } from "lucide-react";
 
 import { AuthRequiredPanel } from "@/components/AuthRequiredPanel";
+import { PlanUsage } from "@/components/PlanUsage";
 import { Badge } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
 import { Copyable } from "@/components/ui/Copyable";
 import { createProjectAction, patchProjectAction } from "@/lib/actions";
 import {
   getMembers,
+  getOrganizationSubscription,
+  getOrganizationUsage,
   getProjects,
   hasAuthToken,
   resolveProject,
@@ -29,9 +32,15 @@ export default async function SettingsPage({ params, searchParams }: Props) {
 
   const resolved = await resolveProject(org, project);
 
-  const [projectsRes, membersRes] = await Promise.all([
+  const [projectsRes, membersRes, usageResult, subResult] = await Promise.all([
     getProjects(resolved.org_id).catch(() => ({ data: [] as Project[] })),
     getMembers(resolved.org_id).catch(() => ({ data: [] as Member[] })),
+    getOrganizationUsage(resolved.org_id)
+      .then((usage) => ({ usage, error: null as string | null }))
+      .catch((error) => ({ usage: null, error: safeErrorMessage(error, "Falha ao carregar uso.") })),
+    getOrganizationSubscription(resolved.org_id)
+      .then((subscription) => ({ subscription, error: null as string | null }))
+      .catch((error) => ({ subscription: null, error: safeErrorMessage(error, "Falha ao carregar plano.") })),
   ]);
 
   const projectRecord =
@@ -40,8 +49,6 @@ export default async function SettingsPage({ params, searchParams }: Props) {
   const safeQueryError = qp.error ? safeErrorMessage(qp.error, "Falha ao salvar.") : null;
   const updated = qp.updated === "1";
   const created = qp.created === "1";
-
-  const billingHref = `/o/${org}/usage`;
 
   return (
     <div className="page">
@@ -54,7 +61,7 @@ export default async function SettingsPage({ params, searchParams }: Props) {
             <Cog size={18} /> Settings
           </h1>
           <div className="page-header__subtitle">
-            Projeto · membros · billing
+            Projeto · membros · plano e uso
           </div>
         </div>
       </header>
@@ -197,14 +204,12 @@ export default async function SettingsPage({ params, searchParams }: Props) {
             )}
           </Card>
 
-          <Card title="Billing" subtitle="usage + subscription">
-            <p className="muted" style={{ margin: 0, marginBottom: 10, fontSize: 12 }}>
-              Limites do plano e uso mensal vivem no painel da organização.
-            </p>
-            <Link className="btn btn--sm btn--ghost" href={billingHref}>
-              <ExternalLink size={12} /> Abrir Usage · {resolved.org_slug}
-            </Link>
-          </Card>
+          <PlanUsage
+            usage={usageResult.usage}
+            usageError={usageResult.error}
+            subscription={subResult.subscription}
+            subscriptionError={subResult.error}
+          />
 
           <div id="new-project" />
           <Card title="Novo projeto" subtitle="POST /v1/projects">

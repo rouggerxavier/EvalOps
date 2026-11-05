@@ -197,6 +197,7 @@ const SAFE_DETAIL_MESSAGES = {
   project_slug_taken: "Este slug já está em uso nesta organização. Escolha outro.",
   organization_slug_taken: "Este slug de organização já está em uso. Escolha outro.",
   api_key_not_revoked: "Revogue a chave antes de excluí-la.",
+  invalid_rubric: "Rubrica inválida. Confira o YAML e tente novamente.",
 };
 
 const GENERIC_ERROR = "Algo deu errado. Tente novamente.";
@@ -224,11 +225,39 @@ const LEAK_PATTERNS = [
   /\b(?:password|secret|api[_-]?key|access[_-]?token|refresh[_-]?token|authorization)\b\s*[=:]\s*\S/i,
 ];
 
+const INVALID_RUBRIC_PREFIX = "Rubrica inválida: ";
+
+function hasLeak(text) {
+  return LEAK_PATTERNS.some((pattern) => pattern.test(text));
+}
+
+function isSafeRubricMessage(message) {
+  return (
+    message.startsWith(INVALID_RUBRIC_PREFIX) &&
+    message.length <= 240 &&
+    !/https?:|www\./i.test(message) &&
+    !hasLeak(message)
+  );
+}
+
+function invalidRubricMessage(body) {
+  try {
+    const detail = JSON.parse(body).detail;
+    if (typeof detail !== "string" || !detail.startsWith("invalid_rubric: ")) return null;
+    const message = INVALID_RUBRIC_PREFIX + detail.slice("invalid_rubric: ".length);
+    return isSafeRubricMessage(message) ? message : null;
+  } catch {
+    return null;
+  }
+}
+
 function sanitizeApiError(message) {
   const match = /^API (\d{3}):\s*(.*)$/.exec(message);
   if (match) {
     const httpStatus = parseInt(match[1], 10);
     const body = match[2];
+    const rubricMessage = invalidRubricMessage(body);
+    if (rubricMessage) return rubricMessage;
     const detailMatch = /"detail"\s*:\s*"([a-z0-9_]+)"/i.exec(body);
     if (detailMatch) {
       const safeDetail = SAFE_DETAIL_MESSAGES[detailMatch[1]];
@@ -236,9 +265,10 @@ function sanitizeApiError(message) {
     }
     return SAFE_HTTP_MESSAGES[httpStatus] ?? GENERIC_ERROR;
   }
-  for (const pattern of LEAK_PATTERNS) {
-    if (pattern.test(message)) return GENERIC_ERROR;
-  }
+  // Server actions redirect with an already-sanitized message and pages sanitize it again.
+  if (Object.values(SAFE_HTTP_MESSAGES).includes(message)) return message;
+  if (Object.values(SAFE_DETAIL_MESSAGES).includes(message)) return message;
+  if (isSafeRubricMessage(message)) return message;
   return GENERIC_ERROR;
 }
 
@@ -567,9 +597,9 @@ test("Fix-7B.7: touched pages sanitize query-driven error surfaces", () => {
 });
 
 test("Fix-7B.7: exports usage panel surfaces judge budget safely", () => {
-  const src = readFileSync(new URL("../app/o/[org]/p/[project]/exports/page.tsx", import.meta.url), "utf8");
+  const src = readFileSync(new URL("../components/PlanUsage.tsx", import.meta.url), "utf8");
   assert.match(src, /monthly_judge_budget_usd/);
-  assert.match(src, /formatCost\(subResult\.subscription\.plan\.monthly_judge_budget_usd\)/);
+  assert.match(src, /formatCost\(subscription\.plan\.monthly_judge_budget_usd\)/);
 });
 
 // --- Phase 7E frontend polling -------------------------------------------
@@ -611,4 +641,22 @@ test("Phase 7E: traces page keeps server data loading and wires auto-refresh wit
   assert.equal(/fetch\(/.test(component), false);
   assert.equal(/https?:\/\//.test(component), false);
   assert.equal(/\/o\/\$\{org\}/.test(component), false);
+});
+
+test("rubric error names the field to fix and survives the second sanitize", () => {
+  const body = JSON.stringify({ detail: "invalid_rubric: evaluators.0.type: unknown evaluator type 'builtin'" });
+  const shown = sanitizeApiError(`API 422: ${body}`);
+  assert.equal(shown, "Rubrica inválida: evaluators.0.type: unknown evaluator type 'builtin'");
+  assert.equal(sanitizeApiError(shown), shown);
+});
+
+test("rubric error with a leak or a link collapses to safe copy", () => {
+  const leak = JSON.stringify({ detail: "invalid_rubric: sqlalchemy exploded" });
+  assert.equal(sanitizeApiError(`API 422: ${leak}`), SAFE_HTTP_MESSAGES[422]);
+  assert.equal(sanitizeApiError("Rubrica inválida: visite https://evil.example"), GENERIC_ERROR);
+});
+
+test("already-sanitized messages survive; free text from the URL does not", () => {
+  assert.equal(sanitizeApiError(SAFE_HTTP_MESSAGES[402]), SAFE_HTTP_MESSAGES[402]);
+  assert.equal(sanitizeApiError("Sua conta foi invadida, ligue agora"), GENERIC_ERROR);
 });

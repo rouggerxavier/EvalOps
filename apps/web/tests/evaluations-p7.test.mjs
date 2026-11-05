@@ -13,7 +13,7 @@ const modals = readFileSync(
 
 test("evaluations: page wires real server data", () => {
   for (const token of [
-    "getProjectEvaluations(resolved.project_id, EVALUATION_RUNS_LIMIT)",
+    "getProjectEvaluations(resolved.project_id, EVALUATION_RUNS_LIMIT, environment)",
     "getRubrics(resolved.project_id)",
     "resolveProject(org, project)",
     "hasAuthToken()",

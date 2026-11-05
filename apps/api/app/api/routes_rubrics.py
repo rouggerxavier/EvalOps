@@ -34,6 +34,13 @@ def _persist_evaluators(db: Session, rubric_version_id: str, parsed_spec: dict) 
         db.add(row)
 
 
+def _invalid_rubric(exc: ValueError) -> str:
+    """``invalid_rubric: <reason>``, or the bare code when the reason is not safe to show."""
+    reason = " ".join(str(exc).split())[:200]
+    safe = safe_message(reason, fallback="", context="parse_rubric_yaml")
+    return f"invalid_rubric: {safe}" if safe else "invalid_rubric"
+
+
 @router.get("/projects/{project_id}/rubrics")
 def list_rubrics(
     project: Project = Depends(get_owned_project),
@@ -56,7 +63,7 @@ def create_rubric(
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=safe_message(exc, fallback="invalid_rubric", context="parse_rubric_yaml"),
+            detail=_invalid_rubric(exc),
         ) from exc
 
     existing = (
@@ -170,7 +177,7 @@ def create_rubric_version(
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=safe_message(exc, fallback="invalid_rubric", context="parse_rubric_yaml"),
+            detail=_invalid_rubric(exc),
         ) from exc
 
     new_version_num = rubric.current_version + 1
