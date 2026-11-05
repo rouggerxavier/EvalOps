@@ -2,8 +2,9 @@ import { ChevronLeft, GitBranch, Plus, Target } from "lucide-react";
 import Link from "next/link";
 
 import { AuthRequiredPanel } from "@/components/AuthRequiredPanel";
+import { RubricYamlEditor } from "@/components/RubricYamlEditor";
 import { createRubricAction, createRubricVersionAction } from "@/lib/actions";
-import { getRubrics, getRubricVersions, hasAuthToken, resolveProject } from "@/lib/api";
+import { getCliJudges, getRubrics, getRubricVersions, hasAuthToken, resolveProject } from "@/lib/api";
 import { ignoredFieldsNotice } from "@/lib/safe-error";
 import type { RubricVersion } from "@/lib/types";
 
@@ -140,23 +141,6 @@ function VersionsList({ versions, currentVersion }: { versions: RubricVersion[];
   );
 }
 
-const inputStyle = {
-  background: "var(--bg-2)",
-  border: "1px solid var(--border)",
-  borderRadius: 6,
-  padding: "6px 10px",
-  color: "var(--text)",
-  fontSize: 13,
-  width: "100%",
-} as const;
-
-const labelStyle = {
-  display: "flex",
-  flexDirection: "column",
-  gap: 4,
-  fontSize: 13,
-} as const;
-
 export default async function RubricsPage({ params, searchParams }: Props) {
   const { org, project } = await params;
   const qp = await searchParams;
@@ -167,6 +151,7 @@ export default async function RubricsPage({ params, searchParams }: Props) {
 
   const resolved = await resolveProject(org, project);
   const { data: rubrics } = await getRubrics(resolved.project_id);
+  const cliJudges = await getCliJudges();
 
   const selectedId = qp.rubric ?? null;
   const selected = selectedId ? (rubrics.find((r) => r.id === selectedId) ?? null) : null;
@@ -417,21 +402,7 @@ export default async function RubricsPage({ params, searchParams }: Props) {
                   <input type="hidden" name="org" value={org} />
                   <input type="hidden" name="project" value={project} />
                   <input type="hidden" name="rubric_id" value={selected.id} />
-                  <label style={labelStyle}>
-                    <span style={{ color: "var(--text-muted)" }}>YAML</span>
-                    <textarea
-                      name="yaml_source"
-                      required
-                      rows={12}
-                      defaultValue={latestVersion?.yaml_source ?? ""}
-                      style={{
-                        ...inputStyle,
-                        fontFamily: "var(--font-mono)",
-                        fontSize: 12,
-                        resize: "vertical",
-                      }}
-                    />
-                  </label>
+                  <RubricYamlEditor label="YAML" defaultValue={latestVersion?.yaml_source ?? ""} judges={cliJudges} />
                   <div style={{ display: "flex", justifyContent: "flex-end" }}>
                     <button type="submit" className="btn btn--sm btn--primary">
                       Criar versão
@@ -499,21 +470,7 @@ export default async function RubricsPage({ params, searchParams }: Props) {
                 <input type="hidden" name="org" value={org} />
                 <input type="hidden" name="project" value={project} />
                 <input type="hidden" name="project_id" value={resolved.project_id} />
-                <label style={labelStyle}>
-                  <span style={{ color: "var(--text-muted)" }}>YAML da rubrica</span>
-                  <textarea
-                    name="yaml_source"
-                    required
-                    rows={12}
-                    defaultValue={DEFAULT_YAML}
-                    style={{
-                      ...inputStyle,
-                      fontFamily: "var(--font-mono)",
-                      fontSize: 12,
-                      resize: "vertical",
-                    }}
-                  />
-                </label>
+                <RubricYamlEditor label="YAML da rubrica" defaultValue={DEFAULT_YAML} judges={cliJudges} />
                 <button type="submit" className="btn btn--sm btn--primary">
                   Criar rubrica
                 </button>
@@ -660,21 +617,7 @@ export default async function RubricsPage({ params, searchParams }: Props) {
                 <input type="hidden" name="org" value={org} />
                 <input type="hidden" name="project" value={project} />
                 <input type="hidden" name="project_id" value={resolved.project_id} />
-                <label style={labelStyle}>
-                  <span style={{ color: "var(--text-muted)" }}>YAML da rubrica</span>
-                  <textarea
-                    name="yaml_source"
-                    required
-                    rows={14}
-                    defaultValue={DEFAULT_YAML}
-                    style={{
-                      ...inputStyle,
-                      fontFamily: "var(--font-mono)",
-                      fontSize: 12,
-                      resize: "vertical",
-                    }}
-                  />
-                </label>
+                <RubricYamlEditor label="YAML da rubrica" defaultValue={DEFAULT_YAML} judges={cliJudges} />
                 <div style={{ display: "flex", justifyContent: "flex-end" }}>
                   <button type="submit" className="btn btn--sm btn--primary">
                     Criar rubrica

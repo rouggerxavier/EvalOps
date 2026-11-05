@@ -272,21 +272,27 @@ def test_invalid_window_is_rejected(gate):
     assert client.get(url + "/status?window=all", headers=headers).status_code == 422
 
 
-def test_quality_gate_migration_upgrade_and_rollback_preserve_projects(tmp_path):
+@pytest.mark.parametrize("start_revision", [
+    "0008_export_jobs_file_size_bytes", "0009_eval_cost_nullable", "0009_quality_gate_configs",
+])
+def test_quality_gate_migration_upgrade_and_rollback_preserve_projects(tmp_path, start_revision):
     api_root = Path(__file__).resolve().parents[1]
     database_url = f"sqlite:///{tmp_path / 'migration.db'}"
     env = {**os.environ, "DATABASE_URL": database_url}
     def migrate(revision, direction="upgrade"):
         subprocess.run([sys.executable, "-m", "alembic", direction, revision], cwd=api_root, env=env, check=True, capture_output=True)
-    migrate("0008_export_jobs_file_size_bytes")
+    migrate(start_revision)
     engine = create_engine(database_url)
     with engine.begin() as conn:
         conn.execute(text("INSERT INTO organizations (id,name,slug,created_at) VALUES ('org','Org','org',CURRENT_TIMESTAMP)"))
         conn.execute(text("INSERT INTO projects (id,organization_id,name,slug,default_environment,created_at) VALUES ('project','org','Project','project','prod',CURRENT_TIMESTAMP)"))
     migrate("head")
     assert "quality_gate_configs" in inspect(engine).get_table_names()
-    migrate("0008_export_jobs_file_size_bytes", "downgrade")
+    migrate("0009_quality_gate_configs@0008_export_jobs_file_size_bytes", "downgrade")
     assert "quality_gate_configs" not in inspect(engine).get_table_names()
+    for table in ("evaluation_runs", "evaluation_scores"):
+        cost = next(column for column in inspect(engine).get_columns(table) if column["name"] == "cost_usd")
+        assert cost["nullable"] is True
     with engine.connect() as conn:
         assert conn.execute(text("SELECT name FROM projects WHERE id='project'")).scalar() == "Project"
     migrate("head")

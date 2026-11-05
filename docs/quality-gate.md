@@ -154,7 +154,9 @@ CI executa testes backend, SDK, testes unitários web e build; o E2E exige servi
 locais e é uma verificação adicional de demonstração.
 
 Rollback: reverter consumidores do gate e depois `alembic downgrade
-0008_export_jobs_file_size_bytes`. Isso remove somente configurações do gate.
+0009_quality_gate_configs@0008_export_jobs_file_size_bytes`. Isso remove somente configurações do gate e preserva
+a migração de custo desconhecido do juiz CLI. A revisão `0010_merge_quality_gate_cli`
+une os dois caminhos Alembic sem alterar dados.
 Upgrade/downgrade/reupgrade foi testado em SQLite temporário e PostgreSQL 16
 preservando projetos. No PostgreSQL, a remoção do projeto também confirmou o
 `ON DELETE CASCADE` da configuração do gate.

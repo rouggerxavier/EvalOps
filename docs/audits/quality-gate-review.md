@@ -68,3 +68,20 @@ Não foram encontrados novos bloqueadores nesse escopo. A implementação parale
 do juiz CLI permanece em worktree separado e não foi alterada nem integrada.
 Suas migrações e os dois heads Alembic devem ser conciliados na integração futura.
 Benchmark com volume de produção e validação em staging continuam pendentes.
+
+
+## Integração com o juiz já publicado na main
+
+Durante a retomada, o PR #21 entrou na main (`30341a2`). A CI da árvore
+combinada com `b0a680c` detectou dois heads Alembic no job de PostgreSQL.
+O merge da main ocorreu sem conflitos; a implementação do juiz foi preservada.
+A revisão `0010_merge_quality_gate_cli` une os heads sem alterar schema ou dados.
+
+Passaram 74 testes focais de gate/juiz. O teste de migração agora cobre três
+pontos de partida: `0008`, apenas o gate e apenas a migração do juiz. Em SQLite
+e PostgreSQL 16, upgrade ao head único, rollback somente do gate e novo upgrade
+passaram, preservando projeto e nulabilidade do custo nas duas tabelas de avaliação.
+O rollback seletivo usa `0009_quality_gate_configs@0008_export_jobs_file_size_bytes`;
+downgrade apenas para a revisão do juiz não remove a tabela do gate após o merge.
+A CI final deve validar a nova HEAD; as contagens da seção anterior pertencem
+à árvore anterior à integração do juiz.

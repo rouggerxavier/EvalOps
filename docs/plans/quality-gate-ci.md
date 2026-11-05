@@ -54,3 +54,13 @@ e2e_tier: focal
   removeu sua configuração por `ON DELETE CASCADE`.
 - Runner dedicado 2.338.2 restaurado e online. Serviço e `caffeinate -i`
   persistentes no LaunchAgent. Nenhum runner de outro repositório foi alterado.
+
+
+## Integração posterior com main
+
+A main recebeu o juiz CLI no PR #21 durante a retomada. O workflow da árvore
+combinada encontrou múltiplos heads Alembic. A main foi incorporada e a revisão
+`0010_merge_quality_gate_cli` une os dois caminhos sem modificar o juiz.
+Os 74 testes focais passaram. O ciclo de migração/rollback seletivo passou em
+SQLite e PostgreSQL 16 a partir de cada head anterior e do ancestral comum.
+O gate remoto volta a bloquear integração até a CI da nova HEAD concluir.

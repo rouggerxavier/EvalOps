@@ -163,7 +163,7 @@ export type EvaluationScore = {
   passed: boolean;
   reasoning: string | null;
   raw_output: Record<string, unknown> | null;
-  cost_usd: number;
+  cost_usd: number | null;
   latency_ms: number;
 };
 
@@ -177,7 +177,7 @@ export type EvaluationRun = {
   status: string;
   aggregate_score: number | null;
   passed: boolean | null;
-  cost_usd: number;
+  cost_usd: number | null;
   latency_ms: number | null;
   started_at: string | null;
   completed_at: string | null;
@@ -393,11 +393,18 @@ export type RagConsolidated = {
   }>;
 };
 
+export type CliJudgeOption = {
+  provider: string;
+  model: string;
+  status: string;
+  version: string | null;
+};
+
 export type EvaluationSummary = {
   active_rubrics: number;
   runs_7d: number;
   pass_rate: number | null;
-  cost_usd: number;
+  cost_usd: number | null;
 };
 
 export type PromptUsage = {
