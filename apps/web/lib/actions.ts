@@ -141,13 +141,17 @@ export async function createRubricAction(formData: FormData): Promise<void> {
   const path = projectPath(org, project, section);
 
   let errorMsg: string | null = null;
+  let ignored: string[] = [];
   try {
-    await createRubric(projectId, yamlSource);
+    ignored = (await createRubric(projectId, yamlSource)).ignored_fields ?? [];
     revalidatePath(path);
   } catch (error) {
     errorMsg = messageFromActionError(error, "Failed to create rubric");
   }
-  redirectWithMessage(path, errorMsg ? { error: errorMsg } : { created: "1" });
+  redirectWithMessage(
+    path,
+    errorMsg ? { error: errorMsg } : { created: "1", ...(ignored.length ? { ignored: ignored.join(",") } : {}) },
+  );
 }
 
 export async function createRubricVersionAction(formData: FormData): Promise<void> {
@@ -159,13 +163,17 @@ export async function createRubricVersionAction(formData: FormData): Promise<voi
   const path = projectPath(org, project, section);
 
   let errorMsg: string | null = null;
+  let ignored: string[] = [];
   try {
-    await createRubricVersion(rubricId, yamlSource);
+    ignored = (await createRubricVersion(rubricId, yamlSource)).ignored_fields ?? [];
     revalidatePath(path);
   } catch (error) {
     errorMsg = messageFromActionError(error, "Failed to create rubric version");
   }
-  redirectWithMessage(path, errorMsg ? { error: errorMsg } : { versioned: "1" });
+  redirectWithMessage(
+    path,
+    errorMsg ? { error: errorMsg } : { versioned: "1", ...(ignored.length ? { ignored: ignored.join(",") } : {}) },
+  );
 }
 
 export async function triggerEvaluationAction(formData: FormData): Promise<void> {
@@ -174,7 +182,9 @@ export async function triggerEvaluationAction(formData: FormData): Promise<void>
   const traceId = String(formData.get("trace_id") ?? "");
   const rubricId = String(formData.get("rubric_id") ?? "");
   const rubricVersionRaw = String(formData.get("rubric_version") ?? "").trim();
-  const path = projectPath(org, project, "evaluations");
+  // From the trace page the result is one tab away: go there instead of to the list.
+  const fromTrace = formData.get("return_to") === "trace";
+  const path = projectPath(org, project, fromTrace ? `traces/${traceId}` : "evaluations");
 
   let errorMsg: string | null = null;
   try {
@@ -188,6 +198,7 @@ export async function triggerEvaluationAction(formData: FormData): Promise<void>
   } catch (error) {
     errorMsg = messageFromActionError(error, "Failed to run evaluation");
   }
+  if (fromTrace) redirectWithMessage(path, errorMsg ? { tab: "evaluations", error: errorMsg } : { tab: "evaluations" });
   redirectWithMessage(path, errorMsg ? { error: errorMsg } : { created: "1" });
 }
 
@@ -574,6 +585,11 @@ export async function setEnvironmentAction(formData: FormData): Promise<void> {
   const environment = String(formData.get("environment") ?? "prod");
   const currentPath = String(formData.get("current_path") ?? "") || `/o/${org}/p/${project}`;
   const store = await cookies();
+  if (environment === "all") {
+    store.delete(ENV_COOKIE);
+    revalidatePath(currentPath);
+    redirect(currentPath);
+  }
   store.set({
     name: ENV_COOKIE,
     value: environment,

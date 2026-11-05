@@ -337,6 +337,7 @@ def test_distinct_variants_produce_distinct_results() -> None:
     assert detail.status_code == 200
     run_data = detail.json()["run"]
     assert run_data["status"] == "completed"
+    assert run_data["run_metadata"]["synthetic"] is True
     by_variant = run_data["by_variant"]
     assert by_variant["control"]["pass_rate"] == 1.0
     assert by_variant["candidate"]["pass_rate"] == 0.0

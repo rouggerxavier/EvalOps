@@ -5,6 +5,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from functools import wraps
+import atexit
 import random
 import secrets
 from typing import Any, Callable
@@ -20,6 +21,10 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+# Same values the API accepts: anything else rejects the whole batch with 422.
+ENVIRONMENTS = ("dev", "staging", "prod")
+
+
 def _safe(value: Any) -> Any:
     if value is None or isinstance(value, (str, int, float, bool)):
         return value
@@ -28,6 +33,21 @@ def _safe(value: Any) -> Any:
     if isinstance(value, dict):
         return {str(k): _safe(v) for k, v in value.items()}
     return repr(value)
+
+
+def _number(value: Any, kind: Callable[[Any], Any]) -> Any:
+    # Telemetry must never raise inside the traced call.
+    try:
+        return None if value is None else kind(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _messages(value: Any) -> list[dict] | None:
+    # The API rejects a batch when a message is not an object.
+    if not isinstance(value, (list, tuple)):
+        return None
+    return [_safe(message) for message in value if isinstance(message, dict)]
 
 
 @dataclass
@@ -43,6 +63,14 @@ class SpanRecord:
     output: dict | None = None
     metadata: dict = field(default_factory=dict)
     error: dict | None = None
+    provider: str | None = None
+    model: str | None = None
+    prompt_version_ref: str | None = None
+    messages_in: list[dict] | None = None
+    messages_out: list[dict] | None = None
+    tokens_in: int | None = None
+    tokens_out: int | None = None
+    cost_usd: float | None = None
 
     def finish(self) -> None:
         self.ended_at = _now()
@@ -61,6 +89,14 @@ class SpanRecord:
             "output": _safe(self.output),
             "metadata": _safe(self.metadata),
             "error": _safe(self.error),
+            "provider": self.provider,
+            "model": self.model,
+            "prompt_version_ref": self.prompt_version_ref,
+            "messages_in": self.messages_in,
+            "messages_out": self.messages_out,
+            "tokens_in": self.tokens_in,
+            "tokens_out": self.tokens_out,
+            "cost_usd": self.cost_usd,
             "events": [],
         }
 
@@ -76,10 +112,12 @@ class TraceRecord:
     spans: list[SpanRecord] = field(default_factory=list)
     status: str = "ok"
     error: dict | None = None
+    user_ref: str | None = None
+    metadata: dict = field(default_factory=dict)
 
     def to_payload(self) -> dict[str, Any]:
         ended_at = _now()
-        metadata = {"sdk": {"name": "evalops-python", "version": "0.1.0"}}
+        metadata = {**_safe(self.metadata), "sdk": {"name": "evalops-python", "version": "0.1.0"}}
         if self.error:
             metadata["error"] = self.error
         return {
@@ -91,6 +129,7 @@ class TraceRecord:
             "ended_at": _utc_iso(ended_at),
             "status": self.status,
             "tags": _safe(self.tags),
+            "user_ref": self.user_ref,
             "metadata": metadata,
             "spans": [span.to_payload() for span in self.spans],
         }
@@ -105,6 +144,30 @@ class SpanHandle:
             self._record.input = input
         if output is not None:
             self._record.output = output
+
+    def set_llm(
+        self,
+        *,
+        provider: str | None = None,
+        model: str | None = None,
+        messages_in: list[dict] | None = None,
+        messages_out: list[dict] | None = None,
+        tokens_in: int | None = None,
+        tokens_out: int | None = None,
+        cost_usd: float | None = None,
+        prompt_version_ref: str | None = None,
+    ) -> None:
+        """Record a model call. Evaluators and cost tracking read these fields."""
+        record = self._record
+        record.span_type = "llm_call"
+        record.provider = provider if provider is not None else record.provider
+        record.model = model if model is not None else record.model
+        record.prompt_version_ref = prompt_version_ref if prompt_version_ref is not None else record.prompt_version_ref
+        record.messages_in = _messages(messages_in) if messages_in is not None else record.messages_in
+        record.messages_out = _messages(messages_out) if messages_out is not None else record.messages_out
+        record.tokens_in = _number(tokens_in, int) if tokens_in is not None else record.tokens_in
+        record.tokens_out = _number(tokens_out, int) if tokens_out is not None else record.tokens_out
+        record.cost_usd = _number(cost_usd, float) if cost_usd is not None else record.cost_usd
 
     def set_error(self, *, message: str, type: str = "error") -> None:
         self._record.status = "error"
@@ -135,6 +198,8 @@ class EvalOpsTracer:
         disabled: bool = False,
         api_url: str = "http://localhost:8000/v1",
     ) -> None:
+        if environment not in ENVIRONMENTS:
+            raise ValueError(f"environment must be one of {ENVIRONMENTS}, got {environment!r}")
         self._project = project
         self._environment = environment
         self._service = service or project
@@ -144,6 +209,8 @@ class EvalOpsTracer:
         if self._disabled:
             return
         self._uploader = BackgroundUploader(UploaderConfig(api_url=api_url.rstrip("/"), api_key=api_key))
+        # The uploader thread is a daemon: without this, traces still queued die with the process.
+        atexit.register(self._uploader.shutdown)
 
     def trace(self, name: str) -> Callable:
         def decorator(func: Callable) -> Callable:
@@ -226,6 +293,33 @@ class EvalOpsTracer:
             self._span_stack.reset(token_stack)
             self._span_stack.set(new_stack)
 
+    def set_trace(
+        self,
+        *,
+        conversation_id: str | None = None,
+        batch: str | None = None,
+        user_ref: str | None = None,
+        tags: dict | None = None,
+        metadata: dict | None = None,
+    ) -> None:
+        """Describe the current trace. Does nothing outside one."""
+        trace = self._trace_ctx.get()
+        if trace is None:
+            return
+        trace.metadata.update(metadata or {})
+        if conversation_id is not None:
+            trace.metadata["conversation_id"] = str(conversation_id)
+        if batch is not None:
+            trace.metadata["batch"] = str(batch)
+        if user_ref is not None:
+            trace.user_ref = str(user_ref)
+        if tags:
+            trace.tags = {**trace.tags, **tags}
+
     def flush(self) -> None:
         if self._uploader is not None:
             self._uploader.flush()
+
+    def shutdown(self) -> None:
+        if self._uploader is not None:
+            self._uploader.shutdown()

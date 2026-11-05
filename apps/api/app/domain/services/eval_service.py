@@ -2,21 +2,35 @@
 from __future__ import annotations
 
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import extract, func
 from sqlalchemy.orm import Session
 
 from app.domain.evaluators.base import EvaluatorResult
 from app.domain.evaluators.registry import REGISTRY
-from app.domain.rubrics.resolver import build_trace_context
-from app.domain.services.usage_service import judge_budget_for_org
-from app.models import EvaluationRun, EvaluationScore, EvaluatorRow, Project, Rubric, RubricVersion, Span, Trace
+from app.domain.rubrics.resolver import build_conversation_context, build_trace_context, resolve_dotpath
+from app.domain.services.audit_service import record_audit
+from app.domain.services.usage_service import apply_usage_with_quota, enforce_quota, judge_budget_for_org
+from app.models import (
+    EvaluationRun,
+    EvaluationScore,
+    EvaluatorRow,
+    ExperimentRun,
+    Notification,
+    Project,
+    Rubric,
+    RubricVersion,
+    Span,
+    Trace,
+)
 from app.safe_errors import is_safe_public_text, safe_message
 from app.security import new_id
 
 # Legacy fallback retained for callers without an org context.
 MONTHLY_JUDGE_BUDGET_USD = 20.0
+MAX_CONVERSATION_TURNS = 200
+NOTIFICATION_DEDUP_WINDOW = timedelta(hours=1)
 
 _EVALUATOR_ERROR_KEYS = ("error", "parse_error", "schema_error")
 
@@ -44,13 +58,30 @@ def _aggregate(scores: list[tuple[float, float]], method: str) -> float:
 
 
 def _judge_spent_this_month(project_id: str, db: Session) -> float:
+    """Judge spend of the whole organization: the budget belongs to the org's plan."""
     now = _utcnow()
+    org_projects = (
+        db.query(Project.id)
+        .filter(Project.organization_id == db.query(Project.organization_id).filter(Project.id == project_id).scalar_subquery())
+        .scalar_subquery()
+    )
     spent = db.query(func.sum(EvaluationRun.cost_usd)).filter(
-        EvaluationRun.project_id == project_id,
+        EvaluationRun.project_id.in_(org_projects),
         extract("year", EvaluationRun.created_at) == now.year,
         extract("month", EvaluationRun.created_at) == now.month,
     ).scalar() or 0.0
-    return float(spent)
+    # shortcut: a run stopped mid-way keeps no by_variant, so its spend is missed; add a cost column if it matters.
+    experiment_runs = db.query(ExperimentRun.by_variant).filter(
+        ExperimentRun.project_id.in_(org_projects),
+        extract("year", ExperimentRun.created_at) == now.year,
+        extract("month", ExperimentRun.created_at) == now.month,
+    ).all()
+    experiments = sum(
+        float(metrics.get("total_cost_usd") or 0)
+        for (by_variant,) in experiment_runs
+        for metrics in (by_variant or {}).values()
+    )
+    return float(spent) + experiments
 
 
 def _budget_for_project(project_id: str, db: Session) -> float:
@@ -124,6 +155,50 @@ def _sanitize_evaluator_result(result: EvaluatorResult, evaluator_type: str) -> 
     return result
 
 
+def _missing_input(ev_row: EvaluatorRow, context: dict) -> str | None:
+    """Why this evaluator has nothing to evaluate, or None. Absence of an answer is not a verdict."""
+    config = ev_row.config or {}
+    target = config.get("target") or config.get("target_a")
+    if target:
+        return None if resolve_dotpath(target, context).strip() else "empty_target"
+    if ev_row.type == "llm_judge" and not context["trace"]["output"]["text"].strip():
+        return "no_output"
+    return None
+
+
+def _conversation_context(db: Session, trace: Trace) -> dict:
+    conversation_id = (trace.metadata_json or {}).get("conversation_id")
+    if not isinstance(conversation_id, str) or not conversation_id:
+        return build_conversation_context(None, [])
+    # shortcut: filters by JSON inside the project; add an expression index if conversations get large.
+    turns = (
+        db.query(Trace)
+        .filter(
+            Trace.project_id == trace.project_id,
+            Trace.deleted_at.is_(None),
+            Trace.metadata_json["conversation_id"].as_string() == conversation_id,
+            Trace.started_at <= trace.started_at,
+        )
+        .order_by(Trace.started_at.desc())
+        .limit(MAX_CONVERSATION_TURNS)
+        .all()
+    )
+    turns.reverse()
+    spans_by_trace: dict[str, list[Span]] = {turn.id: [] for turn in turns}
+    for span in db.query(Span).filter(Span.trace_id.in_(spans_by_trace)).order_by(Span.started_at.asc()):
+        spans_by_trace[span.trace_id].append(span)
+    return build_conversation_context(conversation_id, [(turn, spans_by_trace[turn.id]) for turn in turns])
+
+
+def _raised_flags(scores: list[EvaluationScore]) -> set[str]:
+    raised: set[str] = set()
+    for score in scores:
+        flags = (score.raw_output or {}).get("flags")
+        if isinstance(flags, list):
+            raised.update(flag for flag in flags if isinstance(flag, str))
+    return raised
+
+
 def run_evaluation(
     trace_id: str,
     rubric_id: str,
@@ -143,7 +218,7 @@ def run_evaluation(
     if trace is None:
         raise ValueError(f"trace '{trace_id}' not found")
 
-    spans: list[Span] = db.query(Span).filter(Span.trace_id == trace_id).all()
+    spans: list[Span] = db.query(Span).filter(Span.trace_id == trace_id).order_by(Span.started_at.asc()).all()
 
     # Load rubric
     rubric: Rubric | None = db.get(Rubric, rubric_id)
@@ -177,6 +252,7 @@ def run_evaluation(
 
     # Build trace context for evaluators
     context = build_trace_context(trace, spans)
+    context["trace"]["conversation"] = _conversation_context(db, trace)
 
     # Load evaluator rows ordered by ord
     evaluator_rows: list[EvaluatorRow] = (
@@ -190,10 +266,11 @@ def run_evaluation(
     aggregate_method: str = parsed_spec.get("aggregate", "weighted_mean")
     fail_fast_global: bool = parsed_spec.get("fail_fast", False)
     auto_fail_conditions: list[dict] = parsed_spec.get("automatic_fail_conditions", [])
+    auto_fail_flags: set[str] = {
+        flag["slug"] for flag in parsed_spec.get("critical_flags", []) if flag.get("auto_fail")
+    } | {cond["flag"] for cond in auto_fail_conditions if cond.get("flag")}
 
     score_records: list[EvaluationScore] = []
-    any_succeeded = False
-    all_failed = True
     total_cost = 0.0
     should_break = False
 
@@ -220,12 +297,13 @@ def run_evaluation(
                 score_records.append(err_score)
                 continue
 
+        missing = _missing_input(ev_row, context)
         try:
-            run_fn = REGISTRY[ev_row.type]
-            result: EvaluatorResult = run_fn(context, ev_row.config)
-            result = _sanitize_evaluator_result(result, ev_row.type)
-            any_succeeded = True
-            all_failed = False
+            if missing:
+                result = EvaluatorResult(score=0.0, passed=False, reasoning=missing, raw_output={"error": missing})
+            else:
+                result: EvaluatorResult = REGISTRY[ev_row.type](context, ev_row.config)
+                result = _sanitize_evaluator_result(result, ev_row.type)
         except Exception as exc:  # noqa: BLE001
             safe = safe_message(
                 exc, fallback="evaluator_failed", context=f"evaluator:{ev_row.type}"
@@ -253,64 +331,190 @@ def run_evaluation(
         score_records.append(score_rec)
         total_cost += result.cost_usd
 
-        if result.score > 0 or result.passed:
-            all_failed = False
-
         # fail_fast logic
         if (ev_row.fail_fast or fail_fast_global) and not result.passed:
             should_break = True
 
-    # Aggregate scores (only successful, enabled scores — skip error-only)
-    scoreable = [(float(sr.score), ev_row.weight) for sr, ev_row in zip(score_records, evaluator_rows) if sr is not None]
-    # Rebuild properly — evaluator_rows and score_records may differ if budget abort skipped
+    # An evaluator that could not run says nothing about quality: it stays out
+    # of the score, and the verdict is unknown instead of a failure.
     weight_map = {er.slug: er.weight for er in evaluator_rows}
-    agg_pairs = [
-        (float(sr.score), weight_map.get(sr.evaluator_slug, 1.0))
-        for sr in score_records
-        if sr.raw_output and "error" not in sr.raw_output or sr.passed
-    ]
-    # Simpler: include all scores in aggregation (including errors as 0)
-    agg_pairs = [
-        (float(sr.score), weight_map.get(sr.evaluator_slug, 1.0))
-        for sr in score_records
-    ]
-    aggregate_score = _aggregate(agg_pairs, aggregate_method)
+    usable = [sr for sr in score_records if not (sr.raw_output or {}).get("error")]
+    errored = [sr for sr in score_records if (sr.raw_output or {}).get("error")]
+    aggregate_score = (
+        _aggregate([(float(sr.score), weight_map.get(sr.evaluator_slug, 1.0)) for sr in usable], aggregate_method)
+        if usable
+        else None
+    )
     threshold = float(parsed_spec.get("threshold", 0.7))
 
     # Check automatic_fail_conditions
-    score_by_slug = {sr.evaluator_slug: sr for sr in score_records}
-    auto_failed = False
-    for cond in auto_fail_conditions:
-        ev_id = cond.get("evaluator_id")
-        if ev_id and ev_id in score_by_slug:
-            if not score_by_slug[ev_id].passed:
-                auto_failed = True
-                break
+    score_by_slug = {sr.evaluator_slug: sr for sr in usable}
+    raised_flags = _raised_flags(usable) & auto_fail_flags
+    auto_failed = bool(raised_flags) or any(
+        cond.get("evaluator_id") in score_by_slug and not score_by_slug[cond["evaluator_id"]].passed
+        for cond in auto_fail_conditions
+    )
 
-    passed = (aggregate_score >= threshold) and not auto_failed
+    # JSON columns do not track in-place changes: this dict is assigned once, below.
+    metadata = dict(run.run_metadata or {})
+    if raised_flags:
+        metadata["raised_flags"] = sorted(raised_flags)
+    if auto_failed:
+        metadata["auto_failed"] = True
 
     # Determine final status
     if not score_records:
         status = "error"
         run.error_json = {"code": "no_evaluators_ran"}
-    elif all(
-        (sr.raw_output or {}).get("error") and not sr.passed
-        for sr in score_records
-    ):
+        passed = None
+    elif not usable:
         status = "error"
-        run.error_json = {"code": "all_evaluators_failed"}
+        run.error_json = {
+            "code": "all_evaluators_failed",
+            "reasons": sorted({str((sr.raw_output or {}).get("error")) for sr in errored}),
+        }
+        passed = None
     else:
         status = "completed"
-        if any((sr.raw_output or {}).get("error") for sr in score_records):
-            run.run_metadata["partial_failure"] = True
+        if errored:
+            metadata["partial_failure"] = True
+            passed = False if auto_failed else None
+        else:
+            passed = aggregate_score >= threshold and not auto_failed
 
     run.status = status
     run.aggregate_score = aggregate_score
-    run.passed = passed if status == "completed" else None
+    run.passed = passed
     run.cost_usd = total_cost
+    run.run_metadata = metadata
     run.completed_at = _utcnow()
     run.latency_ms = int((time.monotonic() - run_start) * 1000)
 
     db.add(run)
+    db.flush()
+    return run
+
+
+class DuplicateEvaluation(Exception):
+    """A finished run already exists for this trace, rubric and version."""
+
+    def __init__(self, existing_run_id: str) -> None:
+        super().__init__(existing_run_id)
+        self.existing_run_id = existing_run_id
+
+
+class JudgeBudgetExhausted(Exception):
+    def __init__(self, spent_usd: float, budget_usd: float) -> None:
+        super().__init__("judge_budget_exhausted")
+        self.spent_usd = spent_usd
+        self.budget_usd = budget_usd
+
+
+def existing_run(db: Session, trace_id: str, rubric_id: str, rubric_version: int) -> EvaluationRun | None:
+    return (
+        db.query(EvaluationRun)
+        .filter(
+            EvaluationRun.trace_id == trace_id,
+            EvaluationRun.rubric_id == rubric_id,
+            EvaluationRun.rubric_version == rubric_version,
+        )
+        .one_or_none()
+    )
+
+
+def _notify_problem(db: Session, run: EvaluationRun, rubric: Rubric) -> None:
+    metadata = run.run_metadata or {}
+    if run.status == "error":
+        kind, title = "err", f"Avaliação com erro: {rubric.slug}"
+    elif metadata.get("auto_failed"):
+        kind, title = "err", f"Falha crítica na rubrica {rubric.slug}"
+    elif metadata.get("partial_failure"):
+        kind, title = "warn", f"Avaliação parcial: {rubric.slug}"
+    else:
+        return
+    # One per rubric and problem per hour: a bad batch must not bury the rest.
+    recent = db.query(Notification.id).filter(
+        Notification.project_id == run.project_id,
+        Notification.title == title,
+        Notification.created_at >= _utcnow() - NOTIFICATION_DEDUP_WINDOW,
+    ).first()
+    if recent is None:
+        db.add(
+            Notification(
+                id=new_id("ntf"),
+                project_id=run.project_id,
+                kind=kind,
+                title=title,
+                meta={"trace_id": run.trace_id, "run_id": run.id, "rubric_id": run.rubric_id},
+            )
+        )
+
+
+def evaluate_trace(
+    db: Session,
+    trace: Trace,
+    rubric: Rubric,
+    rubric_version: int,
+    version_id: str,
+    project: Project,
+    *,
+    triggered_by: str,
+    user_id: str | None,
+) -> EvaluationRun:
+    """Evaluate one trace with its checks and accounting. The caller commits.
+
+    Usage is applied only after the evaluators: it locks the org's usage row on
+    Postgres and ingestion waits on that row, so it must not stay locked during
+    judge calls. The commit below only releases rows the quota check may create.
+
+    A run that errored or finished partially is replaced, keeping what it spent;
+    a complete run raises :class:`DuplicateEvaluation`.
+    """
+    previous = existing_run(db, trace.id, rubric.id, rubric_version)
+    if previous is not None and previous.status != "error" and not (previous.run_metadata or {}).get("partial_failure"):
+        raise DuplicateEvaluation(previous.id)
+
+    if rubric_uses_llm_judge(version_id, db):
+        has_budget, spent, budget = judge_budget_status(trace.project_id, db)
+        if not has_budget:
+            raise JudgeBudgetExhausted(spent, budget)
+
+    enforce_quota(db, project, "evaluations_run", 1)
+    db.commit()
+
+    previous_cost = 0.0
+    attempt = 1
+    if previous is not None:
+        previous_cost = float(previous.cost_usd or 0)
+        attempt = int((previous.run_metadata or {}).get("attempt", 1)) + 1
+        db.delete(previous)
+        db.flush()
+
+    run = run_evaluation(
+        trace_id=trace.id,
+        rubric_id=rubric.id,
+        triggered_by=triggered_by,
+        user_id=user_id or "",
+        db=db,
+        rubric_version_num=rubric_version,
+    )
+    apply_usage_with_quota(db, project, evals=1, cost_usd=float(run.cost_usd or 0))
+    if previous is not None:
+        run.cost_usd = float(run.cost_usd or 0) + previous_cost
+        run.run_metadata = {**(run.run_metadata or {}), "attempt": attempt}
+    _notify_problem(db, run, rubric)
+    record_audit(
+        db, "evaluation.run",
+        organization_id=trace.organization_id,
+        actor_user_id=user_id,
+        target_type="evaluation_run",
+        target_id=run.id,
+        payload={
+            "trace_id": run.trace_id,
+            "rubric_id": run.rubric_id,
+            "status": run.status,
+            "passed": bool(run.passed) if run.passed is not None else None,
+        },
+    )
     db.flush()
     return run

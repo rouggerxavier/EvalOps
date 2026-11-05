@@ -138,13 +138,13 @@ def _persist_trace(
         if span_in.cost_usd is None:
             cost = compute_cost_usd(span_in.provider, span_in.model, span_in.tokens_in, span_in.tokens_out)
             # `compute_cost_usd` returns 0 for unknown provider/model. Split that
-            # zero into "estimated" (tokens present, no table match) and
+            # zero into "unpriced" (tokens present, no table match) and
             # "unknown" (no tokens at all) so the UI can warn the user that the
             # displayed cost is not a measurement.
             if cost > 0:
                 cost_source = "priced"
             elif (span_in.tokens_in or 0) + (span_in.tokens_out or 0) > 0:
-                cost_source = "estimated"
+                cost_source = "unpriced"
             else:
                 cost_source = "unknown"
         else:

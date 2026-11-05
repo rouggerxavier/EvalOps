@@ -294,6 +294,7 @@ evaluators:
 
 def _ingest_simple_trace(api_key: str, client_trace_id: str = "ct_dup") -> str:
     payload = _trace_payload(client_trace_id, spans_count=1, tokens_in=10, tokens_out=10)
+    payload["traces"][0]["spans"][0]["messages_out"] = [{"role": "assistant", "content": "ok"}]
     resp = client.post("/v1/traces", headers={"X-EvalOps-Key": api_key}, json=payload)
     assert resp.status_code == 202, resp.text
     return resp.json()["results"][0]["trace_id"]
@@ -374,7 +375,7 @@ def test_g11_duplicate_returns_existing_run_id() -> None:
 
 
 def test_fix7b4_evaluation_usage_failure_rolls_back_run(monkeypatch: pytest.MonkeyPatch) -> None:
-    from app.api import routes_evaluations
+    from app.domain.services import eval_service
 
     headers, org_id, project_id, api_key = _bootstrap()
     _seed_org_subscription(headers, org_id, project_id)
@@ -384,7 +385,7 @@ def test_fix7b4_evaluation_usage_failure_rolls_back_run(monkeypatch: pytest.Monk
     def _boom(*args, **kwargs):  # noqa: ANN002, ANN003
         raise RuntimeError("usage cost update failed")
 
-    monkeypatch.setattr(routes_evaluations, "increment_usage", _boom)
+    monkeypatch.setattr(eval_service, "apply_usage_with_quota", _boom)
     with pytest.raises(RuntimeError, match="usage cost update failed"):
         client.post(
             "/v1/evaluations/run",
@@ -415,9 +416,7 @@ evaluators:
     type: llm_judge
     weight: 1.0
     config:
-      target: trace.output.assistant_message
-      criteria: helpful
-      provider: openai
+      prompt: "Rate: {{ trace.output.assistant_message }}"
       model: gpt-4o-mini
 """
 

@@ -100,10 +100,6 @@ async def body_size_limit(request: Request, call_next):
             content={"detail": "payload_too_large", "limit_bytes": limit},
         )
 
-    async def _receive():
-        return {"type": "http.request", "body": body, "more_body": False}
-
-    request._receive = _receive  # type: ignore[attr-defined]
     return await call_next(request)
 
 

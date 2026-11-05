@@ -105,7 +105,7 @@ threshold: 0.5
 evaluators:
   - id: len-check
     type: length_bounds
-    config: {}
+    config: {target: trace.output.text, max: 500}
 """
 
 
@@ -565,7 +565,7 @@ def test_no_redaction_preserves_extended_fields() -> None:
         # system prefix before equality, but assert it carries an expected value.
         user_metadata = {k: v for k, v in sp.metadata_json.items() if not k.startswith("_")}
         assert user_metadata == {"customer_email": "c@acme.com"}
-        assert sp.metadata_json.get("_cost_source") in {"priced", "estimated", "unknown", "provided"}
+        assert sp.metadata_json.get("_cost_source") in {"priced", "unpriced", "unknown", "provided"}
         ev = db.query(Event).join(Span).filter(Span.trace_id == trace_id).first()
         assert ev.payload == {"email": "leak@acme.com"}
 

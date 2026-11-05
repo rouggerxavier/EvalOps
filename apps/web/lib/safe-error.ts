@@ -33,6 +33,7 @@ const SAFE_DETAIL_MESSAGES: Record<string, string> = {
   project_slug_taken: "Este slug já está em uso nesta organização. Escolha outro.",
   organization_slug_taken: "Este slug de organização já está em uso. Escolha outro.",
   api_key_not_revoked: "Revogue a chave antes de excluí-la.",
+  invalid_rubric: "Rubrica inválida. Confira o YAML e tente novamente.",
 };
 
 export const GENERIC_ERROR = "Algo deu errado. Tente novamente.";
@@ -60,6 +61,34 @@ const LEAK_PATTERNS = [
   /\b(?:password|secret|api[_-]?key|access[_-]?token|refresh[_-]?token|authorization)\b\s*[=:]\s*\S/i,
 ];
 
+const INVALID_RUBRIC_PREFIX = "Rubrica inválida: ";
+
+function hasLeak(text: string): boolean {
+  return LEAK_PATTERNS.some((pattern) => pattern.test(text));
+}
+
+// The parser's reason names the YAML field to fix. A link is never part of one, and
+// this text can also arrive through the URL, so links fall back to the generic copy.
+function isSafeRubricMessage(message: string): boolean {
+  return (
+    message.startsWith(INVALID_RUBRIC_PREFIX) &&
+    message.length <= 240 &&
+    !/https?:|www\./i.test(message) &&
+    !hasLeak(message)
+  );
+}
+
+function invalidRubricMessage(body: string): string | null {
+  try {
+    const detail: unknown = JSON.parse(body).detail;
+    if (typeof detail !== "string" || !detail.startsWith("invalid_rubric: ")) return null;
+    const message = INVALID_RUBRIC_PREFIX + detail.slice("invalid_rubric: ".length);
+    return isSafeRubricMessage(message) ? message : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Map a thrown error message to a safe, user-facing string.
  *
@@ -76,6 +105,8 @@ export function sanitizeApiError(message: string): string {
     // Prefer a vetted, specific copy when the backend returned a known
     // ``detail`` code (e.g. ``project_slug_taken``). Falls through to the
     // generic per-status message if the code isn't on the allowlist.
+    const rubricMessage = invalidRubricMessage(body);
+    if (rubricMessage) return rubricMessage;
     const detailMatch = /"detail"\s*:\s*"([a-z0-9_]+)"/i.exec(body);
     if (detailMatch) {
       const safeDetail = SAFE_DETAIL_MESSAGES[detailMatch[1]];
@@ -83,9 +114,10 @@ export function sanitizeApiError(message: string): string {
     }
     return SAFE_HTTP_MESSAGES[httpStatus] ?? GENERIC_ERROR;
   }
-  for (const pattern of LEAK_PATTERNS) {
-    if (pattern.test(message)) return GENERIC_ERROR;
-  }
+  // Server actions redirect with an already-sanitized message and pages sanitize it again.
+  if (Object.values(SAFE_HTTP_MESSAGES).includes(message)) return message;
+  if (Object.values(SAFE_DETAIL_MESSAGES).includes(message)) return message;
+  if (isSafeRubricMessage(message)) return message;
   return GENERIC_ERROR;
 }
 
@@ -98,4 +130,10 @@ export function safeErrorMessage(error: unknown, fallback: string = GENERIC_ERRO
   if (error instanceof Error) return sanitizeApiError(error.message);
   if (typeof error === "string") return sanitizeApiError(error);
   return fallback;
+}
+
+/** Notice for rubric fields the API accepted but nothing reads. `raw` comes from the URL. */
+export function ignoredFieldsNotice(raw: string | undefined): string | null {
+  if (!raw || !/^[a-z_,]+$/.test(raw)) return null;
+  return `Campos sem efeito, que nada lê: ${raw.split(",").join(", ")}.`;
 }

@@ -20,11 +20,13 @@ where ownership rules live.
 """
 from __future__ import annotations
 
-from fastapi import Depends, HTTPException, status
+from typing import Callable
+
+from fastapi import Depends, Header, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.deps import ensure_org_membership, get_current_user
+from app.deps import authenticate_api_key, ensure_org_membership, get_current_user
 from app.models import (
     Dataset,
     Experiment,
@@ -107,6 +109,27 @@ def get_owned_project(
     db: Session = Depends(get_db),
 ) -> Project:
     return load_project(db, user.id, project_id)
+
+
+def project_access(scope: str) -> Callable[..., Project]:
+    """Project from the URL, for a member or for an API key of that project with ``scope``."""
+
+    def dependency(
+        project_id: str,
+        request: Request,
+        x_evalops_key: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+        db: Session = Depends(get_db),
+    ) -> Project:
+        if x_evalops_key:
+            project = authenticate_api_key(request, x_evalops_key, db, scope)
+            if project.id != project_id:
+                raise _not_found()
+            return project
+        user = get_current_user(request, authorization, db)
+        return load_project(db, user.id, project_id)
+
+    return dependency
 
 
 def get_owned_trace(

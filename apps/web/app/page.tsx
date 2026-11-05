@@ -87,7 +87,7 @@ export default function HomePage() {
             </Link>
           </div>
           <div className="hero__meta">
-            <span><code>pip install evalops</code></span>
+            <span><code>pip install -e packages/sdk-python</code></span>
             <span className="dot" />
             <span>SDK Python - compatível com OpenTelemetry - pronto para self-host</span>
           </div>

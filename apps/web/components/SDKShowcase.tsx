@@ -10,7 +10,7 @@ import styles from "./SDKShowcase.module.css";
 const CODE_SNIPPET = `import evalops
 from openai import OpenAI
 
-evalops.init(api_key="evk_live_...", project="docops-agent")
+evalops.init(api_key="evk_prod_...", project="docops-agent")
 client = OpenAI()
 
 @evalops.trace(name="rag.summarize")
@@ -48,7 +48,7 @@ function tokenLine(line: string, index: number) {
     return (
       <span key={key} className={styles.sdkEmphasisLine}>
         <span className={styles.sdkTokenName}>evalops</span>.<span className={styles.sdkTokenFn}>init</span>(
-        <span className={styles.sdkTokenParam}>api_key</span>=<span className={styles.sdkTokenStr}>"evk_live_..."</span>,{" "}
+        <span className={styles.sdkTokenParam}>api_key</span>=<span className={styles.sdkTokenStr}>"evk_prod_..."</span>,{" "}
         <span className={styles.sdkTokenParam}>project</span>=<span className={styles.sdkTokenStr}>"docops-agent"</span>)
       </span>
     );

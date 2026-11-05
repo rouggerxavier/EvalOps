@@ -117,21 +117,31 @@ export default function DocsPage() {
                 <span className={styles.codeMeta}>sdk_quickstart.py</span>
               </div>
               <pre className={styles.codeBlock}>
-{`# pip install evalops
+{`# Instale a partir do repositório. O nome "evalops" no PyPI é de outro projeto: não instale.
+# pip install -e packages/sdk-python
 import evalops
 from openai import OpenAI
 
-evalops.init(api_key="evk_live_...", project="docops-agent", environment="prod")
+evalops.init(api_key="evk_prod_...", project="docops-agent", environment="prod")
 client = OpenAI()
 
-@evalops.trace(name="rag.answer")
-def answer(question: str):
-    with evalops.span("retrieve", type="tool"):
-        chunks = retriever(question)
-    return client.responses.create(
-        model="gpt-4o-mini",
-        input=build_prompt(question, chunks),
-    )`}
+@evalops.trace("rag.answer")
+def answer(question: str, conversation_id: str) -> str:
+    evalops.set_trace(conversation_id=conversation_id)
+    messages = [{"role": "user", "content": question}]
+    with evalops.span("llm", type="llm_call") as span:
+        reply = client.chat.completions.create(model="gpt-4o-mini", messages=messages)
+        text = reply.choices[0].message.content
+        # Sem set_llm, a resposta não chega às rubricas nem ao custo.
+        span.set_llm(
+            provider="openai",
+            model="gpt-4o-mini",
+            messages_in=messages,
+            messages_out=[{"role": "assistant", "content": text}],
+            tokens_in=reply.usage.prompt_tokens,
+            tokens_out=reply.usage.completion_tokens,
+        )
+    return text`}
               </pre>
             </section>
           </div>

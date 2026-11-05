@@ -35,6 +35,42 @@ evalops.flush()
 accepted every trace; retry-exhausted transient failures are counted and written
 to local dead-letter files as described below.
 
+`environment` must be `dev`, `staging` or `prod`; `init` raises `ValueError` for
+anything else. Queued traces are sent at normal process exit, or call
+`evalops.shutdown()` to send them earlier.
+
+## Recording model calls
+
+Rubrics and cost tracking read model calls recorded with `set_llm`:
+
+```python
+@evalops.trace("support.turn")
+def answer(msg: str) -> str:
+    with evalops.span("llm.generate") as sp:
+        reply = call_model(msg)
+        sp.set_llm(
+            provider="openrouter",
+            model=reply.model,
+            messages_in=[{"role": "user", "content": msg}],
+            messages_out=[{"role": "assistant", "content": reply.text}],
+            tokens_in=reply.prompt_tokens,
+            tokens_out=reply.completion_tokens,
+            cost_usd=reply.cost,  # omit to price from the server table
+        )
+    return reply.text
+```
+
+## Describing a trace
+
+Inside a trace, group turns and test runs with opaque ids. These values are stored
+and shown as sent: never use a phone number or name.
+
+```python
+evalops.set_trace(conversation_id="c_8f2a", batch="bateria-2026-11-05", user_ref="u_91")
+```
+
+Rubrics read the earlier turns of a conversation in `trace.conversation.transcript`.
+
 ## LangGraph-style usage
 
 ```python
@@ -78,11 +114,13 @@ ok = evalops.instrument_openai()
 ## Retry, dead-letter, and replay
 
 The background uploader retries exceptions, HTTP `408`, HTTP `429`, and HTTP
-`5xx` responses using the configured retry budget. Permanent `4xx` responses
-other than `408` and `429` are not retried and do not create dead-letter files
-by default.
+`5xx` responses using the configured retry budget, then keeps the batch queued
+and tries again with a growing delay of up to 60 seconds. Permanent `4xx`
+responses other than `408` and `429`, such as a wrong key or an exhausted quota,
+are not retried and do not create dead-letter files by default: the batch is
+dropped and a warning with the status is logged.
 
-When a transient failure still fails after retries are exhausted, the SDK writes
+When a transient failure still fails during a flush or shutdown, the SDK writes
 one JSON dead-letter file per failed batch. The default directory is
 `~/.evalops/dead/`; set `EVALOPS_DEAD_LETTER_DIR` to use another location.
 

@@ -14,7 +14,11 @@ import type { NotificationItem } from "@/lib/types";
 
 type WorkspaceProject = { org: string; project: string; label: string };
 
-const ENVIRONMENTS = ["prod", "staging", "dev"] as const;
+const ENVIRONMENTS = ["all", "prod", "staging", "dev"] as const;
+
+function envLabel(env: (typeof ENVIRONMENTS)[number]): string {
+  return env === "all" ? "todos" : env;
+}
 
 export function EvoTopbar({
   org,
@@ -23,7 +27,7 @@ export function EvoTopbar({
   notifications = [],
   projects = [],
   projectId = null,
-  environment = "prod",
+  environment = "all",
 }: {
   org: string;
   project: string;
@@ -90,7 +94,7 @@ export function EvoTopbar({
             aria-label="Ambiente ativo"
           >
             <span className="env-chip__dot" aria-hidden="true" />
-            {environment}
+            {envLabel(environment)}
           </button>
           {envOpen ? (
             <div className="card" style={{ position: "absolute", right: 0, top: 34, width: 148, zIndex: 20 }}>
@@ -110,7 +114,7 @@ export function EvoTopbar({
                       className={`btn btn--sm${env === environment ? " btn--primary" : " btn--ghost"}`}
                       style={{ width: "100%" }}
                     >
-                      {env}
+                      {envLabel(env)}
                     </button>
                   </form>
                 ))}

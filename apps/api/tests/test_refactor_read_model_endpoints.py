@@ -505,8 +505,8 @@ def test_cost_source_provided_when_client_supplies_cost() -> None:
     assert item["cost_source"] == "provided"
 
 
-def test_cost_source_estimated_for_unknown_model_with_tokens() -> None:
-    """Bug 6.1: unknown provider/model + tokens → estimated (not "priced 0")."""
+def test_cost_source_unpriced_for_unknown_model_with_tokens() -> None:
+    """Bug 6.1: unknown provider/model + tokens → unpriced (not "priced 0")."""
     client = TestClient(app)
     headers, project_id, api_key = _bootstrap(client)
     tid = _ingest_trace_with_spans(
@@ -530,7 +530,7 @@ def test_cost_source_estimated_for_unknown_model_with_tokens() -> None:
     )
     body = client.get(f"/v1/traces?project_id={project_id}", headers=headers).json()
     item = next(row for row in body["data"] if row["id"] == tid)
-    assert item["cost_source"] == "estimated"
+    assert item["cost_source"] == "unpriced"
 
 
 def test_cost_source_unknown_when_no_cost_no_tokens() -> None:

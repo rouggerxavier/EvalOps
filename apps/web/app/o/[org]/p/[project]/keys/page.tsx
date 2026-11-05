@@ -472,6 +472,10 @@ export default async function KeysPage({ params, searchParams }: Props) {
                   <input type="checkbox" name="scopes" value="read" defaultChecked style={{ accentColor: "var(--accent)" }} />
                   read
                 </label>
+                <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "var(--text-dim)" }}>
+                  <input type="checkbox" name="scopes" value="evaluate" style={{ accentColor: "var(--accent)" }} />
+                  evaluate (avaliação em lote; gasta orçamento do juiz)
+                </label>
               </fieldset>
 
               <button type="submit" className="btn btn--primary" style={{ alignSelf: "flex-start" }}>

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Activity, AlertCircle, Copy, Flag as FlagIcon, Layers, Terminal } from "lucide-react";
+import { Activity, AlertCircle, Copy, Flag as FlagIcon, Layers, MessageSquare, Target, Terminal } from "lucide-react";
 
 import { AuthRequiredPanel } from "@/components/AuthRequiredPanel";
 import { Badge, StatusBadge } from "@/components/ui/Badge";
@@ -14,6 +14,7 @@ import { createTraceFeedbackAction } from "@/lib/actions";
 import {
   getRubrics,
   getTrace,
+  getTraceEvaluations,
   getTraceRag,
   getTraces,
   hasAuthToken,
@@ -25,8 +26,10 @@ import { getTraceCauseLabel, getTraceModelLabel } from "@/lib/trace-display";
 import type { RagConsolidated } from "@/lib/types";
 
 import { TraceHeaderActions } from "./trace-actions";
+import { TraceConversation } from "./trace-conversation";
+import { TraceEvaluations } from "./trace-evaluations";
 
-type Tab = "rag" | "waterfall" | "metadata" | "feedback";
+type Tab = "conversation" | "evaluations" | "rag" | "waterfall" | "metadata" | "feedback";
 
 type Props = {
   params: Promise<{ org: string; project: string; trace: string }>;
@@ -45,15 +48,23 @@ function costSourceLabel(source: string | null | undefined): string | undefined 
   // total was derived. Returns undefined for `priced` so the metric falls back
   // to the model name (default neutral state).
   if (source === "provided") return "valor enviado pelo cliente";
-  if (source === "estimated") return "sem preço — estimado por tokens";
+  if (source === "unpriced") return "sem preço — tokens registrados";
   if (source === "unknown") return "sem preço nem tokens";
   return undefined;
 }
 
 function parseTab(value: string | undefined, hasRag: boolean): Tab {
   if (value === "rag" && hasRag) return "rag";
-  if (value === "waterfall" || value === "metadata" || value === "feedback") return value;
-  return hasRag ? "rag" : "waterfall";
+  if (
+    value === "conversation" ||
+    value === "evaluations" ||
+    value === "waterfall" ||
+    value === "metadata" ||
+    value === "feedback"
+  ) {
+    return value;
+  }
+  return hasRag ? "rag" : "conversation";
 }
 
 export default async function TraceDetailPage({ params, searchParams }: Props) {
@@ -69,10 +80,11 @@ export default async function TraceDetailPage({ params, searchParams }: Props) {
   const tab = parseTab(qp.tab, ragEnabled);
   const safeQueryError = qp.error ? safeErrorMessage(qp.error, "Falha em ação.") : null;
 
-  const [rubricsRes, compareList, ragData] = await Promise.all([
+  const [rubricsRes, compareList, ragData, evaluations] = await Promise.all([
     getRubrics(t.project_id).catch(() => ({ data: [] })),
     getTraces({ projectId: t.project_id, limit: 12 }).catch(() => ({ data: [], next_cursor: null })),
     ragEnabled ? getTraceRag(t.id).catch(() => null as RagConsolidated | null) : Promise.resolve(null),
+    getTraceEvaluations(t.id).catch(() => null),
   ]);
 
   const compareCandidates = compareList.data.filter((row) => row.id !== t.id).slice(0, 10);
@@ -113,6 +125,7 @@ export default async function TraceDetailPage({ params, searchParams }: Props) {
             <span className="tag">{t.environment}</span>
             {ragEnabled ? <Badge variant="rag">RAG</Badge> : null}
             {t.redacted ? <span className="tag">redigido</span> : null}
+            {detail.flags.length > 0 ? <Badge variant="warn">marcado</Badge> : null}
             {replayStatus ? (
               <Badge variant={replayBadgeVariant}>replay · {replayStatus}</Badge>
             ) : null}
@@ -144,8 +157,10 @@ export default async function TraceDetailPage({ params, searchParams }: Props) {
         <div className="attention" style={{ borderColor: "rgba(154,122,255,0.4)" }}>
           <div className="attention__icon"><FlagIcon size={14} /></div>
           <div>
-            <div className="attention__title">Trace flagged</div>
-            <div className="attention__desc">Registro criado em trace_flags.</div>
+            <div className="attention__title">Trace marcado</div>
+            <div className="attention__desc">
+              A marcação aparece em <Link href={tabHref("feedback")}>Feedback</Link> e na aba Marcados da lista de traces.
+            </div>
           </div>
         </div>
       ) : null}
@@ -259,6 +274,13 @@ export default async function TraceDetailPage({ params, searchParams }: Props) {
             <Layers size={11} /> RAG
           </Link>
         ) : null}
+        <Link href={tabHref("conversation")} className={`tab${tab === "conversation" ? " is-active" : ""}`}>
+          <MessageSquare size={11} /> Conversa
+        </Link>
+        <Link href={tabHref("evaluations")} className={`tab${tab === "evaluations" ? " is-active" : ""}`}>
+          <Target size={11} /> Avaliações
+          {evaluations ? <span className="tab__count">{evaluations.data.length}</span> : null}
+        </Link>
         <Link href={tabHref("waterfall")} className={`tab${tab === "waterfall" ? " is-active" : ""}`}>
           <Activity size={11} /> Waterfall
           <span className="tab__count">{detail.spans.length}</span>
@@ -268,9 +290,21 @@ export default async function TraceDetailPage({ params, searchParams }: Props) {
         </Link>
         <Link href={tabHref("feedback")} className={`tab${tab === "feedback" ? " is-active" : ""}`}>
           <FlagIcon size={11} /> Feedback
-          <span className="tab__count">{detail.feedback.length}</span>
+          <span className="tab__count">{detail.feedback.length + detail.flags.length}</span>
         </Link>
       </nav>
+
+      {tab === "conversation" ? <TraceConversation spans={detail.spans} redacted={t.redacted} /> : null}
+
+      {tab === "evaluations" ? (
+        evaluations ? (
+          <TraceEvaluations runs={evaluations.data} rubrics={rubricsRes.data} />
+        ) : (
+          <Card title="Avaliações" subtitle="Falha ao carregar">
+            <p className="muted" style={{ margin: 0 }}>Não foi possível buscar as avaliações. Recarregue a página.</p>
+          </Card>
+        )
+      ) : null}
 
       {tab === "rag" && ragEnabled ? (
         ragData ? (
@@ -406,10 +440,30 @@ export default async function TraceDetailPage({ params, searchParams }: Props) {
         <div className="grid-detail">
           <Card
             title="Histórico de feedback"
-            subtitle={`${detail.feedback.length} entrada${detail.feedback.length === 1 ? "" : "s"}`}
+            subtitle={`${detail.feedback.length} feedback · ${detail.flags.length} marcaç${detail.flags.length === 1 ? "ão" : "ões"}`}
             flush
           >
-            {detail.feedback.length === 0 ? (
+            {detail.flags.map((flag) => (
+              <div
+                key={flag.id}
+                style={{
+                  padding: "10px 16px",
+                  borderBottom: "1px solid var(--border-subtle)",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 4,
+                }}
+              >
+                <div className="row" style={{ justifyContent: "space-between" }}>
+                  <span className="row" style={{ gap: 6, fontSize: 13, color: "var(--warning)" }}>
+                    <FlagIcon size={12} /> <span className="mono" style={{ fontSize: 11 }}>{flag.reason}</span>
+                  </span>
+                  <span className="faint mono" style={{ fontSize: 10 }}>{formatRelativeTime(flag.created_at)}</span>
+                </div>
+                {flag.note ? <p style={{ margin: 0, fontSize: 12, color: "var(--fg-2)" }}>{flag.note}</p> : null}
+              </div>
+            ))}
+            {detail.feedback.length === 0 && detail.flags.length === 0 ? (
               <div className="t__empty">Nenhum feedback humano registrado ainda.</div>
             ) : (
               detail.feedback.map((fb) => (

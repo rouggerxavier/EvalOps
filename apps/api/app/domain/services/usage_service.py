@@ -257,6 +257,37 @@ def increment_usage(
     return row
 
 
+def set_org_plan_limits(db: Session, org_id: str, **limits: float) -> Plan:
+    """Move one org to its own plan with the given ``Plan`` limit columns.
+
+    Plans are shared by every org on them, so the limits are never edited in
+    place. Caller commits.
+    """
+    sub = ensure_subscription(db, org_id)
+    code = f"org-{org_id}"
+    plan = db.query(Plan).filter(Plan.code == code).one_or_none()
+    if plan is None:
+        current = db.get(Plan, sub.plan_id)
+        plan = Plan(
+            id=new_id("pln"),
+            code=code,
+            name=f"Custom {org_id}",
+            monthly_trace_limit=current.monthly_trace_limit,
+            monthly_eval_limit=current.monthly_eval_limit,
+            monthly_export_limit=current.monthly_export_limit,
+            monthly_span_limit=current.monthly_span_limit,
+            monthly_token_limit=current.monthly_token_limit,
+            monthly_judge_budget_usd=current.monthly_judge_budget_usd,
+        )
+        db.add(plan)
+        db.flush()
+    for column, value in limits.items():
+        setattr(plan, column, value)
+    sub.plan_id = plan.id
+    db.add(sub)
+    return plan
+
+
 def judge_budget_for_org(db: Session, org_id: str) -> float:
     """G-12: return the plan's monthly judge budget in USD.
 

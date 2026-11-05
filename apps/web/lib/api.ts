@@ -136,6 +136,7 @@ export async function getTraces(opts: {
   duration_gt?: number;
   slow_kind?: "trace" | "llm" | "retrieval";
   rag?: boolean;
+  flagged?: boolean;
 }): Promise<TraceListResponse> {
   const params = new URLSearchParams({
     project_id: opts.projectId,
@@ -148,6 +149,7 @@ export async function getTraces(opts: {
   if (opts.duration_gt !== undefined) params.set("duration_gt", String(opts.duration_gt));
   if (opts.slow_kind) params.set("slow_kind", opts.slow_kind);
   if (opts.rag !== undefined) params.set("rag", String(opts.rag));
+  if (opts.flagged !== undefined) params.set("flagged", String(opts.flagged));
   return fetchJson<TraceListResponse>(`/traces?${params.toString()}`);
 }
 
@@ -263,8 +265,9 @@ export async function getRubrics(projectId: string): Promise<{ data: Rubric[] }>
 export async function createRubric(projectId: string, yamlSource: string): Promise<{
   rubric: Rubric;
   version: RubricVersion;
+  ignored_fields?: string[];
 }> {
-  return requestJson<{ rubric: Rubric; version: RubricVersion }>(`/projects/${projectId}/rubrics`, {
+  return requestJson<{ rubric: Rubric; version: RubricVersion; ignored_fields?: string[] }>(`/projects/${projectId}/rubrics`, {
     method: "POST",
     body: JSON.stringify({ yaml_source: yamlSource }),
   });
@@ -277,20 +280,27 @@ export async function getRubricVersions(rubricId: string): Promise<{ data: Rubri
 export async function createRubricVersion(rubricId: string, yamlSource: string): Promise<{
   version: RubricVersion;
   rubric_version: number;
+  ignored_fields?: string[];
 }> {
-  return requestJson<{ version: RubricVersion; rubric_version: number }>(`/rubrics/${rubricId}/versions`, {
+  return requestJson<{ version: RubricVersion; rubric_version: number; ignored_fields?: string[] }>(`/rubrics/${rubricId}/versions`, {
     method: "POST",
     body: JSON.stringify({ yaml_source: yamlSource }),
   });
 }
 
-export async function getProjectEvaluations(projectId: string, limit = 100): Promise<{ data: EvaluationRun[] }> {
+export async function getProjectEvaluations(
+  projectId: string,
+  limit = 100,
+  environment?: string,
+): Promise<{ data: EvaluationRun[] }> {
   const params = new URLSearchParams({ limit: String(limit) });
+  if (environment) params.set("environment", environment);
   return fetchJson<{ data: EvaluationRun[] }>(`/projects/${projectId}/evaluations?${params.toString()}`);
 }
 
-export async function getEvaluationSummary(projectId: string): Promise<EvaluationSummary> {
-  return fetchJson<EvaluationSummary>(`/projects/${projectId}/evaluations/summary`);
+export async function getEvaluationSummary(projectId: string, environment?: string): Promise<EvaluationSummary> {
+  const suffix = environment ? `?environment=${encodeURIComponent(environment)}` : "";
+  return fetchJson<EvaluationSummary>(`/projects/${projectId}/evaluations/summary${suffix}`);
 }
 
 export async function getTraceEvaluations(traceId: string): Promise<{ data: EvaluationRun[] }> {

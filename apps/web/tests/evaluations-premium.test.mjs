@@ -17,7 +17,7 @@ function escaped(token) {
 
 test("evaluations premium: keeps real endpoints and server actions", () => {
   for (const token of [
-    "getProjectEvaluations(resolved.project_id, EVALUATION_RUNS_LIMIT)",
+    "getProjectEvaluations(resolved.project_id, EVALUATION_RUNS_LIMIT, environment)",
     "getRubrics(resolved.project_id)",
     "resolveProject(org, project)",
   ]) {

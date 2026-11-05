@@ -96,10 +96,9 @@ function isRagTrace(trace: Trace): boolean {
 
 const CAUSE_LABELS: Record<string, string> = {
   schema_mismatch: "schema mismatch",
-  vector_db_timeout: "timeout vector",
-  low_confidence: "baixa confiança",
-  cost_spike: "custo alto",
-  unknown_error: "erro",
+  timeout: "timeout",
+  partial_trace: "trace parcial",
+  trace_error: "erro",
 };
 
 export default async function ProjectOverviewPage({ params, searchParams }: Props) {

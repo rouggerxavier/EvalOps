@@ -141,7 +141,7 @@ function RegisterPanel(): ReactNode {
         }}
       >
         <span style={{ color: "#c4a8ff" }}>import</span> evalops{"\n"}
-        evalops.init(api_key=<span style={{ color: "#5fd5a4" }}>&quot;evk_live_...&quot;</span>, project=
+        evalops.init(api_key=<span style={{ color: "#5fd5a4" }}>&quot;evk_prod_...&quot;</span>, project=
         <span style={{ color: "#5fd5a4" }}>&quot;docops-agent&quot;</span>){"\n\n"}
         <span style={{ color: "#ffb86b" }}>@evalops.trace</span>(name=
         <span style={{ color: "#5fd5a4" }}>&quot;rag.summarize&quot;</span>){"\n"}

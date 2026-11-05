@@ -123,6 +123,7 @@ export function TraceHeaderActions({ org, project, traceId, rubrics, compareCand
 
       <Modal open={open === "evaluate"} onClose={close} title="Rodar avaliação" subtitle="POST /v1/evaluations/run">
         <form action={triggerEvaluationAction}>
+          <input type="hidden" name="return_to" value="trace" />
           <input type="hidden" name="org" value={org} />
           <input type="hidden" name="project" value={project} />
           <input type="hidden" name="trace_id" value={traceId} />

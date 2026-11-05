@@ -201,7 +201,7 @@ export function EvaluationsModals({ org, project, projectId, rubrics, traces, dr
             <textarea
               name="yaml_source"
               required
-              defaultValue={`slug: nova-rubrica\nversion: 1\nthreshold: 0.75\nevaluators:\n  - id: grounded_in_retrieval\n    type: builtin\n`}
+              defaultValue={`slug: nova-rubrica\nname: Nova rubrica\ndescription: O que esta rubrica verifica\nthreshold: 0.75\nevaluators:\n  - id: tamanho_da_resposta\n    type: length_bounds\n    config:\n      target: trace.output.text\n      unit: words\n      min: 1\n      max: 300\n`}
               className="filter-input"
               style={{ minHeight: 240, fontFamily: "var(--font-mono)", fontSize: 12 }}
             />
