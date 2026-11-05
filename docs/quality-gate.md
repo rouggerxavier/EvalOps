@@ -155,7 +155,9 @@ locais e é uma verificação adicional de demonstração.
 
 Rollback: reverter consumidores do gate e depois `alembic downgrade
 0008_export_jobs_file_size_bytes`. Isso remove somente configurações do gate.
-Upgrade/downgrade/reupgrade foi testado em SQLite temporário preservando projetos.
+Upgrade/downgrade/reupgrade foi testado em SQLite temporário e PostgreSQL 16
+preservando projetos. No PostgreSQL, a remoção do projeto também confirmou o
+`ON DELETE CASCADE` da configuração do gate.
 
 ## Limitações desta entrega
 
@@ -171,6 +173,8 @@ Upgrade/downgrade/reupgrade foi testado em SQLite temporário preservando projet
   automático de chamadas/deployments nesta primeira entrega.
 - Leituras são em lote e a janela é limitada a 30 dias; agregação ainda ocorre em
   memória, como o overview. Não foi realizado benchmark em volume de produção.
-- Migração e runtime verificados em SQLite. PostgreSQL requer validação no
-  ambiente de implantação; Redis/replay foram cobertos pelas suítes existentes,
-  não pelo navegador da demonstração.
+- Migração e runtime verificados em SQLite e PostgreSQL 16, incluindo rollback
+  e cascade. O E2E do gate também passou com PostgreSQL 16 e Redis reais.
+  A validação local não substitui testes no ambiente de implantação nem um
+  benchmark em volume de produção. Redis/replay foram cobertos pelas suítes
+  existentes, não pelo navegador da demonstração.

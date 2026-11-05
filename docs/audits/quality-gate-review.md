@@ -40,3 +40,31 @@ Contratos atuais preservados; feature aditiva; decisões e limites em `docs/qual
 
 ## Próximos passos
 - Review e CI da HEAD antes de merge. Staging PostgreSQL antes de implantação.
+
+
+## Retomada após integração com main — 5 de novembro de 2026
+
+As evidências desta seção substituem as contagens e lacunas da revisão original
+para a árvore executável `bf49569`; as seções acima preservam o registro anterior.
+
+A [CI completa](https://github.com/rouggerxavier/EvalOps/actions/runs/41983179512)
+passou nos sete jobs: 455 testes API, 165 web e build, 36 SDK em cada Python
+3.9–3.12 e migração PostgreSQL. O typecheck local também passou.
+
+Em PostgreSQL 16 dedicado, passaram os 117 testes de Quality Gate e regressões
+P0/P1/produto. Os testes foram executados de seus caminhos originais, com um
+adaptador temporário de engine/session no processo de pytest. O conftest padrão
+continua isolando a suíte em SQLite; definir apenas DATABASE_URL não testa o
+runtime PostgreSQL. A migração também passou por downgrade e novo upgrade,
+preservando o projeto; o FK ON DELETE CASCADE foi verificado separadamente.
+
+O E2E Chromium do gate passou com API e web locais, PostgreSQL 16 e Redis reais.
+Cobre save/reload, ingestão, avaliação determinística, review/pass/fail e mobile.
+Replay e chamadas a provedores externos não foram executados nesse E2E.
+
+A revisão focal do merge conferiu regras automáticas compartilhadas, exclusão
+de scores com erro, flags críticas, escopo por projeto/janela/ambiente e rollback.
+Não foram encontrados novos bloqueadores nesse escopo. A implementação paralela
+do juiz CLI permanece em worktree separado e não foi alterada nem integrada.
+Suas migrações e os dois heads Alembic devem ser conciliados na integração futura.
+Benchmark com volume de produção e validação em staging continuam pendentes.
