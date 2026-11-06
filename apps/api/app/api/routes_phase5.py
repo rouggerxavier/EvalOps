@@ -559,6 +559,24 @@ def run_experiment(
     return {"run_id": run.id, "status": run.status, "passed": run.passed}
 
 
+@router.get("/experiments/{experiment_id}/runs")
+def list_experiment_runs(
+    experiment_id: str,
+    limit: int = Query(default=20, ge=1, le=100),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    experiment = _experiment_or_404(experiment_id, user.id, db)
+    rows = (
+        db.query(ExperimentRun)
+        .filter(ExperimentRun.experiment_id == experiment.id)
+        .order_by(ExperimentRun.created_at.desc())
+        .limit(limit)
+        .all()
+    )
+    return {"data": [ExperimentRunOut.model_validate(row).model_dump() for row in rows]}
+
+
 @router.get("/experiments/{experiment_id}/runs/{run_id}")
 def get_experiment_run(
     experiment_id: str,

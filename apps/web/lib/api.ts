@@ -451,6 +451,10 @@ export async function getExperimentRun(experimentId: string, runId: string): Pro
   return fetchJson<{ run: ExperimentRun }>(`/experiments/${experimentId}/runs/${runId}`);
 }
 
+export async function getExperimentRuns(experimentId: string, limit = 20): Promise<{ data: ExperimentRun[] }> {
+  return fetchJson<{ data: ExperimentRun[] }>(`/experiments/${experimentId}/runs?limit=${limit}`);
+}
+
 export async function createExport(payload: {
   project_id: string;
   format: "jsonl";

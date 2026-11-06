@@ -708,3 +708,42 @@ def test_experiment_with_llm_judge_runs_when_budget_available(monkeypatch) -> No
     )
     assert resp.status_code == 202, resp.text
     assert resp.json()["status"] == "completed"
+
+
+def test_list_experiment_runs_newest_first_with_limit_and_ownership() -> None:
+    from app.models import ExperimentRun
+
+    headers, _, project_id = _bootstrap()
+    experiment_id = _build_experiment(headers, project_id, _NONJUDGE_EXP_RUBRIC)
+    real = client.post(
+        f"/v1/experiments/{experiment_id}/run",
+        headers=headers, json={"triggered_by": "api"},
+    )
+    assert real.status_code == 202, real.text
+    real_id = real.json()["run_id"]
+
+    now = datetime.now(timezone.utc)
+    with SessionLocal() as db:
+        for run_id, delta in (("exr_old", -3600), ("exr_new", 3600)):
+            db.add(ExperimentRun(
+                id=run_id, experiment_id=experiment_id, project_id=project_id,
+                status="completed", triggered_by="seed", passed=delta > 0,
+                by_variant={}, comparisons={}, criteria_failures=[], run_metadata={},
+                created_at=now + timedelta(seconds=delta),
+            ))
+        db.commit()
+
+    resp = client.get(f"/v1/experiments/{experiment_id}/runs", headers=headers)
+    assert resp.status_code == 200, resp.text
+    assert [row["id"] for row in resp.json()["data"]] == ["exr_new", real_id, "exr_old"]
+
+    limited = client.get(f"/v1/experiments/{experiment_id}/runs?limit=2", headers=headers)
+    assert [row["id"] for row in limited.json()["data"]] == ["exr_new", real_id]
+    assert client.get(f"/v1/experiments/{experiment_id}/runs?limit=101", headers=headers).status_code == 422
+
+    with SessionLocal() as db:
+        db.add(User(id="usr_2", email="u2@example.com", name="User Two"))
+        db.commit()
+    other = _auth_header("usr_2", "u2@example.com", "User Two")
+    client.post("/v1/organizations", headers=other, json={"name": "Other", "slug": "other"})
+    assert client.get(f"/v1/experiments/{experiment_id}/runs", headers=other).status_code == 404
