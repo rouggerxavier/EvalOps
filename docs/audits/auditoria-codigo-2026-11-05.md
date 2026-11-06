@@ -99,8 +99,8 @@ Limites das correções:
 - **SDK bloqueia o chamador:** com a fila cheia, o envio vira síncrono com retentativas, cerca de 15 s por turno com a API fora. Risco real para o lease do worker da Grankasa. Leitura (`uploader.py:260`).
 - **SDK perde dados:** sem `atexit` e sem `shutdown` público (provado); `errors[]` em resposta 202 é ignorado, então o trace ruim some em silêncio (`uploader.py:166`, provado).
 - **Replay:** enfileira antes do commit e pode não achar o trace; fica `queued` para sempre sem worker; não consome orçamento; só fala com OpenAI (`routes_trace_actions.py:433`, leitura).
-- **Juiz:** o texto do trace entra no prompt sem delimitação, abrindo injeção contra a nota. Se o template falha, o juiz recebe o template cru (`llm_judge.py:46`, leitura).
-- **`regex_match`:** regex do usuário roda sem limite de tempo (ReDoS, leitura).
+- **Juiz:** o texto do trace entra no prompt sem delimitação, abrindo injeção contra a nota. Se o template falha, o juiz recebe o template cru (`llm_judge.py:46`, leitura). Corrigido na branch `fix/juiz-regex-p2`: cada `{{ }}` do prompt vai entre `<trace_data>` e `</trace_data>`, com a tag escapada dentro do conteúdo, e uma mensagem de sistema manda tratar esse bloco como dado. O juiz CLI recebe o mesmo prompt. A falha do template já virava `prompt_render_failed` sem chamar o juiz; agora há teste.
+- **`regex_match`:** regex do usuário roda sem limite de tempo (ReDoS, leitura). Corrigido na branch `fix/juiz-regex-p2`: a rubrica recusa grupo repetido com quantificador ilimitado dentro, como `(a+)+`, e o avaliador devolve erro para padrão antigo assim ou texto acima de 20.000 caracteres. Limite: padrão polinomial, como `.*a.*b`, passa na validação e ainda leva segundos com poucos milhares de caracteres; timeout de verdade exige o pacote `regex`.
 - **`client_trace_id` opcional:** sem ele, retentativa duplica o trace (provado).
 - **Redação é tudo ou nada:** ou guarda o texto integral, ou apaga tudo e não dá para avaliar. Não há mascaramento.
 - **Dependências:** `npm audit --omit=dev` aponta `next` como crítico e 4 pacotes transitivos como altos (nanoid, postcss, sharp, source-map-js).

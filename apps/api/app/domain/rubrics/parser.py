@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import re
+from re import _constants as _sre, _parser as _sre_parse  # stdlib regex parser, private but stable since 3.11
 from typing import Any, Literal
 
 import jsonschema
@@ -62,6 +63,47 @@ _LENGTH_KEYS = ("min", "max", "min_chars", "max_chars", "min_words", "max_words"
 MAX_JUDGE_REPEATS = 5
 
 
+_REPEATS = (_sre.MAX_REPEAT, _sre.MIN_REPEAT, _sre.POSSESSIVE_REPEAT)
+
+
+def _subpatterns(arg: Any):
+    if isinstance(arg, _sre_parse.SubPattern):
+        yield arg
+    elif isinstance(arg, (tuple, list)):
+        for item in arg:
+            yield from _subpatterns(item)
+
+
+def _nested_unbounded(items: Any, under_repeat: bool) -> bool:
+    for op, arg in items:
+        if op in _REPEATS:
+            _low, high, body = arg
+            if under_repeat and high == _sre.MAXREPEAT:
+                return True
+            if _nested_unbounded(body, under_repeat or high > 1):
+                return True
+        elif any(_nested_unbounded(sub, under_repeat) for sub in _subpatterns(arg)):
+            return True
+    return False
+
+
+def check_regex(pattern: str) -> None:
+    """Raise ``ValueError`` when ``pattern`` does not compile or nests unbounded quantifiers.
+
+    ``re`` has no timeout, and a nested quantifier such as ``(a+)+$`` backtracks
+    exponentially on a long text that almost matches.
+    """
+    try:
+        re.compile(pattern)
+    except re.error as exc:
+        raise ValueError("regex_match.pattern is not a valid regex") from exc
+    if _nested_unbounded(_sre_parse.parse(pattern), False):
+        raise ValueError(
+            "regex_match.pattern repeats a group that holds an unbounded quantifier, as in (a+)+; "
+            "it can hang on long text"
+        )
+
+
 def _validate_evaluator_config(evaluator_type: str, config: dict[str, Any]) -> None:
     for key in _TARGET_KEYS.get(evaluator_type, ()):
         target = config.get(key)
@@ -80,10 +122,7 @@ def _validate_evaluator_config(evaluator_type: str, config: dict[str, Any]) -> N
             raise ValueError(f"{evaluator_type}.{key} is not a valid template") from exc
 
     if evaluator_type == "regex_match":
-        try:
-            re.compile(config.get("pattern") or "")
-        except re.error as exc:
-            raise ValueError("regex_match.pattern is not a valid regex") from exc
+        check_regex(config.get("pattern") or "")
         if not config.get("pattern"):
             raise ValueError("regex_match.pattern is required")
     elif evaluator_type == "keyword_presence":
