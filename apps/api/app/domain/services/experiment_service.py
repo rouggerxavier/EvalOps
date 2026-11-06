@@ -91,7 +91,7 @@ def _render_template(template: str, variables: dict[str, Any]) -> str:
         return template
 
 
-def _resolve_prompt_version(ref: str, project_id: str, db: Session) -> PromptVersion | None:
+def resolve_prompt_version(ref: str, project_id: str, db: Session) -> PromptVersion | None:
     pv = db.get(PromptVersion, ref)
     if pv is not None:
         prompt = db.get(Prompt, pv.prompt_id)
@@ -135,7 +135,7 @@ def _resolve_prompt_version(ref: str, project_id: str, db: Session) -> PromptVer
 def _resolve_variant_template(variant: dict, project_id: str, db: Session) -> str:
     ref = variant.get("prompt_version_ref")
     if isinstance(ref, str) and ref.strip():
-        pv = _resolve_prompt_version(ref.strip(), project_id, db)
+        pv = resolve_prompt_version(ref.strip(), project_id, db)
         if pv is None:
             raise ExperimentValidationError(f"prompt_version_ref_invalid:{ref}")
         return pv.template
