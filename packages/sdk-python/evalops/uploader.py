@@ -8,7 +8,7 @@ import os
 from pathlib import Path
 from queue import Empty, Full, Queue
 import tempfile
-from threading import Event, Thread
+from threading import Event, Lock, Thread
 from time import sleep
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
@@ -268,20 +268,27 @@ class BackgroundUploader:
         self._stop = Event()
         self._wake = Event()
         self._dropped = 0
+        self._dropped_lock = Lock()
+        self._inflight: list[dict[str, Any]] = []
         self._retry_delay = 0.0
         self._thread = Thread(target=self._loop, daemon=True)
         self._thread.start()
 
     def submit(self, trace_payload: dict[str, Any]) -> None:
+        if self._stop.is_set():
+            # No worker will drain the queue any more.
+            _write_dead_letter([trace_payload], self.config, failure_kind="after_shutdown")
+            self._count_dropped(1)
+            logger.warning("evalops sdk got a trace after shutdown; wrote it to dead-letter")
+            return
         try:
             self.queue.put_nowait(trace_payload)
         except Full:
             # Never block the caller: losing a trace beats stalling the traced call.
-            self._dropped += 1
             logger.warning(
                 "evalops sdk queue full (%s); dropped trace payload, %s dropped so far",
                 self.config.max_queue,
-                self._dropped,
+                self._count_dropped(1),
             )
 
     def flush(self, timeout: float = DEFAULT_TIMEOUT_S) -> bool:
@@ -297,18 +304,25 @@ class BackgroundUploader:
         self._stop.set()
         self._wake.set()
         self._thread.join(timeout=max(0.0, timeout))
-        if self._thread.is_alive():
+        # The batch in flight is not in the queue. If its send still succeeds, the API dedups the replay.
+        left = list(self._inflight) if self._thread.is_alive() else []
+        if left:
             logger.warning("evalops sdk background uploader did not finish its send within %.2fs", timeout)
-        left = self._take_queued()
+        left += self._take_queued()
         if left:
             _write_dead_letter(left, self.config, failure_kind="shutdown_timeout")
-            self._dropped += len(left)
+            self._count_dropped(len(left))
             logger.warning("evalops sdk wrote %s unsent trace payload(s) to dead-letter at shutdown", len(left))
         return not self._thread.is_alive() and not left
 
     @property
     def dropped_count(self) -> int:
         return self._dropped
+
+    def _count_dropped(self, n: int) -> int:
+        with self._dropped_lock:
+            self._dropped += n
+            return self._dropped
 
     def _take_queued(self) -> list[dict[str, Any]]:
         taken: list[dict[str, Any]] = []
@@ -328,9 +342,11 @@ class BackgroundUploader:
                 break
         if not buf:
             return False
+        self._inflight = buf
         try:
             self._handle_batch(buf, requeue_on_failure)
         finally:
+            self._inflight = []
             for _ in buf:
                 self.queue.task_done()
         return True
@@ -349,7 +365,7 @@ class BackgroundUploader:
             self._retry_delay = min(max(self.config.flush_interval, self._retry_delay * 2), MAX_RETRY_DELAY_S)
         else:
             self._write_dead_letter_for_outcome(buf, outcome)
-            self._dropped += len(buf)
+            self._count_dropped(len(buf))
             logger.warning(
                 "evalops sdk dropped %s trace payload(s) after final send failure (http %s)",
                 len(buf),
@@ -373,7 +389,7 @@ class BackgroundUploader:
             try:
                 self.queue.put_nowait(trace_payload)
             except Full:
-                self._dropped += 1
+                self._count_dropped(1)
                 logger.warning("evalops sdk dropped trace payload while requeueing failed batch")
 
     def _send_with_outcome(self, traces: list[dict[str, Any]]) -> _SendOutcome:

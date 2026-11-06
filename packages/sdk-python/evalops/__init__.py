@@ -102,6 +102,9 @@ def instrument_openai() -> bool:
         return True
 
     def wrapped(self: object, *args: object, **kwargs: object) -> object:
+        if kwargs.get("stream"):
+            # shortcut: streams are not traced (the reply only exists after the caller drains it); record it with set_llm.
+            return original(self, *args, **kwargs)
         with _tracer.span(name="openai.chat.completions", type="llm_call") as sp:
             model = kwargs.get("model")
             messages = kwargs.get("messages")

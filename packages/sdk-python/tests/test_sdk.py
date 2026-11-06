@@ -44,6 +44,9 @@ class DummyUploader:
     def flush(self, timeout: float = 5.0) -> bool:
         return True
 
+    def shutdown(self, timeout: float = 5.0) -> bool:
+        return True
+
 
 def test_ping() -> None:
     assert evalops.ping() == "evalops-sdk-ok"
@@ -1259,6 +1262,209 @@ def test_shutdown_is_bounded_and_dead_letters_what_it_could_not_send(monkeypatch
         assert len(files) == 1
         data = json.loads(files[0].read_text(encoding="utf-8"))
         assert data["failure_kind"] == "shutdown_timeout"
-        assert [t["client_trace_id"] for t in data["traces"]] == ["ct_1", "ct_2"]
+        # ct_0 was in flight in the stuck send, not in the queue.
+        assert [t["client_trace_id"] for t in data["traces"]] == ["ct_0", "ct_1", "ct_2"]
+        assert uploader.dropped_count == 3
     finally:
         release.set()
+
+
+def _capture_tracer() -> tuple:
+    tracer = EvalOpsTracer()
+    tracer.init(api_key="k", project="p", disabled=True)
+    tracer._disabled = False
+    uploader = DummyUploader()
+    tracer._uploader = uploader
+    return tracer, uploader
+
+
+class _BadRepr:
+    def __repr__(self) -> str:
+        raise RuntimeError("repr boom")
+
+
+@pytest.mark.parametrize(
+    "odd, expected",
+    [(float("nan"), None), (float("inf"), None), (float("-inf"), None), (_BadRepr(), "<_BadRepr>")],
+    ids=["nan", "inf", "-inf", "raising-repr"],
+)
+def test_odd_values_never_break_the_call_and_the_trace_still_arrives(odd, expected) -> None:
+    tracer, uploader = _capture_tracer()
+
+    @tracer.trace("odd.turn")
+    def turn(value: object) -> object:
+        with tracer.span("llm") as sp:
+            sp.set_io(input={"value": value})
+            sp.set_llm(tokens_in=value, tokens_out=value, cost_usd=value)
+        tracer.set_trace(metadata={"value": value})
+        return value
+
+    assert turn(odd) is odd
+    assert len(uploader.items) == 1
+    payload = uploader.items[0]
+    root, llm = payload["spans"]
+    assert root["input"] == {"args": [expected], "kwargs": {}}
+    assert root["output"] == {"result": expected}
+    assert llm["input"] == {"value": expected}
+    assert llm["tokens_in"] is None and llm["tokens_out"] is None and llm["cost_usd"] is None
+    assert payload["metadata"]["value"] == expected
+    json.dumps(payload, allow_nan=False)
+
+
+def test_payload_failure_keeps_the_original_exception(monkeypatch, caplog) -> None:
+    tracer, uploader = _capture_tracer()
+
+    def _broken(self) -> dict:
+        raise RuntimeError("payload boom")
+
+    monkeypatch.setattr("evalops.tracer.TraceRecord.to_payload", _broken)
+    caplog.set_level(logging.WARNING, logger="evalops.tracer")
+
+    @tracer.trace("broken.payload")
+    def turn() -> None:
+        raise ValueError("original")
+
+    with pytest.raises(ValueError, match="original"):
+        turn()
+    assert uploader.items == []
+    assert "could not build trace payload" in caplog.text
+
+
+def test_trace_rejects_sync_and_async_generators() -> None:
+    tracer, _ = _capture_tracer()
+
+    def gen():
+        yield 1
+
+    async def agen():
+        yield 1
+
+    for func in (gen, agen):
+        with pytest.raises(TypeError, match="generator"):
+            tracer.trace("gen")(func)
+
+
+def test_cancelled_async_trace_is_recorded_as_error() -> None:
+    tracer, uploader = _capture_tracer()
+
+    @tracer.trace("async.cancelled")
+    async def slow() -> None:
+        with tracer.span("wait"):
+            await asyncio.sleep(10)
+
+    async def main() -> None:
+        task = asyncio.ensure_future(slow())
+        await asyncio.sleep(0.01)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    asyncio.run(main())
+    payload = uploader.items[0]
+    assert payload["status"] == "error"
+    assert payload["metadata"]["error"]["type"] == "CancelledError"
+    assert all(span["status"] == "error" for span in payload["spans"])
+
+
+def test_span_after_the_trace_closed_is_a_noop() -> None:
+    tracer, uploader = _capture_tracer()
+    later: list = []
+
+    @tracer.trace("leaky.turn")
+    async def turn() -> None:
+        later.append(asyncio.ensure_future(late_span()))
+
+    async def late_span() -> None:
+        await asyncio.sleep(0.01)
+        with tracer.span("too.late") as sp:
+            sp.set_io(output={"x": 1})
+
+    async def main() -> None:
+        await turn()
+        await later[0]
+
+    asyncio.run(main())
+    assert [span["name"] for span in uploader.items[0]["spans"]] == ["leaky.turn"]
+
+
+def test_submit_after_shutdown_goes_to_dead_letter(tmp_path) -> None:
+    uploader = BackgroundUploader(UploaderConfig(api_url="http://x/v1", api_key="k", dead_letter_dir=tmp_path))
+    assert uploader.shutdown(timeout=1.0) is True
+    uploader.submit({"client_trace_id": "ct_late"})
+    files = list(tmp_path.glob("evalops-dead-letter-*.json"))
+    assert len(files) == 1
+    data = json.loads(files[0].read_text(encoding="utf-8"))
+    assert data["failure_kind"] == "after_shutdown"
+    assert data["traces"] == [{"client_trace_id": "ct_late"}]
+    assert uploader.dropped_count == 1
+    assert uploader.queue.empty()
+
+
+def test_dropped_count_is_exact_under_concurrent_submits(monkeypatch) -> None:
+    release = Event()
+
+    def _stuck_send(traces: list[dict]) -> _SendOutcome:
+        release.wait(timeout=5.0)
+        return _SendOutcome(ok=True)
+
+    uploader = BackgroundUploader(
+        UploaderConfig(api_url="http://x/v1", api_key="k", max_queue=1, max_batch=1, flush_interval=0.01)
+    )
+    monkeypatch.setattr(uploader, "_send_with_outcome", _stuck_send)
+    monkeypatch.setattr("evalops.uploader.logger.warning", lambda *a, **k: None)
+    try:
+        uploader.submit({"client_trace_id": "ct_in_flight"})
+        deadline = time.monotonic() + 1.0
+        while not uploader.queue.empty() and time.monotonic() < deadline:
+            sleep(0.01)
+        uploader.submit({"client_trace_id": "ct_queued"})
+
+        def _burst() -> None:
+            for i in range(2000):
+                uploader.submit({"client_trace_id": f"ct_{i}"})
+
+        threads = [Thread(target=_burst) for _ in range(8)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        assert uploader.dropped_count == 16000
+    finally:
+        release.set()
+        _assert_returns_within(uploader.shutdown, timeout_s=2.0)
+
+
+def test_second_init_shuts_down_the_old_uploader(tmp_path) -> None:
+    tracer = EvalOpsTracer()
+    tracer.init(api_key="k", project="p", api_url="http://127.0.0.1:9/v1")
+    old = tracer._uploader
+    tracer.init(api_key="k", project="p", disabled=True)
+    assert tracer._uploader is None
+    assert old._stop.is_set()
+    assert not old._thread.is_alive()
+
+
+def test_instrument_openai_does_not_trace_streams(monkeypatch) -> None:
+    calls: list[dict] = []
+
+    class Completions:
+        def create(self, *args, **kwargs):
+            calls.append(kwargs)
+            return iter(["chunk"])
+
+    completions = ModuleType("openai.resources.chat.completions")
+    completions.Completions = Completions
+    for name in ("openai", "openai.resources", "openai.resources.chat"):
+        monkeypatch.setitem(sys.modules, name, ModuleType(name))
+    monkeypatch.setitem(sys.modules, "openai.resources.chat.completions", completions)
+    tracer, uploader = _capture_tracer()
+    monkeypatch.setattr(evalops, "_tracer", tracer)
+    assert evalops.instrument_openai() is True
+
+    @tracer.trace("stream.turn")
+    def turn() -> list:
+        return list(Completions().create(model="m", messages=[], stream=True))
+
+    assert turn() == ["chunk"]
+    assert calls == [{"model": "m", "messages": [], "stream": True}]
+    assert [span["name"] for span in uploader.items[0]["spans"]] == ["stream.turn"]
