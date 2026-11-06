@@ -33,21 +33,21 @@ Schibsted Grotesk é a fonte da interface; JetBrains Mono identifica IDs e códi
 
 ## Composição e comportamento
 
-O shell usa navegação de 232px e barra superior de 56px. A navegação mostra projeto, contagem real de traces com erro/parciais e uso mensal de traces. Em telas estreitas, a navegação abre como gaveta, fecha com Escape ou seleção e prende o foco. A Visão geral mantém filtros de ambiente e período em 390px; tabelas longas rolam dentro dos painéis.
+O shell usa navegação de 232px e barra superior de 56px. A navegação mostra projeto, contagem real de traces com erro/parciais e uso mensal de traces. Em telas estreitas (até 760px), a navegação abre como gaveta pelo botão de menu (`aria-expanded`), tem botão de fechar dentro do painel, prende o foco, fecha com Escape, com o fundo, ao trocar de rota ou ao alargar a janela, e devolve o foco ao botão. A barra superior empilha marca e menu, caminho (só no detalhe), busca, e ambiente, avisos e conta, sem sobreposição. A Visão geral mantém filtros de ambiente e período em 390px; tabelas longas rolam dentro dos painéis.
 
 Todos os números vêm de endpoints existentes. Status de ingestão e veredito de avaliação aparecem separados. Estados sem dados usam “Sem dados”; erros e vazios mantêm mensagem e ação. Não são adicionados dados de exemplo ao produto.
 
 ## Limites da API
 
 - A Visão geral não recebe período anterior. Não exibe variação `vs.`. Aprovação e tendência vêm dos relatórios por rubrica. A lista de atenção cobre as últimas 24h, todos os ambientes, e retorna no máximo 25 traces.
-- A lista de traces não aceita filtro de período. Scores e vereditos aparecem somente quando há execução de avaliação.
+- A lista de traces filtra por período em dias inteiros UTC, tag `chave:valor`, usuário, modelo, nota abaixo de um valor, só reprovados, busca livre (`q`) e conversa. Scores e vereditos aparecem somente quando há execução de avaliação.
 - A API não fornece score por versão de prompt nem estado pausado de avaliação. Esses campos mostram “Sem dados”.
 - Datasets retornam até 100 itens por consulta e não expõem estado de build nem total exato acima desse limite.
-- Experimentos retornam métricas por variante, mas não p95 nem histórico completo. Resultados marcados `synthetic` exibem aviso.
+- Experimentos retornam métricas por variante e as 20 execuções mais recentes por experimento, mas não p95. Resultados marcados `synthetic` exibem aviso.
 - A listagem de chaves não inclui último uso. O segredo só aparece na resposta de criação; revogar e excluir pedem confirmação.
 - Exports mostram status, linhas, tamanho, expiração e download autenticado. A listagem carrega 50 por página.
 - Ajustes mostram uso e limites da organização. Gasto do juiz e total de membros não estão disponíveis; membros aparecem em consulta limitada a 50.
 
 ## Verificação
 
-`apps/web` passa `npm run test` (154 testes) e `npm run build`. O build avisa que há outro `package-lock.json` em `/Users/rougger`; a instalação local usou `--package-lock=false`, sem alterar o lock do projeto. A comparação renderizada em 1440px e 390px ficou pendente: o host de navegador do ambiente CUA estava indisponível.
+`apps/web` passa `npm run test` (184 testes), `npx tsc --noEmit` e `npm run build`. Todas as telas do projeto foram abertas em 1280 px e 375 px com a API local em SQLite: sem rolagem lateral da página, sem sobreposição na barra superior, menu do celular operado pelo teclado. Capturas de antes e depois em `docs/audits/img/redesign-*.jpg`.
