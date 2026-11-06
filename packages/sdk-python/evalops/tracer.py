@@ -6,11 +6,13 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from functools import wraps
 import atexit
+import inspect
 import random
 import secrets
-from typing import Any, Callable
+from typing import Any, Callable, Iterator
+from uuid import uuid4
 
-from evalops.uploader import BackgroundUploader, UploaderConfig
+from evalops.uploader import DEFAULT_TIMEOUT_S, BackgroundUploader, UploaderConfig
 
 
 def _utc_iso(dt: datetime) -> str:
@@ -214,42 +216,61 @@ class EvalOpsTracer:
 
     def trace(self, name: str) -> Callable:
         def decorator(func: Callable) -> Callable:
+            if inspect.iscoroutinefunction(func):
+
+                @wraps(func)
+                async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
+                    with self._trace_scope(name, args, kwargs) as root:
+                        result = await func(*args, **kwargs)
+                        if root is not None:
+                            root.set_io(output={"result": _safe(result)})
+                        return result
+
+                return async_wrapper
+
             @wraps(func)
             def wrapper(*args: Any, **kwargs: Any) -> Any:
-                if self._disabled or random.random() > self._sample_rate:
-                    return func(*args, **kwargs)
-                if self._trace_ctx.get() is not None:
-                    return func(*args, **kwargs)
-
-                record = TraceRecord(
-                    client_trace_id=f"ct_{secrets.token_hex(8)}",
-                    name=name,
-                    started_at=_now(),
-                    service=self._service,
-                    environment=self._environment,
-                    tags=self._tags,
-                )
-                token_trace = self._trace_ctx.set(record)
-                token_stack = self._span_stack.set([])
-                try:
-                    with self.span(name=name, type="chain") as root:
-                        root.set_io(input={"args": _safe(list(args)), "kwargs": _safe(kwargs)})
-                        result = func(*args, **kwargs)
+                with self._trace_scope(name, args, kwargs) as root:
+                    result = func(*args, **kwargs)
+                    if root is not None:
                         root.set_io(output={"result": _safe(result)})
                     return result
-                except Exception as exc:  # noqa: BLE001
-                    record.status = "error"
-                    record.error = {"type": exc.__class__.__name__, "message": str(exc)}
-                    raise
-                finally:
-                    self._trace_ctx.reset(token_trace)
-                    self._span_stack.reset(token_stack)
-                    if self._uploader is not None:
-                        self._uploader.submit(record.to_payload())
 
             return wrapper
 
         return decorator
+
+    @contextmanager
+    def _trace_scope(self, name: str, args: tuple, kwargs: dict) -> Iterator[SpanHandle | None]:
+        """Open a trace around one call; yields None when this call is not traced."""
+        if self._disabled or random.random() > self._sample_rate or self._trace_ctx.get() is not None:
+            yield None
+            return
+
+        record = TraceRecord(
+            # Built once per trace: every retry, requeue and dead-letter resends this id, and the API dedups on it.
+            client_trace_id=f"ct_{uuid4().hex}",
+            name=name,
+            started_at=_now(),
+            service=self._service,
+            environment=self._environment,
+            tags=self._tags,
+        )
+        token_trace = self._trace_ctx.set(record)
+        token_stack = self._span_stack.set([])
+        try:
+            with self.span(name=name, type="chain") as root:
+                root.set_io(input={"args": _safe(list(args)), "kwargs": _safe(kwargs)})
+                yield root
+        except Exception as exc:  # noqa: BLE001
+            record.status = "error"
+            record.error = {"type": exc.__class__.__name__, "message": str(exc)}
+            raise
+        finally:
+            self._trace_ctx.reset(token_trace)
+            self._span_stack.reset(token_stack)
+            if self._uploader is not None:
+                self._uploader.submit(record.to_payload())
 
     @contextmanager
     def span(self, name: str, type: str = "chain") -> Any:
@@ -316,10 +337,8 @@ class EvalOpsTracer:
         if tags:
             trace.tags = {**trace.tags, **tags}
 
-    def flush(self) -> None:
-        if self._uploader is not None:
-            self._uploader.flush()
+    def flush(self, timeout: float = DEFAULT_TIMEOUT_S) -> bool:
+        return self._uploader.flush(timeout) if self._uploader is not None else True
 
-    def shutdown(self) -> None:
-        if self._uploader is not None:
-            self._uploader.shutdown()
+    def shutdown(self, timeout: float = DEFAULT_TIMEOUT_S) -> bool:
+        return self._uploader.shutdown(timeout) if self._uploader is not None else True

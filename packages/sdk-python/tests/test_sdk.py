@@ -1,5 +1,8 @@
+import asyncio
 import evalops
 import json
+import logging
+import time
 import subprocess
 import sys
 from decimal import Decimal
@@ -38,8 +41,8 @@ class DummyUploader:
     def submit(self, payload: dict) -> None:
         self.items.append(payload)
 
-    def flush(self) -> None:
-        return
+    def flush(self, timeout: float = 5.0) -> bool:
+        return True
 
 
 def test_ping() -> None:
@@ -697,74 +700,6 @@ def test_requeueable_transient_failure_does_not_write_dead_letter(monkeypatch, t
         _assert_returns_within(uploader.shutdown, timeout_s=1.0)
 
 
-def test_queue_full_fallback_dead_letter_uses_local_send_outcome(
-    monkeypatch,
-    tmp_path,
-) -> None:
-    worker_entered = Event()
-    release_worker = Event()
-    worker_replayed = Event()
-    fallback_sent = Event()
-    worker_calls = {"n": 0}
-
-    def _send_traces_stub(traces, config) -> _SendOutcome:
-        trace_id = traces[0]["client_trace_id"]
-        if trace_id == "ct_worker":
-            worker_calls["n"] += 1
-            if worker_calls["n"] == 1:
-                worker_entered.set()
-                release_worker.wait(timeout=1.0)
-                return _SendOutcome(ok=False, should_dead_letter=True, http_status=503)
-            worker_replayed.set()
-            return _SendOutcome(ok=True)
-        if trace_id == "ct_fallback":
-            fallback_sent.set()
-            return _SendOutcome(ok=False, should_dead_letter=True, http_status=503)
-        return _SendOutcome(ok=True)
-
-    monkeypatch.setattr("evalops.uploader._send_traces", _send_traces_stub)
-
-    uploader = BackgroundUploader(
-        UploaderConfig(
-            api_url="http://localhost:8000/v1",
-            api_key="evk_prod_x",
-            max_queue=1,
-            max_batch=1,
-            max_retries=0,
-            retry_backoff_s=0.0,
-            flush_interval=0.01,
-            submit_timeout_s=0.0,
-            timeout=0.1,
-            dead_letter_dir=tmp_path,
-        )
-    )
-    try:
-        uploader.submit({"client_trace_id": "ct_worker"})
-        assert worker_entered.wait(timeout=1.0), "worker did not enter send"
-
-        uploader.queue.put_nowait({"client_trace_id": "ct_queued"})
-        uploader.submit({"client_trace_id": "ct_fallback"})
-
-        assert fallback_sent.wait(timeout=1.0), "queue-full fallback did not send"
-        files = list(tmp_path.glob("evalops-dead-letter-*.json"))
-        assert len(files) == 1
-        data = json.loads(files[0].read_text(encoding="utf-8"))
-        assert data["http_status"] == 503
-        assert data["trace_count"] == 1
-        assert data["traces"][0]["client_trace_id"] == "ct_fallback"
-        assert uploader.dropped_count == 1
-
-        queued = uploader.queue.get_nowait()
-        assert queued["client_trace_id"] == "ct_queued"
-        release_worker.set()
-        assert worker_replayed.wait(timeout=1.0), "worker payload was not replayed"
-        assert len(list(tmp_path.glob("evalops-dead-letter-*.json"))) == 1
-        assert uploader.dropped_count == 1
-    finally:
-        release_worker.set()
-        _assert_returns_within(uploader.shutdown, timeout_s=1.0)
-
-
 def test_dead_letter_write_error_does_not_raise_or_log_payload(
     monkeypatch,
     tmp_path,
@@ -966,34 +901,6 @@ def test_replay_dead_letter_skips_invalid_unknown_and_unexpected_files(tmp_path)
     assert any("unsupported dead-letter version" in error for error in result.errors)
 
 
-def test_background_uploader_queue_full_fallback_no_silent_drop(monkeypatch) -> None:
-    uploader = BackgroundUploader(
-        UploaderConfig(
-            api_url="http://localhost:8000/v1",
-            api_key="evk_prod_x",
-            max_queue=1,
-            flush_interval=60.0,
-            submit_timeout_s=0.0,
-            timeout=0.1,
-        )
-    )
-    sent = {"n": 0}
-
-    def _fake_send(traces: list[dict]) -> _SendOutcome:
-        sent["n"] += 1
-        return _SendOutcome(ok=True)
-
-    monkeypatch.setattr(uploader, "_send_with_outcome", _fake_send)
-
-    try:
-        uploader.submit({"client_trace_id": "ct_first"})
-        uploader.submit({"client_trace_id": "ct_overflow"})
-        assert sent["n"] >= 1  # fallback path executed
-        assert uploader.dropped_count == 0
-    finally:
-        uploader.shutdown()
-
-
 class _StatusClient:
     """httpx.Client stand-in that answers every POST with a fixed status."""
 
@@ -1167,3 +1074,191 @@ def test_set_trace_describes_only_the_current_trace() -> None:
     assert first["tags"] == {"app": "x", "canal": "wa"}
     assert second["tags"] == {"app": "x"}
     assert "conversation_id" not in second["metadata"]
+
+
+def test_async_trace_records_real_duration_spans_and_output() -> None:
+    tracer = EvalOpsTracer()
+    tracer.init(api_key="k", project="p", disabled=True)
+    tracer._disabled = False
+    uploader = DummyUploader()
+    tracer._uploader = uploader
+
+    async def lookup(key: str) -> str:
+        with tracer.span(f"lookup.{key}", type="tool_call") as sp:
+            await asyncio.sleep(0.02)
+            sp.set_io(output={"key": key})
+        return key
+
+    @tracer.trace("async.turn")
+    async def turn(msg: str) -> dict:
+        with tracer.span("llm.generate", type="llm_call"):
+            await asyncio.sleep(0.05)
+        found = await asyncio.gather(lookup("a"), lookup("b"))
+        return {"reply": msg.upper(), "found": found}
+
+    assert asyncio.run(turn("oi")) == {"reply": "OI", "found": ["a", "b"]}
+    assert len(uploader.items) == 1
+    payload = uploader.items[0]
+    root, *children = payload["spans"]
+    assert root["output"] == {"result": {"reply": "OI", "found": ["a", "b"]}}
+    duration = _parse(payload["ended_at"]) - _parse(payload["started_at"])
+    assert duration >= 0.07
+    assert sorted(span["name"] for span in children) == ["llm.generate", "lookup.a", "lookup.b"]
+    assert all(span["parent_client_span_id"] == root["client_span_id"] for span in children)
+
+
+def test_async_trace_records_the_error_and_reraises() -> None:
+    tracer = EvalOpsTracer()
+    tracer.init(api_key="k", project="p", disabled=True)
+    tracer._disabled = False
+    uploader = DummyUploader()
+    tracer._uploader = uploader
+
+    @tracer.trace("async.fails")
+    async def fails() -> None:
+        await asyncio.sleep(0)
+        raise RuntimeError("boom")
+
+    with pytest.raises(RuntimeError, match="boom"):
+        asyncio.run(fails())
+    assert uploader.items[0]["status"] == "error"
+    assert uploader.items[0]["metadata"]["error"] == {"type": "RuntimeError", "message": "boom"}
+
+
+def _parse(value: str) -> float:
+    from datetime import datetime
+
+    return datetime.fromisoformat(value).timestamp()
+
+
+def test_full_queue_drops_without_blocking_the_caller(monkeypatch, caplog) -> None:
+    release = Event()
+
+    def _stuck_send(traces: list[dict]) -> _SendOutcome:
+        release.wait(timeout=5.0)
+        return _SendOutcome(ok=True)
+
+    uploader = BackgroundUploader(
+        UploaderConfig(api_url="http://x/v1", api_key="k", max_queue=1, max_batch=1, flush_interval=0.01)
+    )
+    monkeypatch.setattr(uploader, "_send_with_outcome", _stuck_send)
+    try:
+        uploader.submit({"client_trace_id": "ct_in_flight"})
+        deadline = time.monotonic() + 1.0
+        while not uploader.queue.empty() and time.monotonic() < deadline:
+            sleep(0.01)
+        uploader.submit({"client_trace_id": "ct_queued"})
+        caplog.set_level(logging.WARNING, logger="evalops.uploader")
+        started = time.monotonic()
+        for i in range(20):
+            uploader.submit({"client_trace_id": f"ct_overflow_{i}"})
+        assert time.monotonic() - started < 0.1
+        assert uploader.dropped_count == 20
+        assert "queue full" in caplog.text
+    finally:
+        release.set()
+        _assert_returns_within(uploader.shutdown, timeout_s=2.0)
+
+
+def test_2xx_with_errors_logs_each_rejected_trace(monkeypatch, caplog) -> None:
+    body = {
+        "ingested": 1,
+        "errors": [
+            {"index": 1, "client_trace_id": "ct_bad", "message": "ingest_failed"},
+            {"index": 2, "client_trace_id": "ct_worse", "message": "ingest_failed"},
+        ],
+    }
+    client = type(
+        "Client",
+        (_StatusClient,),
+        {"status": 202, "calls": 0, "post": lambda self, *a, **k: SimpleNamespace(status_code=202, json=lambda: body)},
+    )
+    monkeypatch.setattr("evalops.uploader.httpx.Client", client)
+    caplog.set_level(logging.WARNING, logger="evalops.uploader")
+    uploader = BackgroundUploader(UploaderConfig(api_url="http://x/v1", api_key="k", flush_interval=60.0))
+    try:
+        uploader.submit({"client_trace_id": "ct_ok"})
+        assert uploader.flush(timeout=1.0) is True
+        assert "ct_bad" in caplog.text and "ct_worse" in caplog.text
+        assert "ct_ok" not in caplog.text
+    finally:
+        _assert_returns_within(uploader.shutdown, timeout_s=1.0)
+
+
+def test_retries_resend_the_same_client_trace_id(monkeypatch) -> None:
+    sent: list[str] = []
+
+    class _Client(_StatusClient):
+        def post(self, *args, **kwargs):
+            sent.extend(t["client_trace_id"] for t in kwargs["json"]["traces"])
+            return SimpleNamespace(status_code=503 if len(sent) < 3 else 202, json=lambda: {})
+
+    monkeypatch.setattr("evalops.uploader.sleep", lambda seconds: None)
+    monkeypatch.setattr("evalops.uploader.httpx.Client", _Client)
+    tracer = EvalOpsTracer()
+    tracer.init(api_key="k", project="p", api_url="http://x/v1")
+
+    @tracer.trace("retry.turn")
+    def turn() -> str:
+        return "ok"
+
+    try:
+        turn()
+        assert tracer.flush(timeout=2.0) is True
+        assert len(sent) == 3
+        assert len(set(sent)) == 1 and sent[0].startswith("ct_")
+        turn()
+        assert tracer.flush(timeout=2.0) is True
+        assert sent[3] != sent[0]
+    finally:
+        _assert_returns_within(tracer.shutdown, timeout_s=2.0)
+
+
+def test_shutdown_sends_pending_traces() -> None:
+    _CaptureHandler.events = []
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _CaptureHandler)
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    tracer = EvalOpsTracer()
+    tracer.init(api_key="k", project="p", api_url=f"http://127.0.0.1:{server.server_port}/v1")
+    tracer._uploader.config.flush_interval = 60.0
+
+    @tracer.trace("pending.turn")
+    def turn() -> str:
+        return "ok"
+
+    try:
+        turn()
+        assert tracer.shutdown(timeout=2.0) is True
+        names = [t["name"] for event in _CaptureHandler.events for t in event["payload"]["traces"]]
+        assert names == ["pending.turn"]
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_shutdown_is_bounded_and_dead_letters_what_it_could_not_send(monkeypatch, tmp_path) -> None:
+    release = Event()
+
+    def _stuck_send(traces: list[dict]) -> _SendOutcome:
+        release.wait(timeout=5.0)
+        return _SendOutcome(ok=True)
+
+    uploader = BackgroundUploader(
+        UploaderConfig(api_url="http://x/v1", api_key="k", max_batch=1, flush_interval=0.01, dead_letter_dir=tmp_path)
+    )
+    monkeypatch.setattr(uploader, "_send_with_outcome", _stuck_send)
+    try:
+        for i in range(3):
+            uploader.submit({"client_trace_id": f"ct_{i}"})
+        assert uploader.flush(timeout=0.1) is False
+        started = time.monotonic()
+        assert uploader.shutdown(timeout=0.2) is False
+        assert time.monotonic() - started < 1.0
+        files = list(tmp_path.glob("evalops-dead-letter-*.json"))
+        assert len(files) == 1
+        data = json.loads(files[0].read_text(encoding="utf-8"))
+        assert data["failure_kind"] == "shutdown_timeout"
+        assert [t["client_trace_id"] for t in data["traces"]] == ["ct_1", "ct_2"]
+    finally:
+        release.set()

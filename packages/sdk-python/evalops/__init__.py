@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from evalops.tracer import EvalOpsTracer
-from evalops.uploader import ReplayResult, replay_dead_letter as _replay_dead_letter
+from evalops.uploader import DEFAULT_TIMEOUT_S, ReplayResult, replay_dead_letter as _replay_dead_letter
 
 _tracer = EvalOpsTracer()
 
@@ -56,13 +56,17 @@ def set_trace(
     _tracer.set_trace(conversation_id=conversation_id, batch=batch, user_ref=user_ref, tags=tags, metadata=metadata)
 
 
-def flush() -> None:
-    _tracer.flush()
+def flush(timeout: float = DEFAULT_TIMEOUT_S) -> bool:
+    """Wait up to ``timeout`` seconds for queued traces to be sent. False if some are still pending."""
+    return _tracer.flush(timeout)
 
 
-def shutdown() -> None:
-    """Stop the uploader and send what is queued. Also runs at normal process exit."""
-    _tracer.shutdown()
+def shutdown(timeout: float = DEFAULT_TIMEOUT_S) -> bool:
+    """Stop the uploader within ``timeout`` seconds; unsent traces go to dead-letter.
+
+    Also runs at normal process exit. False if something was left unsent.
+    """
+    return _tracer.shutdown(timeout)
 
 
 def replay_dead_letter(

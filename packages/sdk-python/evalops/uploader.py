@@ -22,6 +22,8 @@ DEAD_LETTER_VERSION = 1
 DEAD_LETTER_ENV = "EVALOPS_DEAD_LETTER_DIR"
 DEAD_LETTER_PREFIX = "evalops-dead-letter-"
 MAX_RETRY_DELAY_S = 60.0
+# Bound for flush() and shutdown(), including the one at process exit.
+DEFAULT_TIMEOUT_S = 5.0
 
 
 @dataclass
@@ -34,7 +36,6 @@ class UploaderConfig:
     timeout: float = 5.0
     max_retries: int = 2
     retry_backoff_s: float = 0.2
-    submit_timeout_s: float = 0.05
     dead_letter_dir: str | Path | None = None
 
 
@@ -165,6 +166,7 @@ def _send_traces(
             with httpx.Client(timeout=config.timeout) as client:
                 response = client.post(f"{config.api_url}/traces", headers=headers, json=payload)
             if 200 <= response.status_code < 300:
+                _log_rejected(response)
                 return _SendOutcome(ok=True)
             last_status = response.status_code
             if response.status_code not in (408, 429) and response.status_code < 500:
@@ -176,6 +178,22 @@ def _send_traces(
         sleep(config.retry_backoff_s * (2**attempt))
         attempt += 1
     return _SendOutcome(ok=False, should_dead_letter=False)
+
+
+def _log_rejected(response: Any) -> None:
+    # A 2xx can still reject single traces in errors[]: resending them cannot succeed.
+    try:
+        errors = response.json().get("errors") or []
+    except Exception:  # noqa: BLE001
+        return
+    for error in errors:
+        if isinstance(error, dict):
+            logger.warning(
+                "evalops api rejected trace %s (index %s): %s",
+                error.get("client_trace_id"),
+                error.get("index"),
+                error.get("message"),
+            )
 
 
 def _candidate_files(path: Path) -> list[Path]:
@@ -248,6 +266,7 @@ class BackgroundUploader:
         self.config = config
         self.queue: Queue[dict[str, Any]] = Queue(maxsize=config.max_queue)
         self._stop = Event()
+        self._wake = Event()
         self._dropped = 0
         self._retry_delay = 0.0
         self._thread = Thread(target=self._loop, daemon=True)
@@ -255,40 +274,50 @@ class BackgroundUploader:
 
     def submit(self, trace_payload: dict[str, Any]) -> None:
         try:
-            self.queue.put(trace_payload, timeout=self.config.submit_timeout_s)
+            self.queue.put_nowait(trace_payload)
         except Full:
-            # Queue full: fallback to direct send so payload is not dropped
-            # silently. If it still fails after retries, count as dropped.
-            outcome = self._send_with_outcome([trace_payload])
-            if not outcome.ok:
-                self._write_dead_letter_for_outcome([trace_payload], outcome)
-                self._dropped += 1
-                logger.warning("evalops sdk dropped trace payload after queue-full fallback")
+            # Never block the caller: losing a trace beats stalling the traced call.
+            self._dropped += 1
+            logger.warning(
+                "evalops sdk queue full (%s); dropped trace payload, %s dropped so far",
+                self.config.max_queue,
+                self._dropped,
+            )
 
-    def flush(self) -> None:
-        while self._send_buffered(requeue_on_failure=False):
-            pass
+    def flush(self, timeout: float = DEFAULT_TIMEOUT_S) -> bool:
+        """Wait up to ``timeout`` for the worker to finish what is queued. False if it did not."""
+        if not self._thread.is_alive():
+            return not self.queue.unfinished_tasks
+        self._wake.set()
+        with self.queue.all_tasks_done:
+            return self.queue.all_tasks_done.wait_for(lambda: not self.queue.unfinished_tasks, max(0.0, timeout))
 
-    def shutdown(self) -> None:
+    def shutdown(self, timeout: float = DEFAULT_TIMEOUT_S) -> bool:
+        """Stop the worker within ``timeout``; what it could not send goes to dead-letter."""
         self._stop.set()
-        join_timeout = self._shutdown_join_timeout()
-        self._thread.join(timeout=join_timeout)
+        self._wake.set()
+        self._thread.join(timeout=max(0.0, timeout))
         if self._thread.is_alive():
-            logger.warning("evalops sdk background uploader did not stop within %.2fs", join_timeout)
-            return
-        self.flush()
+            logger.warning("evalops sdk background uploader did not finish its send within %.2fs", timeout)
+        left = self._take_queued()
+        if left:
+            _write_dead_letter(left, self.config, failure_kind="shutdown_timeout")
+            self._dropped += len(left)
+            logger.warning("evalops sdk wrote %s unsent trace payload(s) to dead-letter at shutdown", len(left))
+        return not self._thread.is_alive() and not left
 
     @property
     def dropped_count(self) -> int:
         return self._dropped
 
-    def _shutdown_join_timeout(self) -> float:
-        retries = max(0, self.config.max_retries)
-        attempts = retries + 1
-        retry_backoff = max(0.0, self.config.retry_backoff_s)
-        backoff_budget = sum(retry_backoff * (2**attempt) for attempt in range(retries))
-        request_budget = attempts * max(0.0, self.config.timeout)
-        return max(1.0, request_budget + backoff_budget + 0.1)
+    def _take_queued(self) -> list[dict[str, Any]]:
+        taken: list[dict[str, Any]] = []
+        while True:
+            try:
+                taken.append(self.queue.get_nowait())
+            except Empty:
+                return taken
+            self.queue.task_done()
 
     def _send_buffered(self, requeue_on_failure: bool = True) -> bool:
         buf: list[dict[str, Any]] = []
@@ -299,10 +328,18 @@ class BackgroundUploader:
                 break
         if not buf:
             return False
+        try:
+            self._handle_batch(buf, requeue_on_failure)
+        finally:
+            for _ in buf:
+                self.queue.task_done()
+        return True
+
+    def _handle_batch(self, buf: list[dict[str, Any]], requeue_on_failure: bool) -> None:
         outcome = self._send_with_outcome(buf)
         if outcome.ok:
             self._retry_delay = 0.0
-            return True
+            return
         # Do not requeue once shutdown started: a final failed send during
         # shutdown must be counted as dropped on this first failure path so
         # shutdown() does not need a second _send() within the budget.
@@ -318,15 +355,16 @@ class BackgroundUploader:
                 len(buf),
                 outcome.http_status,
             )
-        return True
 
     def _loop(self) -> None:
         while not self._stop.is_set():
             sent = self._send_buffered()
             if not sent:
-                self._stop.wait(self.config.flush_interval)
+                self._wake.wait(self.config.flush_interval)
             elif self._retry_delay:
-                self._stop.wait(self._retry_delay)
+                self._wake.wait(self._retry_delay)
+            # Cleared after the wait so a flush() during a send is not lost.
+            self._wake.clear()
         while self._send_buffered(requeue_on_failure=False):
             pass
 
