@@ -22,6 +22,7 @@ from decimal import Decimal
 from typing import Any
 
 from app.domain.evaluators import llm_judge
+from app.domain.services.eval_service import judge_budget_status
 from app.infra.llm.pricing import compute_cost_usd, estimate_tokens
 from app.models import Span, Trace
 from app.security import new_id
@@ -58,7 +59,7 @@ def _utcnow() -> datetime:
 
 def _load_trace_or_fail(db, trace_id: str) -> Trace:
     trace = db.get(Trace, trace_id)
-    if trace is None:
+    if trace is None or trace.deleted_at is not None:
         raise ValueError(f"trace_not_found:{trace_id}")
     return trace
 
@@ -132,7 +133,7 @@ async def _call_provider(
     route = f"{provider}/{model}" if provider and not override else (model or "")
 
     if route.startswith("cli:"):
-        raise ValueError("cli_judge_not_supported_in_replay")
+        raise llm_judge.JudgeNotConfigured("cli_judge_not_supported_in_replay")
 
     def _sync() -> str:
         return llm_judge.call_llm(route, messages, 0.0)
@@ -212,11 +213,23 @@ async def replay_trace(ctx: dict, original_trace_id: str, new_trace_id: str) -> 
 
     with db_factory() as db:
         try:
-            original = _load_trace_or_fail(db, original_trace_id)
             placeholder = _load_trace_or_fail(db, new_trace_id)
         except ValueError as exc:
             logger.error("replay.failed", extra={"trace_id": new_trace_id, "reason": str(exc)})
             return {"status": "failed", "reason": str(exc)}
+        try:
+            original = _load_trace_or_fail(db, original_trace_id)
+        except ValueError:
+            _set_replay_status(db, placeholder, "failed", error="original_trace_not_found")
+            logger.error("replay.failed", extra={"trace_id": new_trace_id, "reason": "original_trace_not_found"})
+            return {"status": "failed", "reason": "original_trace_not_found"}
+
+        # The budget may run out between the request and the job.
+        has_budget, _spent, _budget = judge_budget_status(placeholder.project_id, db)
+        if not has_budget:
+            _set_replay_status(db, placeholder, "failed", error="judge_budget_exhausted")
+            logger.error("replay.failed", extra={"trace_id": new_trace_id, "reason": "judge_budget_exhausted"})
+            return {"status": "failed", "reason": "judge_budget_exhausted"}
 
         _set_replay_status(db, placeholder, "running")
 
@@ -238,12 +251,14 @@ async def replay_trace(ctx: dict, original_trace_id: str, new_trace_id: str) -> 
         try:
             result = await _call_provider(llm_span.provider, model, messages, override=bool(override_model))
         except Exception as exc:  # noqa: BLE001
-            _set_replay_status(db, placeholder, "failed", error=type(exc).__name__)
+            # JudgeNotConfigured carries our own safe codes (unsupported provider, missing key).
+            reason = str(exc) if isinstance(exc, llm_judge.JudgeNotConfigured) else type(exc).__name__
+            _set_replay_status(db, placeholder, "failed", error=reason)
             logger.error(
                 "replay.failed",
-                extra={"trace_id": new_trace_id, "reason": type(exc).__name__},
+                extra={"trace_id": new_trace_id, "reason": reason},
             )
-            return {"status": "failed", "reason": type(exc).__name__}
+            return {"status": "failed", "reason": reason}
 
         _ingest_replay_result(db, placeholder, llm_span, messages, result)
         _set_replay_status(db, placeholder, "completed")

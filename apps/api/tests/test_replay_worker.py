@@ -256,6 +256,72 @@ def test_replay_trace_provider_error_marks_failed(monkeypatch) -> None:
         assert ph.status == "partial"
 
 
+def test_replay_trace_missing_original_marks_failed(monkeypatch) -> None:
+    org_id, project_id = _seed_project()
+    placeholder_id = _seed_placeholder(org_id, project_id, "tr_gone")
+    monkeypatch.setattr(llm_judge, "call_llm", lambda *a, **k: pytest.fail("não deveria chamar o provider"))
+
+    result = asyncio.run(replay_trace(_ctx(), "tr_gone", placeholder_id))
+    assert result == {"status": "failed", "reason": "original_trace_not_found"}
+    with SessionLocal() as db:
+        ph = db.get(Trace, placeholder_id)
+        assert ph.metadata_json["replay_status"] == "failed"
+        assert ph.metadata_json["replay_error"] == "original_trace_not_found"
+
+
+def test_replay_trace_missing_placeholder_returns_failed() -> None:
+    org_id, project_id = _seed_project()
+    original_id = _seed_original_trace_with_llm_span(org_id, project_id)
+    result = asyncio.run(replay_trace(_ctx(), original_id, "tr_missing"))
+    assert result["status"] == "failed"
+    assert result["reason"] == "trace_not_found:tr_missing"
+
+
+def test_replay_trace_budget_exhausted_marks_failed(monkeypatch) -> None:
+    from app.workers import replay_worker
+
+    org_id, project_id = _seed_project()
+    original_id = _seed_original_trace_with_llm_span(org_id, project_id)
+    placeholder_id = _seed_placeholder(org_id, project_id, original_id)
+    monkeypatch.setattr(replay_worker, "judge_budget_status", lambda project, db: (False, 20.0, 20.0))
+    monkeypatch.setattr(llm_judge, "call_llm", lambda *a, **k: pytest.fail("não deveria chamar o provider"))
+
+    result = asyncio.run(replay_trace(_ctx(), original_id, placeholder_id))
+    assert result == {"status": "failed", "reason": "judge_budget_exhausted"}
+    with SessionLocal() as db:
+        assert db.get(Trace, placeholder_id).metadata_json["replay_error"] == "judge_budget_exhausted"
+
+
+def test_replay_trace_unsupported_provider_has_clear_error(monkeypatch) -> None:
+    org_id, project_id = _seed_project()
+    original_id = _seed_original_trace_with_llm_span(org_id, project_id)
+    placeholder_id = _seed_placeholder(org_id, project_id, original_id, rerun_model="anthropic/claude-x")
+    monkeypatch.setattr(llm_judge, "call_llm", llm_judge._call_llm)
+
+    result = asyncio.run(replay_trace(_ctx(), original_id, placeholder_id))
+    assert result["reason"] == "unsupported_judge_provider:anthropic"
+    with SessionLocal() as db:
+        assert db.get(Trace, placeholder_id).metadata_json["replay_error"] == "unsupported_judge_provider:anthropic"
+
+
+def test_replay_cost_counts_toward_judge_budget(monkeypatch) -> None:
+    from app.domain.services.eval_service import judge_budget_status
+
+    org_id, project_id = _seed_project()
+    original_id = _seed_original_trace_with_llm_span(org_id, project_id)
+    placeholder_id = _seed_placeholder(org_id, project_id, original_id)
+    monkeypatch.setattr(llm_judge, "call_llm", lambda *a, **k: "resposta " * 200)
+
+    with SessionLocal() as db:
+        _, spent_before, _ = judge_budget_status(project_id, db)
+    assert asyncio.run(replay_trace(_ctx(), original_id, placeholder_id))["status"] == "completed"
+    with SessionLocal() as db:
+        replay_cost = float(db.get(Trace, placeholder_id).total_cost_usd)
+        _, spent_after, _ = judge_budget_status(project_id, db)
+    assert replay_cost > 0
+    assert spent_after == pytest.approx(spent_before + replay_cost)
+
+
 def test_build_messages_handles_non_dict_entries_and_missing_content() -> None:
     span = Span(
         id="sp",

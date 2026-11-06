@@ -9,6 +9,7 @@ from app.domain.services.rag_service import consolidate_rag
 from app.db import get_db
 from app.deps import get_current_user
 from app.domain.services.audit_service import record_audit
+from app.domain.services.eval_service import judge_budget_status
 from app.workers.queue import get_arq_pool
 from app.models import Span, Trace, TraceFlag, User, utcnow
 from app.ownership import load_trace
@@ -205,6 +206,13 @@ async def rerun_trace(
     arq_pool=Depends(get_arq_pool),
 ) -> dict:
     trace = load_trace(db, user.id, trace_id)
+    # Replay calls the provider with platform keys, so it spends the same judge budget.
+    has_budget, spent, budget = judge_budget_status(trace.project_id, db)
+    if not has_budget:
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail={"error": "judge_budget_exhausted", "spent_usd": round(spent, 6), "budget_usd": round(budget, 6)},
+        )
     now = utcnow()
     metadata = dict(trace.metadata_json or {})
     metadata.update(
@@ -240,19 +248,6 @@ async def rerun_trace(
     org_id = trace.organization_id
     actor_id = user.id
 
-    try:
-        await arq_pool.enqueue_job(
-            "replay_trace",
-            original_trace_id=original_id,
-            new_trace_id=new_trace_id,
-        )
-    except Exception as exc:
-        db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="replay_unavailable",
-        ) from exc
-
     record_audit(
         db,
         "trace.rerun_requested",
@@ -266,7 +261,27 @@ async def rerun_trace(
             "variables": payload.variables,
         },
     )
+    # Commit before enqueueing: the worker opens its own session and must find the placeholder.
     db.commit()
+
+    try:
+        await arq_pool.enqueue_job(
+            "replay_trace",
+            original_trace_id=original_id,
+            new_trace_id=new_trace_id,
+        )
+    except Exception as exc:
+        # Never leave a placeholder stuck in `queued` with no job behind it.
+        failed = dict(new_trace.metadata_json or {})
+        failed.update({"replay_status": "failed", "replay_error": "queue_unavailable", "replay_finished_at": utcnow().isoformat()})
+        new_trace.metadata_json = failed
+        db.add(new_trace)
+        db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="replay_unavailable",
+        ) from exc
+
     return {"new_trace_id": new_trace_id, "status": "queued", "replay_status": "queued"}
 
 

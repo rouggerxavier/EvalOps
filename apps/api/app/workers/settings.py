@@ -9,6 +9,7 @@ from typing import Any
 
 from app.config import redis_url, worker_concurrency
 from app.workers.evaluation_worker import evaluate_trace_job
+from app.workers.maintenance_worker import maintenance_cleanup_job, maintenance_hour
 from app.workers.replay_worker import replay_trace
 
 logger = logging.getLogger("evalops.worker")
@@ -35,8 +36,15 @@ async def shutdown(ctx: dict) -> None:
     logger.info("worker.shutdown")
 
 
+def _cron_jobs() -> list:
+    from arq import cron
+
+    return [cron(maintenance_cleanup_job, hour=maintenance_hour(), minute=0)]
+
+
 class WorkerSettings:
     functions: list = [replay_trace, evaluate_trace_job]
+    cron_jobs = _cron_jobs()
     redis_settings = _redis_settings()
     max_jobs = worker_concurrency()
     on_startup = startup

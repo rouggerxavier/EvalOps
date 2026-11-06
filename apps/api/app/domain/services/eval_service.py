@@ -84,7 +84,14 @@ def _judge_spent_this_month(project_id: str, db: Session) -> float:
         for (by_variant,) in experiment_runs
         for metrics in (by_variant or {}).values()
     )
-    return float(spent) + experiments
+    # Replays call the provider with platform keys; their cost lives on the placeholder trace.
+    replays = db.query(func.sum(Trace.total_cost_usd)).filter(
+        Trace.project_id.in_(org_projects),
+        Trace.metadata_json["replay_of"].as_string().isnot(None),
+        extract("year", Trace.created_at) == now.year,
+        extract("month", Trace.created_at) == now.month,
+    ).scalar() or 0.0
+    return float(spent) + experiments + float(replays)
 
 
 def _budget_for_project(project_id: str, db: Session) -> float:

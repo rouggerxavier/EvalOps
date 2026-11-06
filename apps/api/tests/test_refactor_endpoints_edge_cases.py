@@ -702,6 +702,73 @@ def test_rerun_trace_returns_503_when_enqueue_raises(fake_arq_pool) -> None:
             app.dependency_overrides.pop(get_arq_pool, None)
     assert response.status_code == 503
     assert response.json()["detail"] == "replay_unavailable"
+    with SessionLocal() as db:
+        placeholders = db.query(Trace).filter(Trace.metadata_json["replay_of"].as_string() == trace_id).all()
+        assert len(placeholders) == 1
+        assert placeholders[0].metadata_json["replay_status"] == "failed", "nada pode ficar preso em queued"
+        assert placeholders[0].metadata_json["replay_error"] == "queue_unavailable"
+
+
+def test_rerun_trace_commits_placeholder_before_enqueue() -> None:
+    from app.workers.queue import get_arq_pool
+
+    _restore = app.dependency_overrides.get(get_arq_pool)
+    client = TestClient(app)
+    headers, _, api_key = _bootstrap(client)
+    trace_id = _ingest_trace(client, api_key, status="ok")
+    seen: list[bool] = []
+
+    class _CheckingPool:
+        async def enqueue_job(self, function_name, *, original_trace_id, new_trace_id):
+            # The worker uses its own session: the placeholder must already be committed.
+            with SessionLocal() as other:
+                seen.append(other.get(Trace, new_trace_id) is not None)
+
+    app.dependency_overrides[get_arq_pool] = lambda: _CheckingPool()
+    try:
+        response = client.post(f"/v1/traces/{trace_id}/rerun", headers=headers, json={"model": None, "variables": {}})
+    finally:
+        if _restore is not None:
+            app.dependency_overrides[get_arq_pool] = _restore
+        else:
+            app.dependency_overrides.pop(get_arq_pool, None)
+    assert response.status_code == 200, response.text
+    assert seen == [True]
+
+
+def test_rerun_trace_blocked_when_judge_budget_exhausted(fake_arq_pool) -> None:
+    fake_arq_pool.jobs.clear()
+    client = TestClient(app)
+    headers, project_id, api_key = _bootstrap(client)
+    trace_id = _ingest_trace(client, api_key, status="ok")
+    now = datetime.now(timezone.utc)
+    with SessionLocal() as db:
+        original = db.get(Trace, trace_id)
+        # A past replay whose cost already ate the whole monthly judge budget.
+        db.add(
+            Trace(
+                id=new_id("tr"),
+                project_id=project_id,
+                organization_id=original.organization_id,
+                name="old.replay",
+                environment="prod",
+                status="ok",
+                started_at=now,
+                ended_at=now,
+                duration_ms=1,
+                total_cost_usd=10_000,
+                metadata_json={"replay_of": trace_id, "replay_status": "completed"},
+            )
+        )
+        db.commit()
+
+    response = client.post(f"/v1/traces/{trace_id}/rerun", headers=headers, json={"model": None, "variables": {}})
+    assert response.status_code == 402, response.text
+    assert response.json()["detail"]["error"] == "judge_budget_exhausted"
+    assert fake_arq_pool.jobs == []
+    with SessionLocal() as db:
+        queued = db.query(Trace).filter(Trace.metadata_json["replay_status"].as_string() == "queued").all()
+        assert queued == []
 
 
 def test_members_listing_paginates_with_cursor() -> None:
