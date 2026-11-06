@@ -65,18 +65,43 @@ def test_worker_settings_schedules_daily_maintenance_cleanup(monkeypatch) -> Non
     importlib.reload(settings_module)
 
 
-def test_maintenance_cleanup_job_applies_run_all() -> None:
+def test_worker_settings_cron_timezone_is_explicit(monkeypatch) -> None:
+    from datetime import timezone
+    from zoneinfo import ZoneInfo
+
+    import app.workers.settings as settings_module
+
+    monkeypatch.delenv("EVALOPS_MAINTENANCE_TZ", raising=False)
+    importlib.reload(settings_module)
+    assert settings_module.WorkerSettings.timezone is timezone.utc
+
+    monkeypatch.setenv("EVALOPS_MAINTENANCE_TZ", "America/Sao_Paulo")
+    importlib.reload(settings_module)
+    assert settings_module.WorkerSettings.timezone == ZoneInfo("America/Sao_Paulo")
+
+    monkeypatch.setenv("EVALOPS_MAINTENANCE_TZ", "Not/AZone")
+    importlib.reload(settings_module)
+    assert settings_module.WorkerSettings.timezone is timezone.utc
+    monkeypatch.delenv("EVALOPS_MAINTENANCE_TZ", raising=False)
+    importlib.reload(settings_module)
+
+
+def test_maintenance_cleanup_job_applies_run_all_in_batches(monkeypatch) -> None:
     import asyncio
     from datetime import datetime, timedelta, timezone
 
     from app.db import SessionLocal
     from app.models import RevokedToken
-    from app.workers.maintenance_worker import maintenance_cleanup_job
+    from app.workers import maintenance_worker
 
+    monkeypatch.setattr(maintenance_worker, "CLEANUP_BATCH_SIZE", 2)
+    now = datetime.now(timezone.utc)
     with SessionLocal() as db:
-        db.add(RevokedToken(jti="jti_old", expires_at=datetime.now(timezone.utc) - timedelta(days=1)))
+        for i in range(5):
+            db.add(RevokedToken(jti=f"jti_old_{i}", expires_at=now - timedelta(days=1)))
+        db.add(RevokedToken(jti="jti_live", expires_at=now + timedelta(days=1)))
         db.commit()
-    totals = asyncio.run(maintenance_cleanup_job({"db_session_factory": SessionLocal}))
-    assert totals["deleted_rows"] >= 1
+    totals = asyncio.run(maintenance_worker.maintenance_cleanup_job({"db_session_factory": SessionLocal}))
+    assert totals["deleted_rows"] == 5
     with SessionLocal() as db:
-        assert db.get(RevokedToken, "jti_old") is None
+        assert [row.jti for row in db.query(RevokedToken).all()] == ["jti_live"]

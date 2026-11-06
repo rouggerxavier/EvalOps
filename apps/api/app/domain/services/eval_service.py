@@ -14,7 +14,7 @@ from app.domain.rubrics.outcomes import raised_flags as _raised_flags
 from app.domain.rubrics.resolver import build_conversation_context, build_trace_context, resolve_dotpath
 from app.domain.services.audit_service import record_audit
 from app.infra.llm.cli_judge import is_cli_model
-from app.domain.services.usage_service import apply_usage_with_quota, enforce_quota, judge_budget_for_org
+from app.domain.services.usage_service import apply_usage_with_quota, current_period, enforce_quota, judge_budget_for_org
 from app.models import (
     EvaluationRun,
     EvaluationScore,
@@ -26,6 +26,7 @@ from app.models import (
     RubricVersion,
     Span,
     Trace,
+    UsageCounter,
 )
 from app.safe_errors import is_safe_public_text, safe_message
 from app.security import new_id
@@ -84,12 +85,10 @@ def _judge_spent_this_month(project_id: str, db: Session) -> float:
         for (by_variant,) in experiment_runs
         for metrics in (by_variant or {}).values()
     )
-    # Replays call the provider with platform keys; their cost lives on the placeholder trace.
-    replays = db.query(func.sum(Trace.total_cost_usd)).filter(
-        Trace.project_id.in_(org_projects),
-        Trace.metadata_json["replay_of"].as_string().isnot(None),
-        extract("year", Trace.created_at) == now.year,
-        extract("month", Trace.created_at) == now.month,
+    # Replays call the provider with platform keys; the worker books them on the org's monthly counter.
+    replays = db.query(UsageCounter.replay_cost_usd).filter(
+        UsageCounter.organization_id == db.query(Project.organization_id).filter(Project.id == project_id).scalar_subquery(),
+        UsageCounter.period == current_period(now),
     ).scalar() or 0.0
     return float(spent) + experiments + float(replays)
 

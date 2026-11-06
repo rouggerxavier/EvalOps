@@ -22,8 +22,8 @@ from decimal import Decimal
 from typing import Any
 
 from app.domain.evaluators import llm_judge
-from app.domain.services.eval_service import judge_budget_status
-from app.infra.llm.pricing import compute_cost_usd, estimate_tokens
+from app.domain.services.usage_service import current_period, get_or_create_counter
+from app.infra.llm.pricing import estimate_judge_cost_usd, estimate_tokens, split_provider_model
 from app.models import Span, Trace
 from app.security import new_id
 
@@ -74,6 +74,47 @@ def _find_primary_llm_span(db, trace_id: str) -> Span | None:
     )
 
 
+# Completion size assumed when reserving budget before the call (same default as llm_judge).
+REPLAY_ASSUMED_OUTPUT_TOKENS = 512
+# Same scale as the Numeric(12, 6) cost columns, so reservation and settlement cancel exactly.
+_USD = Decimal("0.000001")
+
+
+def replay_route(provider: str | None, model: str | None, *, override: bool) -> str:
+    # The span's provider decides the endpoint: its model id may carry another vendor's prefix.
+    return f"{provider}/{model}" if provider and not override else (model or "")
+
+
+def _prompt_text(messages: list[dict]) -> str:
+    return "".join(
+        (m.get("content") or "") for m in messages if isinstance(m, dict) and isinstance(m.get("content"), str)
+    )
+
+
+def estimate_replay_reservation(db, original_trace_id: str, rerun_model: str | None, variables: dict) -> Decimal:
+    """Budget to hold while the job waits: prompt plus an assumed completion, priced with the A-08 fallback."""
+    span = _find_primary_llm_span(db, original_trace_id)
+    if span is None:
+        return Decimal("0")  # the worker fails with no_llm_span_found before any call
+    route = replay_route(span.provider, rerun_model or span.model, override=bool(rerun_model))
+    prompt = _prompt_text(_build_messages(span, variables or {}))
+    return estimate_judge_cost_usd(route, prompt, assumed_output_tokens=REPLAY_ASSUMED_OUTPUT_TOKENS).quantize(_USD)
+
+
+def book_replay_cost(db, organization_id: str, period: str, delta: Decimal) -> None:
+    """Add ``delta`` to the org's monthly replay spend (row-locked on Postgres); caller commits."""
+    if not delta:
+        return
+    counter = get_or_create_counter(db, organization_id, period, lock=True)
+    current = Decimal(str(counter.replay_cost_usd or 0))
+    counter.replay_cost_usd = float(max(Decimal("0"), current + delta))
+    db.add(counter)
+
+
+def _book_for(db, trace: Trace, delta: Decimal) -> None:
+    book_replay_cost(db, trace.organization_id, current_period(trace.created_at), delta)
+
+
 _VARIABLE_RE = re.compile(r"\{\{\s*([A-Za-z_]\w*)\s*\}\}")
 
 
@@ -98,7 +139,7 @@ def _build_messages(span: Span, variables: dict[str, Any]) -> list[dict]:
     return rendered
 
 
-def _set_replay_status(
+def set_replay_status(
     db,
     trace: Trace,
     status: str,
@@ -106,6 +147,9 @@ def _set_replay_status(
     error: str | None = None,
 ) -> None:
     metadata = dict(trace.metadata_json or {})
+    if status == "failed":
+        # Nothing was spent (or the real cost was already settled): give the reservation back.
+        _book_for(db, trace, -Decimal(str(metadata.pop("replay_reserved_usd", 0) or 0)))
     metadata["replay_status"] = status
     if status == "running" and "replay_started_at" not in metadata:
         metadata["replay_started_at"] = _utcnow().isoformat()
@@ -128,9 +172,7 @@ async def _call_provider(
     override: bool = False,
 ) -> _ReplayResult:
     t0 = time.monotonic()
-
-    # The span's provider decides the endpoint: its model id may carry another vendor's prefix.
-    route = f"{provider}/{model}" if provider and not override else (model or "")
+    route = replay_route(provider, model, override=override)
 
     if route.startswith("cli:"):
         raise llm_judge.JudgeNotConfigured("cli_judge_not_supported_in_replay")
@@ -141,21 +183,29 @@ async def _call_provider(
     text = await asyncio.to_thread(_sync)
     duration_ms = int((time.monotonic() - t0) * 1000)
 
-    prompt_text = "".join(
-        (m.get("content") or "") for m in messages if isinstance(m, dict) and isinstance(m.get("content"), str)
-    )
-    tokens_in = estimate_tokens(prompt_text)
-    tokens_out = estimate_tokens(text)
-    cost = compute_cost_usd(provider, model, tokens_in, tokens_out)
+    prompt_text = _prompt_text(messages)
+    # Record what was actually called; unpriced models use the A-08 fallback, never 0.
+    called_provider, called_model = split_provider_model(route)
     return _ReplayResult(
         messages_out_text=text,
-        tokens_in=tokens_in,
-        tokens_out=tokens_out,
-        cost_usd=cost,
+        tokens_in=estimate_tokens(prompt_text),
+        tokens_out=estimate_tokens(text),
+        cost_usd=estimate_judge_cost_usd(route, prompt_text, text).quantize(_USD),
         duration_ms=duration_ms,
-        provider=provider,
-        model=model,
+        provider=called_provider,
+        model=called_model,
     )
+
+
+def _settle_cost(db, placeholder: Trace, cost: Decimal) -> None:
+    """Swap the reservation for the real cost in its own commit, before anything else can fail."""
+    metadata = dict(placeholder.metadata_json or {})
+    reserved = Decimal(str(metadata.pop("replay_reserved_usd", 0) or 0))
+    _book_for(db, placeholder, cost - reserved)
+    placeholder.metadata_json = metadata
+    placeholder.total_cost_usd = float(cost)
+    db.add(placeholder)
+    db.commit()
 
 
 def _ingest_replay_result(
@@ -220,22 +270,15 @@ async def replay_trace(ctx: dict, original_trace_id: str, new_trace_id: str) -> 
         try:
             original = _load_trace_or_fail(db, original_trace_id)
         except ValueError:
-            _set_replay_status(db, placeholder, "failed", error="original_trace_not_found")
+            set_replay_status(db, placeholder, "failed", error="original_trace_not_found")
             logger.error("replay.failed", extra={"trace_id": new_trace_id, "reason": "original_trace_not_found"})
             return {"status": "failed", "reason": "original_trace_not_found"}
 
-        # The budget may run out between the request and the job.
-        has_budget, _spent, _budget = judge_budget_status(placeholder.project_id, db)
-        if not has_budget:
-            _set_replay_status(db, placeholder, "failed", error="judge_budget_exhausted")
-            logger.error("replay.failed", extra={"trace_id": new_trace_id, "reason": "judge_budget_exhausted"})
-            return {"status": "failed", "reason": "judge_budget_exhausted"}
-
-        _set_replay_status(db, placeholder, "running")
+        set_replay_status(db, placeholder, "running")
 
         llm_span = _find_primary_llm_span(db, original.id)
         if llm_span is None:
-            _set_replay_status(db, placeholder, "failed", error="no_llm_span_found")
+            set_replay_status(db, placeholder, "failed", error="no_llm_span_found")
             logger.error(
                 "replay.failed",
                 extra={"trace_id": new_trace_id, "reason": "no_llm_span_found"},
@@ -253,15 +296,22 @@ async def replay_trace(ctx: dict, original_trace_id: str, new_trace_id: str) -> 
         except Exception as exc:  # noqa: BLE001
             # JudgeNotConfigured carries our own safe codes (unsupported provider, missing key).
             reason = str(exc) if isinstance(exc, llm_judge.JudgeNotConfigured) else type(exc).__name__
-            _set_replay_status(db, placeholder, "failed", error=reason)
+            set_replay_status(db, placeholder, "failed", error=reason)
             logger.error(
                 "replay.failed",
                 extra={"trace_id": new_trace_id, "reason": reason},
             )
             return {"status": "failed", "reason": reason}
 
-        _ingest_replay_result(db, placeholder, llm_span, messages, result)
-        _set_replay_status(db, placeholder, "completed")
+        _settle_cost(db, placeholder, result.cost_usd)
+        try:
+            _ingest_replay_result(db, placeholder, llm_span, messages, result)
+            set_replay_status(db, placeholder, "completed")
+        except Exception as exc:  # noqa: BLE001
+            db.rollback()
+            set_replay_status(db, placeholder, "failed", error="ingest_failed")
+            logger.error("replay.failed", extra={"trace_id": new_trace_id, "reason": "ingest_failed"})
+            return {"status": "failed", "reason": "ingest_failed", "error": type(exc).__name__}
 
     logger.info(
         "replay.completed",

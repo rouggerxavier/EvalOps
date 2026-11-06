@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta, timezone
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.db import Base, SessionLocal, engine
@@ -707,6 +708,8 @@ def test_rerun_trace_returns_503_when_enqueue_raises(fake_arq_pool) -> None:
         assert len(placeholders) == 1
         assert placeholders[0].metadata_json["replay_status"] == "failed", "nada pode ficar preso em queued"
         assert placeholders[0].metadata_json["replay_error"] == "queue_unavailable"
+        assert "replay_reserved_usd" not in placeholders[0].metadata_json
+        assert _replay_ledger(db, placeholders[0].organization_id) == 0, "a reserva volta quando a fila falha"
 
 
 def test_rerun_trace_commits_placeholder_before_enqueue() -> None:
@@ -736,30 +739,29 @@ def test_rerun_trace_commits_placeholder_before_enqueue() -> None:
     assert seen == [True]
 
 
+def _replay_ledger(db, org_id: str) -> float:
+    from app.domain.services.usage_service import current_period
+    from app.models import UsageCounter
+
+    row = (
+        db.query(UsageCounter)
+        .filter(UsageCounter.organization_id == org_id, UsageCounter.period == current_period())
+        .one_or_none()
+    )
+    return float(row.replay_cost_usd or 0) if row else 0.0
+
+
 def test_rerun_trace_blocked_when_judge_budget_exhausted(fake_arq_pool) -> None:
+    from app.domain.services.usage_service import current_period, get_or_create_counter
+
     fake_arq_pool.jobs.clear()
     client = TestClient(app)
-    headers, project_id, api_key = _bootstrap(client)
+    headers, _, api_key = _bootstrap(client)
     trace_id = _ingest_trace(client, api_key, status="ok")
-    now = datetime.now(timezone.utc)
     with SessionLocal() as db:
-        original = db.get(Trace, trace_id)
-        # A past replay whose cost already ate the whole monthly judge budget.
-        db.add(
-            Trace(
-                id=new_id("tr"),
-                project_id=project_id,
-                organization_id=original.organization_id,
-                name="old.replay",
-                environment="prod",
-                status="ok",
-                started_at=now,
-                ended_at=now,
-                duration_ms=1,
-                total_cost_usd=10_000,
-                metadata_json={"replay_of": trace_id, "replay_status": "completed"},
-            )
-        )
+        org_id = db.get(Trace, trace_id).organization_id
+        # Past replays already ate the whole monthly judge budget.
+        get_or_create_counter(db, org_id, current_period()).replay_cost_usd = 10_000
         db.commit()
 
     response = client.post(f"/v1/traces/{trace_id}/rerun", headers=headers, json={"model": None, "variables": {}})
@@ -769,6 +771,33 @@ def test_rerun_trace_blocked_when_judge_budget_exhausted(fake_arq_pool) -> None:
     with SessionLocal() as db:
         queued = db.query(Trace).filter(Trace.metadata_json["replay_status"].as_string() == "queued").all()
         assert queued == []
+        assert _replay_ledger(db, org_id) == 10_000
+
+
+def test_rerun_trace_reserves_budget_so_a_burst_cannot_overspend(fake_arq_pool) -> None:
+    from app.domain.services.usage_service import set_org_plan_limits
+
+    fake_arq_pool.jobs.clear()
+    client = TestClient(app)
+    headers, _, api_key = _bootstrap(client)
+    trace_id = _ingest_trace(client, api_key, status="ok")
+    with SessionLocal() as db:
+        org_id = db.get(Trace, trace_id).organization_id
+        # Below one replay's reservation (512 assumed output tokens on gpt-4o-mini is ~0.0003 USD).
+        set_org_plan_limits(db, org_id, monthly_judge_budget_usd=0.0002)
+        db.commit()
+
+    body = {"model": None, "variables": {}}
+    first = client.post(f"/v1/traces/{trace_id}/rerun", headers=headers, json=body)
+    second = client.post(f"/v1/traces/{trace_id}/rerun", headers=headers, json=body)
+    assert first.status_code == 200, first.text
+    assert second.status_code == 402, "a reserva do primeiro replay ainda pendente precisa contar"
+    assert len(fake_arq_pool.jobs) == 1
+    with SessionLocal() as db:
+        placeholder = db.get(Trace, first.json()["new_trace_id"])
+        reserved = float(placeholder.metadata_json["replay_reserved_usd"])
+        assert reserved > 0
+        assert _replay_ledger(db, org_id) == pytest.approx(reserved)
 
 
 def test_members_listing_paginates_with_cursor() -> None:

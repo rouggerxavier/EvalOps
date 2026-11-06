@@ -9,7 +9,7 @@ from typing import Any
 
 from app.config import redis_url, worker_concurrency
 from app.workers.evaluation_worker import evaluate_trace_job
-from app.workers.maintenance_worker import maintenance_cleanup_job, maintenance_hour
+from app.workers.maintenance_worker import maintenance_cleanup_job, maintenance_hour, maintenance_timezone
 from app.workers.replay_worker import replay_trace
 
 logger = logging.getLogger("evalops.worker")
@@ -45,6 +45,8 @@ def _cron_jobs() -> list:
 class WorkerSettings:
     functions: list = [replay_trace, evaluate_trace_job]
     cron_jobs = _cron_jobs()
+    # Cron hours are read in this zone, not the process clock.
+    timezone = maintenance_timezone()
     redis_settings = _redis_settings()
     max_jobs = worker_concurrency()
     on_startup = startup
