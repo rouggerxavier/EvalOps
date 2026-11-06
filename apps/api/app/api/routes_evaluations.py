@@ -19,7 +19,7 @@ from app.domain.services.eval_service import (
 from app.domain.services.rubric_report_service import WINDOWS, filtered_traces, rubric_report
 from app.infra.llm import cli_judge
 from app.models import EvaluationRun, EvaluationScore, Project, Rubric, RubricVersion, Trace, User
-from app.ownership import load_project, load_trace, project_access
+from app.ownership import Actor, actor_access, load_project, load_trace, project_access
 from app.workers.queue import get_arq_pool
 from app.safe_errors import safe_message
 from app.schemas import (
@@ -215,13 +215,13 @@ def get_rubric_report(
 @router.get("/evaluations/{run_id}")
 def get_evaluation_run(
     run_id: str,
-    user: User = Depends(get_current_user),
+    actor: Actor = Depends(actor_access("read")),
     db: Session = Depends(get_db),
 ) -> dict:
     run = db.get(EvaluationRun, run_id)
     if not run:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="not_found")
-    load_trace(db, user.id, run.trace_id)
+    load_trace(db, actor, run.trace_id)
     return {"run": _run_detail(run, db)}
 
 
@@ -230,10 +230,10 @@ def list_project_evaluations(
     project_id: str,
     limit: int = 100,
     environment: str | None = Query(None, pattern=r"^(dev|staging|prod)$"),
-    user: User = Depends(get_current_user),
+    actor: Actor = Depends(actor_access("read")),
     db: Session = Depends(get_db),
 ) -> dict:
-    project = load_project(db, user.id, project_id)
+    project = load_project(db, actor, project_id)
     query = (
         db.query(EvaluationRun)
         .join(Trace, EvaluationRun.trace_id == Trace.id)
@@ -257,10 +257,10 @@ def _window_days(window: str) -> int:
 def get_project_coverage(
     project_id: str,
     window: str = Query("7d", pattern=r"^(24h|7d|30d)$"),
-    user: User = Depends(get_current_user),
+    actor: Actor = Depends(actor_access("read")),
     db: Session = Depends(get_db),
 ) -> dict:
-    project = load_project(db, user.id, project_id)
+    project = load_project(db, actor, project_id)
     cutoff = datetime.now(timezone.utc) - timedelta(days=_window_days(window))
     seven_days_ago = datetime.now(timezone.utc) - timedelta(days=7)
     total_traces = (
@@ -315,10 +315,10 @@ def list_cli_judges(user: User = Depends(get_current_user)) -> dict:
 def get_project_evaluation_summary(
     project_id: str,
     environment: str | None = Query(None, pattern=r"^(dev|staging|prod)$"),
-    user: User = Depends(get_current_user),
+    actor: Actor = Depends(actor_access("read")),
     db: Session = Depends(get_db),
 ) -> dict:
-    project = load_project(db, user.id, project_id)
+    project = load_project(db, actor, project_id)
     seven_days_ago = datetime.now(timezone.utc) - timedelta(days=7)
     active_rubrics = db.query(func.count(Rubric.id)).filter(Rubric.project_id == project.id).scalar() or 0
     query = db.query(EvaluationRun).filter(
@@ -344,10 +344,10 @@ def get_project_evaluation_summary(
 @router.get("/traces/{trace_id}/evaluations")
 def list_trace_evaluations(
     trace_id: str,
-    user: User = Depends(get_current_user),
+    actor: Actor = Depends(actor_access("read")),
     db: Session = Depends(get_db),
 ) -> dict:
-    trace = load_trace(db, user.id, trace_id)
+    trace = load_trace(db, actor, trace_id)
     runs = (
         db.query(EvaluationRun)
         .filter(EvaluationRun.trace_id == trace.id)

@@ -56,6 +56,9 @@ GET  /v1/projects/{id}/rubrics/{rubric_id}/report?window=30d&batch=bateria-1
 Both accept a member's token or `X-EvalOps-Key`. The batch route needs a key
 created with the `evaluate` scope, which is never a default; the report needs `read`.
 
+A `read` key also reads the project's traces, prompts, rubrics, evaluations and
+feedback (`GET` routes only). Writes from the dashboard still need a member's token.
+
 Every organization starts on the `free` plan (1000 traces and 500 evaluations per
 month). Operators change one organization's limits with:
 

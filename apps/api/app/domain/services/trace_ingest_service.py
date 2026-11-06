@@ -23,9 +23,10 @@ from app.domain.services.redaction_service import (
     redact_trace,
     should_redact,
 )
+from app.domain.services.experiment_service import resolve_prompt_version
 from app.domain.services.usage_service import apply_usage_with_quota, enforce_quota
 from app.infra.llm.pricing import compute_cost_usd
-from app.models import Event, Project, Span, Trace
+from app.models import Event, Project, Prompt, Span, Trace
 from app.safe_errors import safe_message
 from app.schemas import TraceBatchIn
 from app.security import new_id
@@ -84,6 +85,17 @@ def _existing_trace_id(db: Session, project_id: str, client_trace_id: str | None
     return existing.id
 
 
+def _unknown_prompt_ref(db: Session, project_id: str, trace_in: Any) -> str | None:
+    """First span ``prompt_version_ref`` that names no prompt of the project, if any."""
+    for ref in sorted({s.prompt_version_ref for s in trace_in.spans if s.prompt_version_ref}):
+        prompt = db.get(Prompt, ref)
+        if prompt is not None and prompt.project_id == project_id:
+            continue
+        if resolve_prompt_version(ref, project_id, db) is None:
+            return ref
+    return None
+
+
 def _persist_trace(
     db: Session,
     project: Project,
@@ -96,6 +108,9 @@ def _persist_trace(
     """
     if trace_in.ended_at < trace_in.started_at:
         raise ValueError("ended_at must be >= started_at")
+    unknown_ref = _unknown_prompt_ref(db, project.id, trace_in)
+    if unknown_ref is not None:
+        raise ValueError(f"unknown prompt_version_ref: {unknown_ref}")
 
     do_redact = should_redact(trace_in.tags, redact_header)
     trace_id = new_id("tr")

@@ -84,8 +84,8 @@ Limites:
 | 13 | **Flag é só escrita.** Não há `GET` (405), a flag não aparece no trace e não há como ver o que foi marcado. | `routes_trace_actions.py`, `traces/[trace]/page.tsx:148` | Provado |
 | 14 | **Resultado de experimento some.** Só aparece logo após rodar, via URL. Não há rota que liste runs nem tela de histórico. | `experiments/page.tsx:199` | Provado |
 | 15 | **Celular sem navegação.** Em 375 px a sidebar fica `display: none`, não há menu, e breadcrumb, busca e chip se sobrepõem. | `AppShell`, `EvoTopbar` | Provado |
-| 16 | **`prompt_version_ref` não é validado:** referência inexistente entra com 202 e distorce o uso do prompt. | `trace_ingest_service.py:170` | Provado |
-| 17 | **Chave com `read` quase não lê.** Com a chave, dão 401: traces, prompts, rubricas, avaliações e feedback. Só relatório e lote aceitam. | `ownership.py:114` | Provado |
+| 16 | **Fechado.** **`prompt_version_ref` não é validado:** referência inexistente entra com 202 e distorce o uso do prompt. | `trace_ingest_service.py:170` | Provado |
+| 17 | **Fechado.** **Chave com `read` quase não lê.** Com a chave, dão 401: traces, prompts, rubricas, avaliações e feedback. Só relatório e lote aceitam. | `ownership.py:114` | Provado |
 | 18 | **Feedback do usuário final não entra.** Exige login no painel e o SDK não tem método. Um "joinha" do WhatsApp não chega, e o feedback não entra em nenhuma métrica. | `routes_phase6.py` | Provado |
 | 19 | **Prompts desligados da execução.** O SDK não busca prompt e a chave não lê. O agente continua com prompt no próprio código, então não há "promover variante". | `routes_phase6.py`, SDK | Provado |
 | 20 | **Notificações só de avaliação.** Cota esgotada responde 402 sem aviso prévio nem sino, e a ingestão para em silêncio. | `eval_service.py:425` | Leitura |

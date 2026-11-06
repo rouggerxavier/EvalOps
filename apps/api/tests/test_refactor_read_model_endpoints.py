@@ -37,7 +37,7 @@ def _bootstrap(client: TestClient) -> tuple[dict[str, str], str, str]:
     return headers, project["id"], key
 
 
-def _ingest_rag_trace(client: TestClient, api_key: str, prompt_ref: str = "support-bot@1") -> str:
+def _ingest_rag_trace(client: TestClient, api_key: str, prompt_ref: str | None = None) -> str:
     now = datetime.now(timezone.utc)
     payload = {
         "traces": [
