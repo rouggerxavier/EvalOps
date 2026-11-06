@@ -365,7 +365,7 @@ export default async function RubricsPage({ params, searchParams }: Props) {
               <div className="card__header">
                 <h3 className="card__title">Versões</h3>
                 <span style={{ fontSize: 11, color: "var(--text-faint)" }}>
-                  {versions.length} versão{versions.length !== 1 ? "ões" : ""}
+                  {versions.length} {versions.length !== 1 ? "versões" : "versão"}
                 </span>
               </div>
               <VersionsList versions={versions} currentVersion={selected.current_version} />
@@ -471,7 +471,7 @@ export default async function RubricsPage({ params, searchParams }: Props) {
         <section aria-label="Resultados da rubrica" style={{ marginTop: 16 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12, flexWrap: "wrap" }}>
             <h2 className="card__title" style={{ flex: 1, margin: 0 }}>Resultados</h2>
-            <form method="get" action={baseUrl} style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <form method="get" action={baseUrl} style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
               <input type="hidden" name="rubric" value={selected.id} />
               <select className="filter-select" name="window" defaultValue={reportWindow} aria-label="Período">
                 {REPORT_WINDOWS.map((w) => (

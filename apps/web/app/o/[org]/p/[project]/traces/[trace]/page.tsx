@@ -286,7 +286,7 @@ export default async function TraceDetailPage({ params, searchParams }: Props) {
               : "Falha ao carregar os outros turnos"
           }
           action={
-            <Link href={`/o/${org}/p/${project}/traces?conversation_id=${encodeURIComponent(conversationId)}`} className="btn btn--sm btn--ghost">
+            <Link href={`/o/${org}/p/${project}/traces?conversation_id=${encodeURIComponent(conversationId)}&environment=`} className="btn btn--sm btn--ghost">
               Ver na lista
             </Link>
           }

@@ -246,7 +246,7 @@ function RunHistoryCard({
                       </span>
                     </td>
                     <td>
-                      {run.passed === null ? (
+                      {run.passed === null || run.status === "error" ? (
                         <span className="t__faint">—</span>
                       ) : (
                         <span className={`badge ${run.passed ? "badge--ok" : "badge--err"}`}>

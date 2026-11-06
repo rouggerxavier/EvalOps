@@ -36,12 +36,18 @@ type Props = {
 const FILTER_KEYS = ["q", "conversation_id", "since", "until", "tag", "user_ref", "model", "failed", "score_lt"] as const;
 type FilterKey = (typeof FILTER_KEYS)[number];
 
+function isRealDate(value: string): boolean {
+  const date = new Date(`${value}T00:00:00Z`);
+  return /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(date.getTime()) && date.toISOString().startsWith(value);
+}
+
 function validFilters(qp: Partial<Record<FilterKey, string>>): Partial<Record<FilterKey, string>> {
   const out: Partial<Record<FilterKey, string>> = {};
   for (const key of FILTER_KEYS) {
     const value = qp[key]?.trim();
     if (!value) continue;
-    if ((key === "since" || key === "until") && !/^\d{4}-\d{2}-\d{2}$/.test(value)) continue;
+    // The round trip rejects impossible dates like 2026-02-30, which the API answers with 422.
+    if ((key === "since" || key === "until") && !isRealDate(value)) continue;
     if (key === "tag" && !/^[^:]+:.+$/.test(value)) continue;
     if (key === "failed" && value !== "true") continue;
     if (key === "score_lt" && !(Number(value) >= 0 && Number(value) <= 1)) continue;

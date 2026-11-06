@@ -98,6 +98,16 @@ test("conversation turns are listed on the trace and filterable in the list", ()
   assert.match(list, /withoutFilterHref\("conversation_id"\)/);
 });
 
+test("etapa 4 screens survive narrow screens, impossible dates and hydration", () => {
+  const css = read("app/globals.css");
+  assert.match(css, /\.card__body--flush \{ padding: 0; overflow-x: auto; \}/);
+  assert.match(css, /\.table-wrap \{\n  overflow-x: auto;/);
+  assert.match(read(`${PROJECT}/traces/page.tsx`), /!isRealDate\(value\)/);
+  assert.doesNotMatch(read("components/ui/AreaChart.tsx"), /Math\.random/);
+  assert.match(read(`${PROJECT}/traces/[trace]/page.tsx`), /conversation_id=\$\{encodeURIComponent\(conversationId\)\}&environment=`/);
+  assert.doesNotMatch(read(`${PROJECT}/rubrics/page.tsx`), /versão\{/);
+});
+
 test("auth pages promise nothing that does not exist", () => {
   const login = read("app/login/page.tsx");
   assert.doesNotMatch(login, /name="remember"|30 dias/);
