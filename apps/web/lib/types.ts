@@ -512,3 +512,40 @@ export type QualityGateStatus = {
   };
   reasons: QualityGateReason[];
 };
+
+// Counts for one slice of a rubric report. pass_rate is passed / (passed + failed):
+// runs without a result (unknown) or with an error never count as passed.
+export type RubricReportSummary = {
+  runs: number;
+  passed: number;
+  failed: number;
+  unknown: number;
+  errors: number;
+  pass_rate: number | null;
+  avg_score: number | null;
+  score_stddev: number | null;
+  cost_usd: number;
+};
+
+export type RubricReportWindow = "24h" | "7d" | "30d" | "90d";
+
+export type RubricReport = {
+  rubric_id: string;
+  rubric_slug: string;
+  window: RubricReportWindow;
+  environment: string | null;
+  batch: string | null;
+  trace_count: number;
+  totals: RubricReportSummary;
+  by_version: (RubricReportSummary & { rubric_version: number })[];
+  by_day: (RubricReportSummary & { day: string; rubric_version: number })[];
+  by_evaluator: {
+    rubric_version: number;
+    evaluator: string;
+    runs: number;
+    errors: number;
+    pass_rate: number | null;
+    avg_score: number | null;
+    avg_judge_stddev: number | null;
+  }[];
+};
