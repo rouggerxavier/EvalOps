@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 from app.db import Base, SessionLocal, engine
 from app.domain.rubrics.parser import parse_rubric_yaml
 from app.main import app
-from app.models import User
+from app.models import EvaluationRun, User
 from app.security import create_access_token, new_id
 
 client = TestClient(app)
@@ -41,7 +41,7 @@ def ws():
     Base.metadata.drop_all(bind=engine)
 
 
-def ingest(ws, name="t", environment="dev", spans=None) -> str:
+def ingest(ws, name="t", environment="dev", spans=None, **extra) -> str:
     now = datetime.now(timezone.utc)
     default = [{
         "client_span_id": "s", "type": "llm_call", "name": "l", "status": "ok",
@@ -52,6 +52,7 @@ def ingest(ws, name="t", environment="dev", spans=None) -> str:
         "client_trace_id": new_id("ct"), "name": name, "environment": environment, "status": "ok",
         "started_at": now.isoformat(), "ended_at": (now + timedelta(seconds=5)).isoformat(),
         "spans": default if spans is None else spans,
+        **extra,
     }
     response = client.post("/v1/traces", headers={"X-EvalOps-Key": ws["key"]}, json={"traces": [trace]})
     assert response.status_code == 202 and response.json()["errors"] == [], response.text
@@ -96,6 +97,42 @@ def test_flags_are_readable_and_filterable(ws) -> None:
     assert {row["name"]: row["flag_count"] for row in rows} == {"marcado": 1, "limpo": 0}
     only = client.get("/v1/traces", headers=ws["headers"], params={**params, "flagged": True}).json()["data"]
     assert [row["id"] for row in only] == [flagged]
+
+
+def test_trace_list_filters_by_period_tag_user_model_score_and_search(ws) -> None:
+    alvo = ingest(
+        ws, "atendimento", spans=[_span("l", 0, "modelo-a")],
+        tags={"canal": "whatsapp"}, user_ref="cliente-1", metadata={"conversation_id": "conv-9"},
+    )
+    outro = ingest(ws, "outro", spans=[_span("l", 0, "modelo-b")], tags={"canal": "site"}, user_ref="cliente-2")
+    rubric_id = rubric(ws)
+    with SessionLocal() as db:
+        for run_id, trace_id, passed, score in (("run-a", alvo, False, 0.2), ("run-b", outro, True, 0.9)):
+            db.add(EvaluationRun(
+                id=run_id, project_id=ws["project"], trace_id=trace_id, rubric_id=rubric_id, rubric_version=1,
+                triggered_by="t", status="completed", aggregate_score=score, passed=passed,
+            ))
+        db.commit()
+
+    def ids(**params):
+        response = client.get("/v1/traces", headers=ws["headers"], params={"project_id": ws["project"], **params})
+        assert response.status_code == 200, response.text
+        return {row["id"] for row in response.json()["data"]}
+
+    now = datetime.now(timezone.utc)
+    assert ids(since=(now - timedelta(hours=1)).isoformat()) == {alvo, outro}
+    assert ids(since=(now + timedelta(hours=1)).isoformat()) == set()
+    assert ids(until=(now - timedelta(hours=1)).isoformat()) == set()
+    assert ids(tag="canal:whatsapp") == {alvo}
+    assert ids(user_ref="cliente-2") == {outro}
+    assert ids(model="modelo-a") == {alvo}
+    assert ids(failed=True) == {alvo}
+    assert ids(score_lt=0.5) == {alvo}
+    assert ids(q="atend") == ids(q=alvo) == ids(q="cliente-1") == ids(q="conv-9") == {alvo}
+
+    for bad in ({"tag": "semdoispontos"}, {"since": "ontem"}, {"until": "2026-13-40"}, {"score_lt": "x"}):
+        response = client.get("/v1/traces", headers=ws["headers"], params={"project_id": ws["project"], **bad})
+        assert response.status_code == 422, bad
 
 
 def test_evaluations_follow_the_environment(ws) -> None:

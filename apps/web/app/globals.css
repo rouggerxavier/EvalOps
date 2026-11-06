@@ -5027,7 +5027,7 @@ a.evo-breadcrumbs__seg:hover { color: var(--text); text-decoration: none; }
 .card__title { margin: 0; color: var(--fg-1); font-size: 13px; font-weight: 600; }
 .card__subtitle { margin-top: 3px; color: var(--fg-4); font-family: var(--font-mono); font-size: 11.5px; }
 .card__body { padding: var(--sp-4); }
-.card__body--flush { padding: 0; }
+.card__body--flush { padding: 0; overflow-x: auto; }
 
 .kpi-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--sp-3); margin-bottom: var(--sp-4); }
 .kpi-grid--5 { grid-template-columns: repeat(5, minmax(0, 1fr)); }
@@ -5114,7 +5114,7 @@ a.evo-breadcrumbs__seg:hover { color: var(--text); text-decoration: none; }
 .preview-pill__dot { width: 4px; height: 4px; border-radius: 999px; background: currentColor; }
 
 .table-wrap {
-  overflow: hidden;
+  overflow-x: auto;
   border: 1px solid var(--border-subtle);
   border-radius: var(--r-md);
   background: var(--surface-2);

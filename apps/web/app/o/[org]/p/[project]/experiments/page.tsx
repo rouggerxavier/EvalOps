@@ -1,11 +1,12 @@
 import Link from "next/link";
-import { FlaskConical, Play, Plus, Rocket } from "lucide-react";
+import { FlaskConical, History, Play, Plus, Rocket } from "lucide-react";
 
 import { AuthRequiredPanel } from "@/components/AuthRequiredPanel";
 import { createExperimentAction, runExperimentAction } from "@/lib/actions";
 import {
   getDatasets,
   getExperimentRun,
+  getExperimentRuns,
   getExperiments,
   getRubrics,
   hasAuthToken,
@@ -180,6 +181,103 @@ function RunResultCard({ run }: { run: ExperimentRun }) {
   );
 }
 
+const RUN_STATUS_LABEL: Record<string, string> = {
+  completed: "concluída",
+  error: "erro",
+  running: "rodando",
+};
+
+function RunHistoryCard({
+  runs,
+  experimentName,
+  activeRunId,
+}: {
+  runs: ExperimentRun[];
+  experimentName: string;
+  activeRunId?: string;
+}) {
+  return (
+    <div className="card" style={{ marginBottom: 16 }}>
+      <div className="card__header">
+        <div>
+          <h3 className="card__title">Histórico</h3>
+          <div className="card__subtitle">
+            {experimentName} · {runs.length} runs recentes
+          </div>
+        </div>
+      </div>
+      <div className="card__body card__body--flush">
+        {runs.length === 0 ? (
+          <p className="t__faint" style={{ padding: "16px", fontSize: 13 }}>
+            Nenhuma run ainda. Use “Rodar” na lista de experimentos para gerar a primeira.
+          </p>
+        ) : (
+          <table className="t">
+            <thead>
+              <tr>
+                <th>Quando</th>
+                <th>Status</th>
+                <th>Resultado</th>
+                <th>Variantes</th>
+                <th>Melhor score</th>
+                <th>Custo total</th>
+                <th>Falhas</th>
+                <th style={{ width: 80 }} />
+              </tr>
+            </thead>
+            <tbody>
+              {runs.map((run) => {
+                const metrics = Object.values(run.by_variant);
+                const best = metrics.length ? Math.max(...metrics.map((m) => m.avg_score)) : null;
+                const cost = metrics.reduce((acc, m) => acc + m.total_cost_usd, 0);
+                return (
+                  <tr
+                    key={run.id}
+                    style={
+                      run.id === activeRunId ? { background: "rgba(34,211,168,0.06)" } : undefined
+                    }
+                  >
+                    <td className="t__muted" style={{ fontSize: 12 }}>
+                      {relTime(run.completed_at ?? run.created_at)}
+                    </td>
+                    <td>
+                      <span className="mono t__muted" style={{ fontSize: 12 }}>
+                        {RUN_STATUS_LABEL[run.status] ?? run.status}
+                      </span>
+                    </td>
+                    <td>
+                      {run.passed === null || run.status === "error" ? (
+                        <span className="t__faint">—</span>
+                      ) : (
+                        <span className={`badge ${run.passed ? "badge--ok" : "badge--err"}`}>
+                          <span className="badge__dot" />
+                          {run.passed ? "Aprovado" : "Falhou"}
+                        </span>
+                      )}
+                    </td>
+                    <td className="t__num">{metrics.length}</td>
+                    <td className="t__num">{best === null ? "—" : best.toFixed(2)}</td>
+                    <td className="t__num">${cost.toFixed(5)}</td>
+                    <td className="t__num">{run.criteria_failures.length}</td>
+                    <td>
+                      <Link
+                        href={`?experiment_id=${run.experiment_id}&run_id=${run.id}`}
+                        className="btn btn--sm"
+                      >
+                        Ver
+                      </Link>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default async function ExperimentosPage({ params, searchParams }: Props) {
   const { org, project } = await params;
   const qp = await searchParams;
@@ -204,7 +302,17 @@ export default async function ExperimentosPage({ params, searchParams }: Props) 
     }
   }
 
+  let runHistory: ExperimentRun[] | null = null;
+  if (qp.experiment_id) {
+    try {
+      runHistory = (await getExperimentRuns(qp.experiment_id)).data;
+    } catch {
+      runHistory = null;
+    }
+  }
+
   const experiments = experimentsRes.data;
+  const historyExperiment = experiments.find((exp) => exp.id === qp.experiment_id);
 
   const totalVariants = experiments.reduce((acc, exp) => acc + exp.variants.length, 0);
   const withBaseline = experiments.filter((exp) => exp.baseline_variant !== null).length;
@@ -308,6 +416,15 @@ export default async function ExperimentosPage({ params, searchParams }: Props) 
       {/* Run result */}
       {runDetail?.run && <RunResultCard run={runDetail.run} />}
 
+      {/* Run history */}
+      {runHistory && (
+        <RunHistoryCard
+          runs={runHistory}
+          experimentName={historyExperiment?.name ?? qp.experiment_id ?? ""}
+          activeRunId={qp.run_id}
+        />
+      )}
+
       {/* Experiments table */}
       {experiments.length === 0 ? (
         <div className="card" style={{ padding: "48px 24px", textAlign: "center" }}>
@@ -395,6 +512,9 @@ export default async function ExperimentosPage({ params, searchParams }: Props) 
                   </td>
                   <td>
                     <div className="row" style={{ gap: 4, justifyContent: "flex-end" }}>
+                      <Link href={`?experiment_id=${exp.id}`} className="btn btn--sm">
+                        <History size={12} /> Histórico
+                      </Link>
                       <form action={runExperimentAction} style={{ display: "inline" }}>
                         <input type="hidden" name="org" value={org} />
                         <input type="hidden" name="project" value={project} />

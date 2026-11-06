@@ -33,6 +33,7 @@ import {
   revokeApiKey,
   runExperiment,
   triggerEvaluation,
+  triggerEvaluationBatch,
 } from "@/lib/api";
 
 function projectPath(org: string, project: string, section: string): string {
@@ -203,6 +204,41 @@ export async function triggerEvaluationAction(formData: FormData): Promise<void>
   }
   if (fromTrace) redirectWithMessage(path, errorMsg ? { tab: "evaluations", error: errorMsg } : { tab: "evaluations" });
   redirectWithMessage(path, errorMsg ? { error: errorMsg } : { created: "1" });
+}
+
+export async function triggerEvaluationBatchAction(formData: FormData): Promise<void> {
+  const org = String(formData.get("org") ?? "");
+  const project = String(formData.get("project") ?? "");
+  const projectId = String(formData.get("project_id") ?? "");
+  const rubricId = String(formData.get("rubric_id") ?? "");
+  const rubricVersionRaw = String(formData.get("rubric_version") ?? "").trim();
+  const environment = String(formData.get("environment") ?? "").trim();
+  const nameContains = String(formData.get("name_contains") ?? "").trim();
+  const limitRaw = String(formData.get("limit") ?? "").trim();
+  const path = projectPath(org, project, "rubrics");
+
+  let errorMsg: string | null = null;
+  let enqueued = 0;
+  try {
+    const result = await triggerEvaluationBatch(projectId, {
+      rubric_id: rubricId,
+      rubric_version: rubricVersionRaw ? Number(rubricVersionRaw) : undefined,
+      environment: environment || undefined,
+      name_contains: nameContains || undefined,
+      limit: limitRaw ? Number(limitRaw) : undefined,
+    });
+    enqueued = result.enqueued;
+    revalidatePath(path);
+  } catch (error) {
+    errorMsg =
+      error instanceof Error && error.message.startsWith("API 503")
+        ? "A fila de avaliação está fora do ar (o worker não está rodando). Nada foi enfileirado; tente de novo mais tarde."
+        : messageFromActionError(error, "Falha ao enfileirar avaliações");
+  }
+  redirectWithMessage(
+    path,
+    errorMsg ? { rubric: rubricId, error: errorMsg } : { rubric: rubricId, batched: String(enqueued) },
+  );
 }
 
 export async function triggerEvaluationFromOverviewAction(formData: FormData): Promise<void> {

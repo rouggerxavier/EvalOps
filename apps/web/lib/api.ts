@@ -29,6 +29,8 @@ import type {
   RagConsolidated,
   ResolvedProject,
   Rubric,
+  RubricReport,
+  RubricReportWindow,
   RubricVersion,
   SdkStatus,
   TraceCompareResponse,
@@ -141,6 +143,15 @@ export async function getTraces(opts: {
   slow_kind?: "trace" | "llm" | "retrieval";
   rag?: boolean;
   flagged?: boolean;
+  conversation_id?: string;
+  since?: string;
+  until?: string;
+  tag?: string;
+  user_ref?: string;
+  model?: string;
+  failed?: boolean;
+  score_lt?: number;
+  q?: string;
 }): Promise<TraceListResponse> {
   const params = new URLSearchParams({
     project_id: opts.projectId,
@@ -154,6 +165,12 @@ export async function getTraces(opts: {
   if (opts.slow_kind) params.set("slow_kind", opts.slow_kind);
   if (opts.rag !== undefined) params.set("rag", String(opts.rag));
   if (opts.flagged !== undefined) params.set("flagged", String(opts.flagged));
+  for (const key of ["conversation_id", "since", "until", "tag", "user_ref", "model", "q"] as const) {
+    const value = opts[key];
+    if (value) params.set(key, value);
+  }
+  if (opts.failed !== undefined) params.set("failed", String(opts.failed));
+  if (opts.score_lt !== undefined) params.set("score_lt", String(opts.score_lt));
   return fetchJson<TraceListResponse>(`/traces?${params.toString()}`);
 }
 
@@ -332,6 +349,30 @@ export async function triggerEvaluation(payload: {
   });
 }
 
+export async function triggerEvaluationBatch(projectId: string, payload: {
+  rubric_id: string;
+  rubric_version?: number;
+  environment?: string;
+  name_contains?: string;
+  limit?: number;
+}): Promise<{ enqueued: number; rubric_version: number; trace_ids: string[] }> {
+  return requestJson<{ enqueued: number; rubric_version: number; trace_ids: string[] }>(
+    `/projects/${projectId}/evaluations/batch`,
+    { method: "POST", body: JSON.stringify(payload) },
+  );
+}
+
+export async function getRubricReport(
+  projectId: string,
+  rubricId: string,
+  window: RubricReportWindow = "7d",
+  environment?: string,
+): Promise<RubricReport> {
+  const params = new URLSearchParams({ window });
+  if (environment) params.set("environment", environment);
+  return fetchJson<RubricReport>(`/projects/${projectId}/rubrics/${rubricId}/report?${params.toString()}`);
+}
+
 export async function getPrompts(projectId: string): Promise<{ data: Prompt[] }> {
   return fetchJson<{ data: Prompt[] }>(`/projects/${projectId}/prompts`);
 }
@@ -449,6 +490,10 @@ export async function runExperiment(experimentId: string, payload?: {
 
 export async function getExperimentRun(experimentId: string, runId: string): Promise<{ run: ExperimentRun }> {
   return fetchJson<{ run: ExperimentRun }>(`/experiments/${experimentId}/runs/${runId}`);
+}
+
+export async function getExperimentRuns(experimentId: string, limit = 20): Promise<{ data: ExperimentRun[] }> {
+  return fetchJson<{ data: ExperimentRun[] }>(`/experiments/${experimentId}/runs?limit=${limit}`);
 }
 
 export async function createExport(payload: {
