@@ -29,6 +29,8 @@ import type {
   RagConsolidated,
   ResolvedProject,
   Rubric,
+  RubricReport,
+  RubricReportWindow,
   RubricVersion,
   SdkStatus,
   TraceCompareResponse,
@@ -345,6 +347,30 @@ export async function triggerEvaluation(payload: {
     method: "POST",
     body: JSON.stringify(payload),
   });
+}
+
+export async function triggerEvaluationBatch(projectId: string, payload: {
+  rubric_id: string;
+  rubric_version?: number;
+  environment?: string;
+  name_contains?: string;
+  limit?: number;
+}): Promise<{ enqueued: number; rubric_version: number; trace_ids: string[] }> {
+  return requestJson<{ enqueued: number; rubric_version: number; trace_ids: string[] }>(
+    `/projects/${projectId}/evaluations/batch`,
+    { method: "POST", body: JSON.stringify(payload) },
+  );
+}
+
+export async function getRubricReport(
+  projectId: string,
+  rubricId: string,
+  window: RubricReportWindow = "7d",
+  environment?: string,
+): Promise<RubricReport> {
+  const params = new URLSearchParams({ window });
+  if (environment) params.set("environment", environment);
+  return fetchJson<RubricReport>(`/projects/${projectId}/rubrics/${rubricId}/report?${params.toString()}`);
 }
 
 export async function getPrompts(projectId: string): Promise<{ data: Prompt[] }> {
