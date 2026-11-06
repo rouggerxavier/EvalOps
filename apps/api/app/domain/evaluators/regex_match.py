@@ -1,16 +1,15 @@
 from __future__ import annotations
 
-import re
 import time
 from typing import Any
 
+import regex
+
 from app.domain.evaluators.base import EvaluatorResult
-from app.domain.rubrics.parser import check_regex
 from app.domain.rubrics.resolver import resolve_dotpath
 
-# shortcut: check_regex catches exponential nesting only; polynomial patterns such as `.*a.*b`
-# still take seconds on a few thousand chars. Move to the `regex` package with timeout= if it becomes a dependency.
-MAX_TEXT_CHARS = 20_000
+# `re` has no timeout: a pattern such as (a+)+$ hangs the worker on a long text that almost matches.
+MATCH_TIMEOUT_SECONDS = 1.0
 
 
 def run(context: dict, config: dict[str, Any]) -> EvaluatorResult:
@@ -22,25 +21,20 @@ def run(context: dict, config: dict[str, Any]) -> EvaluatorResult:
 
     flag_bits = 0
     for f in flags_list:
-        flag_bits |= getattr(re, f.upper(), 0)
+        flag_bits |= getattr(regex, f.upper(), 0)
 
     text = resolve_dotpath(target_path, context)
-    error = None
     try:
-        check_regex(pattern)  # rubrics saved before the check existed
-    except ValueError:
-        error = "regex_pattern_unsafe"
-    if error is None and len(text) > MAX_TEXT_CHARS:
-        error = "regex_text_too_long"  # truncating would let must_not_match pass on what it never read
-    if error:
+        matched = bool(regex.search(pattern, text, flag_bits, timeout=MATCH_TIMEOUT_SECONDS))
+    except TimeoutError:
+        # Not measured: neither a pass nor a fail of the trace.
         return EvaluatorResult(
             score=0.0,
             passed=False,
-            reasoning=error,
-            raw_output={"error": error, "mode": mode},
+            reasoning="regex_timeout",
+            raw_output={"error": "regex_timeout", "mode": mode},
             latency_ms=int((time.monotonic() - t0) * 1000),
         )
-    matched = bool(re.search(pattern, text, flag_bits))
 
     if mode == "must_match":
         passed = matched

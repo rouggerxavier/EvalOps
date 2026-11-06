@@ -90,8 +90,9 @@ def _nested_unbounded(items: Any, under_repeat: bool) -> bool:
 def check_regex(pattern: str) -> None:
     """Raise ``ValueError`` when ``pattern`` does not compile or nests unbounded quantifiers.
 
-    ``re`` has no timeout, and a nested quantifier such as ``(a+)+$`` backtracks
-    exponentially on a long text that almost matches.
+    A nested quantifier such as ``(a+)+$`` backtracks exponentially on a text that
+    almost matches. This only rejects the obvious form when a rubric is saved; the
+    defense is the match timeout in ``regex_match``.
     """
     try:
         re.compile(pattern)
