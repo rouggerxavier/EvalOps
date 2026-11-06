@@ -41,7 +41,9 @@ apps/
 packages/
   sdk-python/         evalops-python SDK
 docs/
-  plans/              planos de execução (este arquivo: refatoração_identica.md)
+  plans/              planos de execução
+  ops/                operação (migrations do banco)
+  audits/             auditorias de código e produto
 evalops-preview/      fonte visual do redesign (referência, não buildado)
 ```
 
@@ -85,6 +87,7 @@ cd apps/web && npm run test
 - [Índice da documentação atual](docs/README.md)
 - [Quality Gate e demonstração](docs/quality-gate.md)
 - [Plano desta entrega](docs/plans/quality-gate.md)
+- [Migrations do banco](docs/ops/database-migrations.md)
 - `evalops-preview/DESIGN_NOTES.md` (referência visual)
 
 ## Atalhos do app

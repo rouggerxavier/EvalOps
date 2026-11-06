@@ -105,11 +105,11 @@ Limites das correções:
 - **Redação é tudo ou nada:** ou guarda o texto integral, ou apaga tudo e não dá para avaliar. Não há mascaramento.
 - **Dependências:** `npm audit --omit=dev` aponta `next` como crítico e 4 pacotes transitivos como altos (nanoid, postcss, sharp, source-map-js).
 - **Lockfile web fora de sincronia:** `npm ci` falha por faltar Playwright; a CI usa `npm install` e esconde isso.
-- **Sem lockfile Python:** faixas abertas (`fastapi>=0.115,<1`) causaram o item 8.
+- **Sem lockfile Python:** faixas abertas (`fastapi>=0.115,<1`) causaram o item 8. Já resolvido: `apps/api/requirements.lock` (`uv pip compile`, inclui `dev`) fixa todas as dependências instaladas; CI, os dois compose e o README instalam com `-c requirements.lock`. Não há Dockerfile da API.
 - **Limpeza:** `maintenance.run_all` não tem agendamento em compose nem worker.
 - **Papéis:** nenhuma rota verifica papel, só pertencimento. Hoje não há convite, então o risco é baixo; vira real no dia em que houver.
-- **`alembic check`:** acusa 3 índices criados por migration e ausentes dos models; `create_all` fica sem eles.
-- **Docs:** o README cita `docs/04-*`, `docs/07-*`, `docs/11-*` e `docs/plans/`, que não existem, e Next 14 (é 15.5.18). O código cita `docs/ops/database-migrations.md`, também ausente.
+- **`alembic check`:** acusa 3 índices criados por migration e ausentes dos models; `create_all` fica sem eles. Corrigido na branch `claude/schema-docs-902ced`: `ix_evaluation_runs_trace_created` e os dois `ix_traces_metadata_prompt_*` (só Postgres, via `ddl_if`) declarados em `app/models.py`; `alembic check` em Postgres 16 dá `No new upgrade operations detected.`
+- **Docs:** o README cita `docs/04-*`, `docs/07-*`, `docs/11-*` e `docs/plans/`, que não existem, e Next 14 (é 15.5.18). O código cita `docs/ops/database-migrations.md`, também ausente. Corrigido na branch `claude/schema-docs-902ced`: README sem links quebrados e com Next.js 15; `docs/ops/database-migrations.md` criado com o fluxo real. Resta `apps/web/lib/rag.ts` citando `docs/08-*`, fora do escopo.
 
 ## Por que os testes não pegaram
 
