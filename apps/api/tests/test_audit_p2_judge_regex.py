@@ -93,7 +93,9 @@ def test_bounded_repetition_is_still_accepted() -> None:
 # The structural check misses these; only the timeout stops them.
 @pytest.mark.parametrize("pattern", [r"(a+)+$", r"(a|aa)+$", r"(a{1,3})+$", r"(a|a)+$", r"(\w|\d)+$"])
 @pytest.mark.parametrize("mode", ["must_match", "must_not_match"])
-def test_catastrophic_regex_times_out_as_not_measured(pattern, mode) -> None:
+def test_catastrophic_regex_times_out_as_not_measured(pattern, mode, monkeypatch) -> None:
+    # A short timeout keeps the test deterministic: (\w|\d)+$ finished in 875 ms on a fast CI runner.
+    monkeypatch.setattr(regex_match, "MATCH_TIMEOUT_SECONDS", 0.05)
     t0 = time.monotonic()
     result = regex_match.run(_context("a" * 5000 + "!"), {"target": "trace.output.text", "pattern": pattern, "mode": mode})
     assert time.monotonic() - t0 < regex_match.MATCH_TIMEOUT_SECONDS + 1
