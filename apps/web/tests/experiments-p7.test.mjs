@@ -40,3 +40,15 @@ test("experiments: no preview-bundle leakage", () => {
   assert.doesNotMatch(page, /window\.MODULES/);
   assert.doesNotMatch(page, /PreviewActionModal/);
 });
+
+test("experiments: run history lists runs per experiment and reuses RunResultCard", () => {
+  const api = readFileSync(new URL("../lib/api.ts", import.meta.url), "utf8");
+  assert.match(api, /export async function getExperimentRuns\(experimentId: string, limit = 20\)/);
+  assert.match(api, /\/experiments\/\$\{experimentId\}\/runs\?limit=\$\{limit\}/);
+  assert.match(page, /getExperimentRuns\(qp\.experiment_id\)/);
+  assert.match(page, /Histórico/);
+  assert.match(page, /Nenhuma run ainda/);
+  assert.match(page, /href=\{`\?experiment_id=\$\{run\.experiment_id\}&run_id=\$\{run\.id\}`\}/);
+  assert.match(page, /href=\{`\?experiment_id=\$\{exp\.id\}`\}/);
+  assert.match(page, /<RunResultCard run=\{runDetail\.run\} \/>/);
+});
