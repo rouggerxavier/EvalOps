@@ -1,11 +1,15 @@
 from __future__ import annotations
 
-import re
 import time
 from typing import Any
 
+import regex
+
 from app.domain.evaluators.base import EvaluatorResult
 from app.domain.rubrics.resolver import resolve_dotpath
+
+# `re` has no timeout: a pattern such as (a+)+$ hangs the worker on a long text that almost matches.
+MATCH_TIMEOUT_SECONDS = 1.0
 
 
 def run(context: dict, config: dict[str, Any]) -> EvaluatorResult:
@@ -17,10 +21,20 @@ def run(context: dict, config: dict[str, Any]) -> EvaluatorResult:
 
     flag_bits = 0
     for f in flags_list:
-        flag_bits |= getattr(re, f.upper(), 0)
+        flag_bits |= getattr(regex, f.upper(), 0)
 
     text = resolve_dotpath(target_path, context)
-    matched = bool(re.search(pattern, text, flag_bits))
+    try:
+        matched = bool(regex.search(pattern, text, flag_bits, timeout=MATCH_TIMEOUT_SECONDS))
+    except TimeoutError:
+        # Not measured: neither a pass nor a fail of the trace.
+        return EvaluatorResult(
+            score=0.0,
+            passed=False,
+            reasoning="regex_timeout",
+            raw_output={"error": "regex_timeout", "mode": mode},
+            latency_ms=int((time.monotonic() - t0) * 1000),
+        )
 
     if mode == "must_match":
         passed = matched
