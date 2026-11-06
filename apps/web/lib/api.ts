@@ -141,6 +141,15 @@ export async function getTraces(opts: {
   slow_kind?: "trace" | "llm" | "retrieval";
   rag?: boolean;
   flagged?: boolean;
+  conversation_id?: string;
+  since?: string;
+  until?: string;
+  tag?: string;
+  user_ref?: string;
+  model?: string;
+  failed?: boolean;
+  score_lt?: number;
+  q?: string;
 }): Promise<TraceListResponse> {
   const params = new URLSearchParams({
     project_id: opts.projectId,
@@ -154,6 +163,12 @@ export async function getTraces(opts: {
   if (opts.slow_kind) params.set("slow_kind", opts.slow_kind);
   if (opts.rag !== undefined) params.set("rag", String(opts.rag));
   if (opts.flagged !== undefined) params.set("flagged", String(opts.flagged));
+  for (const key of ["conversation_id", "since", "until", "tag", "user_ref", "model", "q"] as const) {
+    const value = opts[key];
+    if (value) params.set(key, value);
+  }
+  if (opts.failed !== undefined) params.set("failed", String(opts.failed));
+  if (opts.score_lt !== undefined) params.set("score_lt", String(opts.score_lt));
   return fetchJson<TraceListResponse>(`/traces?${params.toString()}`);
 }
 

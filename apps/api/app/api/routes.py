@@ -45,6 +45,11 @@ def _encode_cursor(created_at: datetime, trace_id: str) -> str:
     return base64.urlsafe_b64encode(raw.encode()).decode().rstrip("=")
 
 
+def _to_utc(dt: datetime) -> datetime:
+    # created_at is stored in UTC; SQLite compares wall-clock strings, so offsets must be normalized.
+    return dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt.astimezone(timezone.utc)
+
+
 def _decode_cursor(cursor: str) -> tuple[datetime, str]:
     try:
         padded = cursor + "=" * (-len(cursor) % 4)
@@ -568,6 +573,14 @@ def list_traces(
     rag: bool | None = Query(None),
     conversation_id: str | None = Query(None, max_length=255),
     flagged: bool | None = Query(None),
+    since: datetime | None = None,
+    until: datetime | None = None,
+    tag: str | None = Query(None, max_length=255, pattern="^[^:]+:.+$"),
+    user_ref: str | None = Query(None, max_length=255),
+    model: str | None = Query(None, max_length=255),
+    failed: bool | None = Query(None),
+    score_lt: float | None = Query(None, ge=0, le=1),
+    q: str | None = Query(None, max_length=255),
     project: Project = Depends(get_owned_project),
     db: Session = Depends(get_db),
 ) -> dict:
@@ -608,6 +621,31 @@ def list_traces(
         query = query.filter(Trace.metadata_json["conversation_id"].as_string() == conversation_id)
     if flagged is True:
         query = query.filter(Trace.id.in_(select(TraceFlag.trace_id)))
+    if since:
+        query = query.filter(Trace.created_at >= _to_utc(since))
+    if until:
+        query = query.filter(Trace.created_at <= _to_utc(until))
+    if tag:
+        tag_key, tag_value = tag.split(":", 1)
+        query = query.filter(Trace.tags[tag_key].as_string() == tag_value)
+    if user_ref:
+        query = query.filter(Trace.user_ref == user_ref)
+    if model:
+        query = query.filter(Trace.id.in_(select(Span.trace_id).where(Span.type == "llm_call", Span.model == model)))
+    # shortcut: matches any run, not just the latest; upgrade when filtering by rubric
+    if failed is True:
+        query = query.filter(Trace.id.in_(select(EvaluationRun.trace_id).where(EvaluationRun.passed.is_(False))))
+    if score_lt is not None:
+        query = query.filter(Trace.id.in_(select(EvaluationRun.trace_id).where(EvaluationRun.aggregate_score < score_lt)))
+    if q:
+        query = query.filter(
+            or_(
+                Trace.name.ilike(f"%{q}%"),
+                Trace.id == q,
+                Trace.user_ref == q,
+                Trace.metadata_json["conversation_id"].as_string() == q,
+            )
+        )
     if cursor:
         cursor_created_at, cursor_id = _decode_cursor(cursor)
         query = query.filter(

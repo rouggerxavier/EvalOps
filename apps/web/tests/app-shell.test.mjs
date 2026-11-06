@@ -54,7 +54,7 @@ test("AppShell: sidebar footer links to /health (no static online text)", () => 
 
 test("AppShell: topbar keeps real actions and now exposes workspace switcher always", () => {
   assert.match(topbar, /action=\{`\$\{base\}\/traces`\}/);
-  assert.match(topbar, /name="name"/);
+  assert.match(topbar, /name="q"/);
   assert.match(topbar, /href="\/docs"/);
   assert.match(topbar, /action=\{logoutAction\}/);
   assert.match(topbar, /setEnvironmentAction/);

@@ -80,12 +80,20 @@ export default async function TraceDetailPage({ params, searchParams }: Props) {
   const tab = parseTab(qp.tab, ragEnabled);
   const safeQueryError = qp.error ? safeErrorMessage(qp.error, "Falha em ação.") : null;
 
-  const [rubricsRes, compareList, ragData, evaluations] = await Promise.all([
+  const conversationId =
+    typeof t.metadata?.conversation_id === "string" && t.metadata.conversation_id ? (t.metadata.conversation_id as string) : null;
+
+  const [rubricsRes, compareList, ragData, evaluations, conversation] = await Promise.all([
     getRubrics(t.project_id).catch(() => ({ data: [] })),
     getTraces({ projectId: t.project_id, limit: 12 }).catch(() => ({ data: [], next_cursor: null })),
     ragEnabled ? getTraceRag(t.id).catch(() => null as RagConsolidated | null) : Promise.resolve(null),
     getTraceEvaluations(t.id).catch(() => null),
+    conversationId
+      ? getTraces({ projectId: t.project_id, conversation_id: conversationId, limit: 50 }).catch(() => null)
+      : Promise.resolve(null),
   ]);
+  // The API lists newest first; a conversation reads oldest first.
+  const conversationTurns = conversation ? [...conversation.data].reverse() : [];
 
   const compareCandidates = compareList.data.filter((row) => row.id !== t.id).slice(0, 10);
   const traceCause = getTraceCauseLabel(t);
@@ -267,6 +275,42 @@ export default async function TraceDetailPage({ params, searchParams }: Props) {
           deltaTone="neutral"
         />
       </section>
+
+      {conversationId ? (
+        <div style={{ marginBottom: "var(--sp-4)" }}>
+        <Card
+          title="Conversa"
+          subtitle={
+            conversation
+              ? `${conversationTurns.length} turno${conversationTurns.length === 1 ? "" : "s"}${conversation.next_cursor ? " (mostrando os 50 mais recentes)" : ""}`
+              : "Falha ao carregar os outros turnos"
+          }
+          action={
+            <Link href={`/o/${org}/p/${project}/traces?conversation_id=${encodeURIComponent(conversationId)}`} className="btn btn--sm btn--ghost">
+              Ver na lista
+            </Link>
+          }
+        >
+          <ol style={{ margin: 0, paddingLeft: 18, display: "flex", flexDirection: "column", gap: 4, fontSize: 12 }}>
+            {conversationTurns.map((turn) => (
+              <li key={turn.id}>
+                <div className="row" style={{ gap: 8 }}>
+                  {turn.id === t.id ? (
+                    <strong aria-current="page">{turn.name}</strong>
+                  ) : (
+                    <Link href={`/o/${org}/p/${project}/traces/${turn.id}`}>{turn.name}</Link>
+                  )}
+                  {turn.id === t.id ? <Badge variant="info">este turno</Badge> : null}
+                  <StatusBadge status={turn.status} />
+                  {turn.redacted ? <span className="tag">redigido</span> : null}
+                  <span className="faint mono" style={{ fontSize: 11 }}>{formatRelativeTime(turn.created_at)}</span>
+                </div>
+              </li>
+            ))}
+          </ol>
+        </Card>
+        </div>
+      ) : null}
 
       <nav className="tabs">
         {ragEnabled ? (
