@@ -10,5 +10,5 @@ class EvaluatorResult:
     passed: bool
     reasoning: str = ""
     raw_output: dict[str, Any] = field(default_factory=dict)
-    cost_usd: float = 0.0
+    cost_usd: float | None = 0.0  # None: unknown, not free
     latency_ms: int = 0

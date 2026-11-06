@@ -13,33 +13,33 @@ const PIPELINE_STEPS: PipelineStep[] = [
   {
     step: "ETAPA 01",
     title: "Instrumente",
-    body: "Adicione o SDK ou envie traces por POST diretamente. Spans, ferramentas e eventos entram em um único grafo de execução.",
+    body: "Adicione o SDK Python ou envie traces por POST. Conversa, ferramentas, modelo e custo ficam no mesmo trace.",
     previewTitle: "Entrada",
-    previewLines: ["POST /agent/run", "evalops.trace(...)"],
+    previewLines: ["@evalops.trace(...)", "span.set_llm(...)"],
     tone: "trace",
   },
   {
     step: "ETAPA 02",
     title: "Avalie",
-    body: "Rode rubricas na ingestão ou manualmente. Cada trace recebe score, reasoning e status de aprovação.",
-    previewTitle: "Rubric",
-    previewLines: ["Score 0.86", "Rubric passed"],
+    body: "Escolha os traces e rode uma rubrica pela tela ou pela API. Cada avaliação traz nota, motivo e aprovação por avaliador.",
+    previewTitle: "Rubrica",
+    previewLines: ["Nota 0.86", "Rubrica aprovada"],
     tone: "eval",
   },
   {
     step: "ETAPA 03",
-    title: "Compare",
-    body: "Rode experimentos entre prompts, modelos ou parâmetros e compare qualidade, custo e latência.",
-    previewTitle: "Delta",
-    previewLines: ["v1.7.1 -> v1.7.2", "+6.2% score", "-12% latency"],
+    title: "Verifique",
+    body: "Defina no quality gate a nota mínima e os limites de custo e latência p95. Ele compara a janela de traces com esses limites.",
+    previewTitle: "Gate",
+    previewLines: ["Nota média 0.86 >= 0.80", "p95 1.2s <= 2s", "Status: pass"],
     tone: "compare",
   },
   {
     step: "ETAPA 04",
-    title: "Melhore",
-    body: "Promova a melhor variante e exporte exemplos de alta qualidade para fine-tuning ou suítes de regressão.",
-    previewTitle: "Gate",
-    previewLines: ["Quality gate passed", "0 critical regressions", "Ready to deploy"],
+    title: "Exporte",
+    body: "Exporte traces com o feedback humano em JSONL para montar suas suítes de regressão.",
+    previewTitle: "Export",
+    previewLines: ["traces.jsonl", "feedback incluído"],
     tone: "ship",
   },
 ];
@@ -48,9 +48,9 @@ export function HowItWorksPipeline() {
   return (
     <div className={styles.howPipelineRoot}>
       <p className={styles.howPipelineIntro}>
-        Capture traces reais, rode avaliações, compare versões e aprove apenas mudanças seguras.
+        Capture traces reais, avalie com rubricas e confira o projeto contra os limites de qualidade.
       </p>
-      <div className={styles.howPipelineTrack} aria-label="Pipeline de observabilidade e deploy">
+      <div className={styles.howPipelineTrack} aria-label="Como o EvalOps funciona">
         {PIPELINE_STEPS.map((item) => (
           <article key={item.step} className={styles.howPipelineCard}>
             <div className={styles.howPipelineTop}>

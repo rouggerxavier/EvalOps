@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 import { isRedirectError } from "next/dist/client/components/redirect-error";
 
 import { setApiKeyFlash } from "@/lib/flash";
+import { parseQualityGateForm } from "@/lib/quality-gate";
 import { sanitizeApiError } from "@/lib/safe-error";
 import {
   bulkFlagTraces,
@@ -26,10 +27,13 @@ import {
   flagTrace,
   markNotificationsRead,
   patchProject,
+  putQualityGateConfig,
+  resolveProject,
   rerunTrace,
   revokeApiKey,
   runExperiment,
   triggerEvaluation,
+  triggerEvaluationBatch,
 } from "@/lib/api";
 
 function projectPath(org: string, project: string, section: string): string {
@@ -200,6 +204,41 @@ export async function triggerEvaluationAction(formData: FormData): Promise<void>
   }
   if (fromTrace) redirectWithMessage(path, errorMsg ? { tab: "evaluations", error: errorMsg } : { tab: "evaluations" });
   redirectWithMessage(path, errorMsg ? { error: errorMsg } : { created: "1" });
+}
+
+export async function triggerEvaluationBatchAction(formData: FormData): Promise<void> {
+  const org = String(formData.get("org") ?? "");
+  const project = String(formData.get("project") ?? "");
+  const projectId = String(formData.get("project_id") ?? "");
+  const rubricId = String(formData.get("rubric_id") ?? "");
+  const rubricVersionRaw = String(formData.get("rubric_version") ?? "").trim();
+  const environment = String(formData.get("environment") ?? "").trim();
+  const nameContains = String(formData.get("name_contains") ?? "").trim();
+  const limitRaw = String(formData.get("limit") ?? "").trim();
+  const path = projectPath(org, project, "rubrics");
+
+  let errorMsg: string | null = null;
+  let enqueued = 0;
+  try {
+    const result = await triggerEvaluationBatch(projectId, {
+      rubric_id: rubricId,
+      rubric_version: rubricVersionRaw ? Number(rubricVersionRaw) : undefined,
+      environment: environment || undefined,
+      name_contains: nameContains || undefined,
+      limit: limitRaw ? Number(limitRaw) : undefined,
+    });
+    enqueued = result.enqueued;
+    revalidatePath(path);
+  } catch (error) {
+    errorMsg =
+      error instanceof Error && error.message.startsWith("API 503")
+        ? "A fila de avaliação está fora do ar (o worker não está rodando). Nada foi enfileirado; tente de novo mais tarde."
+        : messageFromActionError(error, "Falha ao enfileirar avaliações");
+  }
+  redirectWithMessage(
+    path,
+    errorMsg ? { rubric: rubricId, error: errorMsg } : { rubric: rubricId, batched: String(enqueued) },
+  );
 }
 
 export async function triggerEvaluationFromOverviewAction(formData: FormData): Promise<void> {
@@ -664,4 +703,24 @@ export async function patchProjectAction(formData: FormData): Promise<void> {
     errorMsg = messageFromActionError(error, "Failed to update project");
   }
   redirectWithMessage(path, errorMsg ? { error: errorMsg } : { updated: "1" });
+}
+
+
+export async function saveQualityGateAction(formData: FormData): Promise<void> {
+  const org = String(formData.get("org") ?? "");
+  const project = String(formData.get("project") ?? "");
+  const path = projectPath(org, project, "settings");
+  const config = parseQualityGateForm(formData);
+  if (!config) redirectWithMessage(path, { error: "Dados inválidos. Verifique os limites do Quality Gate." });
+  let errorMsg: string | null = null;
+  try {
+    // Resolve authenticated URL context; never trust a submitted project ID.
+    const resolved = await resolveProject(org, project);
+    await putQualityGateConfig(resolved.project_id, config);
+    revalidatePath(path);
+    revalidatePath(`/o/${org}/p/${project}`);
+  } catch (error) {
+    errorMsg = messageFromActionError(error, "Não foi possível salvar o Quality Gate.");
+  }
+  redirectWithMessage(path, errorMsg ? { error: errorMsg } : { gate_saved: "1" });
 }

@@ -1,9 +1,11 @@
 import { AlertCircle, CheckCircle2 } from "lucide-react";
 
+import { QualityGateForm } from "@/components/QualityGateForm";
 import { AuthRequiredPanel } from "@/components/AuthRequiredPanel";
 import { Copyable } from "@/components/ui/Copyable";
 import { createProjectAction, patchProjectAction } from "@/lib/actions";
 import {
+  getQualityGateConfig,
   getMembers,
   getOrganizationSubscription,
   getOrganizationUsage,
@@ -16,7 +18,7 @@ import type { Member, OrgSubscription, OrgUsage, Project } from "@/lib/types";
 
 type Props = {
   params: Promise<{ org: string; project: string }>;
-  searchParams: Promise<{ updated?: string; created?: string; error?: string }>;
+  searchParams: Promise<{ updated?: string; created?: string; error?: string; gate_saved?: string }>;
 };
 
 function usd(value: number): string {
@@ -132,7 +134,7 @@ export default async function SettingsPage({ params, searchParams }: Props) {
   if (!(await hasAuthToken())) return <AuthRequiredPanel layout="main" />;
 
   const resolved = await resolveProject(org, project);
-  const [projectsResult, membersResult, usageResult, subscriptionResult] = await Promise.all([
+  const [projectsResult, membersResult, usageResult, subscriptionResult, gateConfig] = await Promise.all([
     getProjects(resolved.org_id)
       .then((result) => ({ data: result.data, error: null as string | null }))
       .catch((error) => ({ data: [] as Project[], error: safeErrorMessage(error, "Falha ao carregar projetos.") })),
@@ -148,6 +150,7 @@ export default async function SettingsPage({ params, searchParams }: Props) {
     getOrganizationSubscription(resolved.org_id)
       .then((subscription) => ({ subscription, error: null as string | null }))
       .catch((error) => ({ subscription: null, error: safeErrorMessage(error, "Falha ao carregar plano.") })),
+    getQualityGateConfig(resolved.project_id).catch(() => null),
   ]);
 
   const projectRecord = projectsResult.data.find((item) => item.id === resolved.project_id) ?? null;
@@ -158,7 +161,7 @@ export default async function SettingsPage({ params, searchParams }: Props) {
       <header className="page-header">
         <div>
           <h1 className="page-header__title">Ajustes</h1>
-          <p className="page-header__subtitle">Projeto, plano, membros e novos projetos da organização.</p>
+          <p className="page-header__subtitle">Quality Gate, projeto, plano, membros e novos projetos da organização.</p>
         </div>
       </header>
 
@@ -166,6 +169,9 @@ export default async function SettingsPage({ params, searchParams }: Props) {
       {qp.created ? <p className="ops-note" role="status"><CheckCircle2 size={14} aria-hidden="true" /> Projeto criado.</p> : null}
       {safeQueryError ? <p className="ops-note" role="alert"><AlertCircle size={14} aria-hidden="true" /> {safeQueryError}</p> : null}
       {projectsResult.error ? <p className="ops-note" role="alert">Sem dados de projeto: {projectsResult.error}</p> : null}
+
+      {qp.gate_saved === "1" ? <p className="ops-note" role="status"><CheckCircle2 size={14} aria-hidden="true" /> Quality Gate salvo. Confira o resultado na visão geral.</p> : null}
+      <QualityGateForm config={gateConfig} org={org} project={project} />
 
       <div className="grid-2-eq ops-settings-grid">
         <div className="ops-stack">

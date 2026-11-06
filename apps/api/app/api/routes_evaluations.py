@@ -17,11 +17,13 @@ from app.domain.services.eval_service import (
     rubric_uses_llm_judge,
 )
 from app.domain.services.rubric_report_service import WINDOWS, filtered_traces, rubric_report
+from app.infra.llm import cli_judge
 from app.models import EvaluationRun, EvaluationScore, Project, Rubric, RubricVersion, Trace, User
 from app.ownership import load_project, load_trace, project_access
 from app.workers.queue import get_arq_pool
 from app.safe_errors import safe_message
 from app.schemas import (
+    CliJudgeOptionsOut,
     CoverageResponse,
     EvaluationBatchIn,
     EvaluationRunOut,
@@ -304,6 +306,11 @@ def get_project_coverage(
     return {"data": data}
 
 
+@router.get("/judges/cli", response_model=CliJudgeOptionsOut)
+def list_cli_judges(user: User = Depends(get_current_user)) -> dict:
+    return {"data": cli_judge.availability()}
+
+
 @router.get("/projects/{project_id}/evaluations/summary", response_model=EvaluationSummaryOut)
 def get_project_evaluation_summary(
     project_id: str,
@@ -325,11 +332,12 @@ def get_project_evaluation_summary(
     if completed:
         pass_rate = round(sum(1 for run in completed if run.passed) / len(completed), 4)
     cost_usd = sum(float(run.cost_usd or 0) for run in runs)
+    all_unknown = not cost_usd and any(run.cost_usd is None for run in runs)
     return {
         "active_rubrics": int(active_rubrics),
         "runs_7d": len(runs),
         "pass_rate": pass_rate,
-        "cost_usd": round(cost_usd, 6),
+        "cost_usd": None if all_unknown else round(cost_usd, 6),
     }
 
 

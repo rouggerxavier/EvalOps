@@ -2,7 +2,7 @@ import Link from "next/link";
 import { Activity, AlertCircle, Copy, Flag as FlagIcon, Layers, MessageSquare, Target, Terminal } from "lucide-react";
 
 import { AuthRequiredPanel } from "@/components/AuthRequiredPanel";
-import { Badge } from "@/components/ui/Badge";
+import { Badge, StatusBadge } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
 import { Copyable } from "@/components/ui/Copyable";
 import { JsonBlock } from "@/components/ui/JsonBlock";
@@ -80,12 +80,20 @@ export default async function TraceDetailPage({ params, searchParams }: Props) {
   const tab = parseTab(qp.tab);
   const safeQueryError = qp.error ? safeErrorMessage(qp.error, "Falha em ação.") : null;
 
-  const [rubricsRes, compareList, ragData, evaluations] = await Promise.all([
+  const conversationId =
+    typeof t.metadata?.conversation_id === "string" && t.metadata.conversation_id ? (t.metadata.conversation_id as string) : null;
+
+  const [rubricsRes, compareList, ragData, evaluations, conversation] = await Promise.all([
     getRubrics(t.project_id).catch(() => ({ data: [] })),
     getTraces({ projectId: t.project_id, limit: 12 }).catch(() => ({ data: [], next_cursor: null })),
     ragEnabled ? getTraceRag(t.id).catch(() => null as RagConsolidated | null) : Promise.resolve(null),
     getTraceEvaluations(t.id).catch(() => null),
+    conversationId
+      ? getTraces({ projectId: t.project_id, conversation_id: conversationId, limit: 50 }).catch(() => null)
+      : Promise.resolve(null),
   ]);
+  // The API lists newest first; a conversation reads oldest first.
+  const conversationTurns = conversation ? [...conversation.data].reverse() : [];
 
   const compareCandidates = compareList.data.filter((row) => row.id !== t.id).slice(0, 10);
   const traceCause = getTraceCauseLabel(t);
@@ -279,6 +287,39 @@ export default async function TraceDetailPage({ params, searchParams }: Props) {
         />
         <Metric label="Passos" value={`${detail.spans.length}`} />
       </section>
+
+      {conversationId ? (
+        <Card
+          title="Conversa"
+          subtitle={
+            conversation
+              ? `${conversationTurns.length} turno${conversationTurns.length === 1 ? "" : "s"}${conversation.next_cursor ? " (mostrando os 50 mais recentes)" : ""}`
+              : "Falha ao carregar os outros turnos"
+          }
+          action={
+            <Link href={`/o/${org}/p/${project}/traces?conversation_id=${encodeURIComponent(conversationId)}&environment=`} className="btn btn--sm btn--ghost">
+              Ver na lista
+            </Link>
+          }
+          className="ops-detail__turns"
+        >
+          <ol className="ops-detail__turn-list">
+            {conversationTurns.map((turn) => (
+              <li key={turn.id}>
+                {turn.id === t.id ? (
+                  <strong aria-current="page">{turn.name}</strong>
+                ) : (
+                  <Link href={`/o/${org}/p/${project}/traces/${turn.id}`}>{turn.name}</Link>
+                )}
+                {turn.id === t.id ? <Badge variant="info">este turno</Badge> : null}
+                <StatusBadge status={turn.status} />
+                {turn.redacted ? <span className="tag">redigido</span> : null}
+                <span className="t__faint">{formatRelativeTime(turn.created_at)}</span>
+              </li>
+            ))}
+          </ol>
+        </Card>
+      ) : null}
 
       <nav className="tabs" aria-label="Seções do trace">
         <Link href={tabHref("conversation")} className={`tab${tab === "conversation" ? " is-active" : ""}`} aria-current={tab === "conversation" ? "page" : undefined}>

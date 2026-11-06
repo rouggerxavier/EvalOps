@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Clock, Download, GitCompareArrows, Layers, Search } from "lucide-react";
+import { Clock, Download, GitCompareArrows, Layers, Search, X } from "lucide-react";
 
 import { AuthRequiredPanel } from "@/components/AuthRequiredPanel";
 import { getActiveEnvironment } from "@/lib/active-env";
@@ -23,8 +23,41 @@ type Props = {
     cursor?: string;
     slow_kind?: string;
     verdict?: string;
+    q?: string;
+    conversation_id?: string;
+    since?: string;
+    until?: string;
+    tag?: string;
+    user_ref?: string;
+    model?: string;
+    failed?: string;
+    score_lt?: string;
   }>;
 };
+
+// Filters kept across tabs, pagination and refresh; invalid values are dropped so the API never answers 422.
+const FILTER_KEYS = ["q", "conversation_id", "since", "until", "tag", "user_ref", "model", "failed", "score_lt"] as const;
+type FilterKey = (typeof FILTER_KEYS)[number];
+
+function isRealDate(value: string): boolean {
+  const date = new Date(`${value}T00:00:00Z`);
+  return /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(date.getTime()) && date.toISOString().startsWith(value);
+}
+
+function validFilters(qp: Partial<Record<FilterKey, string>>): Partial<Record<FilterKey, string>> {
+  const out: Partial<Record<FilterKey, string>> = {};
+  for (const key of FILTER_KEYS) {
+    const value = qp[key]?.trim();
+    if (!value) continue;
+    // The round trip rejects impossible dates like 2026-02-30, which the API answers with 422.
+    if ((key === "since" || key === "until") && !isRealDate(value)) continue;
+    if (key === "tag" && !/^[^:]+:.+$/.test(value)) continue;
+    if (key === "failed" && value !== "true") continue;
+    if (key === "score_lt" && !(Number(value) >= 0 && Number(value) <= 1)) continue;
+    out[key] = value;
+  }
+  return out;
+}
 
 function parseTab(value: string | undefined): Tab {
   if (value === "errors" || value === "partial" || value === "slow" || value === "rag" || value === "flagged") return value;
@@ -48,6 +81,7 @@ export default async function TracesListPage({ params, searchParams }: Props) {
   const tabStatus = tab === "errors" ? "error,partial" : tab === "partial" ? "partial" : qp.status;
   const slowKind: SlowKind = tab === "slow" ? parseSlowKind(qp.slow_kind) : "trace";
   const environment = await getActiveEnvironment(qp.environment);
+  const filters = validFilters(qp);
   const [traces, evaluations] = await Promise.all([
     getTraces({
       projectId: resolved.project_id,
@@ -60,6 +94,16 @@ export default async function TracesListPage({ params, searchParams }: Props) {
       slow_kind: tab === "slow" ? slowKind : undefined,
       rag: tab === "rag" ? true : undefined,
       flagged: tab === "flagged" ? true : undefined,
+      q: filters.q,
+      conversation_id: filters.conversation_id,
+      // shortcut: dates are whole days in UTC, not the viewer's timezone; upgrade when the UI knows the user's timezone
+      since: filters.since ? `${filters.since}T00:00:00` : undefined,
+      until: filters.until ? `${filters.until}T23:59:59.999` : undefined,
+      tag: filters.tag,
+      user_ref: filters.user_ref,
+      model: filters.model,
+      failed: filters.failed ? true : undefined,
+      score_lt: filters.score_lt ? Number(filters.score_lt) : undefined,
     }),
     getProjectEvaluations(resolved.project_id, 100, environment).catch(() => ({ data: [] })),
   ]);
@@ -98,6 +142,16 @@ export default async function TracesListPage({ params, searchParams }: Props) {
   // "Trace inteiro" after the next click.
   if (tab === "slow" && slowKind !== "trace") baseParams.set("slow_kind", slowKind);
 
+  for (const [key, value] of Object.entries(filters)) baseParams.set(key, value);
+
+  const withoutFilterHref = (key: FilterKey) => {
+    const p = new URLSearchParams(baseParams);
+    p.delete(key);
+    if (tab !== "all") p.set("tab", tab);
+    const s = p.toString();
+    return s ? `${tabBase}?${s}` : tabBase;
+  };
+
   const tabHref = (t: Tab) => {
     const p = new URLSearchParams(baseParams);
     if (t !== "all") p.set("tab", t);
@@ -134,7 +188,9 @@ export default async function TracesListPage({ params, searchParams }: Props) {
   const hasCursor = Boolean(qp.cursor);
   const autoRefreshEnabled = !hasCursor && rows.length > 0;
   const autoRefreshDisabledReason = hasCursor ? "Pausado em página paginada" : undefined;
-  const hasFilters = Boolean(qp.name || qp.status || verdictFilter);
+  // Period, tag, user, model, score and failures live behind "Mais filtros"; q and conversation show as chips.
+  const advancedFilterCount = (["since", "until", "tag", "user_ref", "model", "score_lt", "failed"] as const).filter((key) => filters[key]).length;
+  const hasFilters = Boolean(qp.name || qp.status || verdictFilter || Object.keys(filters).length > 0);
   const clearParams = new URLSearchParams();
   if (environment) clearParams.set("environment", environment);
   if (tab !== "all") clearParams.set("tab", tab);
@@ -195,6 +251,8 @@ export default async function TracesListPage({ params, searchParams }: Props) {
         <form method="get" className="filters ops-traces__filters" action={tabBase}>
           {tab !== "all" ? <input type="hidden" name="tab" value={tab} /> : null}
           {tab === "slow" && slowKind !== "trace" ? <input type="hidden" name="slow_kind" value={slowKind} /> : null}
+          {filters.q ? <input type="hidden" name="q" value={filters.q} /> : null}
+          {filters.conversation_id ? <input type="hidden" name="conversation_id" value={filters.conversation_id} /> : null}
           <label className="filter-group">
             <Search size={13} />
             <input className="filter-input" name="name" defaultValue={qp.name ?? ""} placeholder="Buscar por nome" aria-label="Buscar por nome" />
@@ -218,9 +276,6 @@ export default async function TracesListPage({ params, searchParams }: Props) {
             <option value="staging">Staging</option>
             <option value="dev">Desenvolvimento</option>
           </select>
-          <select className="filter-select" aria-label="Período" disabled defaultValue="">
-            <option value="">Período sem dados na API</option>
-          </select>
           <Link
             href={tabHref("rag")}
             className={`btn${tab === "rag" ? " btn--primary" : ""}`}
@@ -230,12 +285,66 @@ export default async function TracesListPage({ params, searchParams }: Props) {
             <Layers size={14} /> RAG
           </Link>
           <button type="submit" className="btn">Aplicar</button>
+          <details className="ops-traces__more" open={advancedFilterCount > 0}>
+            <summary className="btn">
+              Mais filtros{advancedFilterCount > 0 ? <span className="tab__count">{advancedFilterCount}</span> : null}
+            </summary>
+            <div className="ops-traces__more-body">
+              <label className="filter-group ops-traces__date">
+                <span>De</span>
+                <input className="filter-input" type="date" name="since" defaultValue={filters.since ?? ""} aria-label="Desde (dia, UTC)" />
+              </label>
+              <label className="filter-group ops-traces__date">
+                <span>Até</span>
+                <input className="filter-input" type="date" name="until" defaultValue={filters.until ?? ""} aria-label="Até (dia, UTC)" />
+              </label>
+              <input className="filter-input" name="tag" defaultValue={filters.tag ?? ""} placeholder="Tag (canal:whatsapp)" aria-label="Tag no formato chave:valor" />
+              <input className="filter-input" name="user_ref" defaultValue={filters.user_ref ?? ""} placeholder="Usuário" aria-label="Usuário" />
+              <input className="filter-input" name="model" defaultValue={filters.model ?? ""} placeholder="Modelo (gpt-4o-mini)" aria-label="Modelo" />
+              <input
+                className="filter-input ops-traces__score"
+                type="number"
+                name="score_lt"
+                min={0}
+                max={1}
+                step={0.05}
+                defaultValue={filters.score_lt ?? ""}
+                placeholder="Nota abaixo de"
+                aria-label="Nota abaixo de (0 a 1)"
+              />
+              <label className="ops-traces__check">
+                <input type="checkbox" name="failed" value="true" defaultChecked={Boolean(filters.failed)} />
+                Só reprovados
+              </label>
+            </div>
+          </details>
         </form>
+
+        {filters.q || filters.conversation_id ? (
+          <div className="ops-traces__chips">
+            {filters.conversation_id ? (
+              <span className="tag" data-testid="conversation-filter-chip">
+                conversa: {filters.conversation_id}
+                <Link href={withoutFilterHref("conversation_id")} aria-label="Remover filtro de conversa">
+                  <X size={12} aria-hidden="true" />
+                </Link>
+              </span>
+            ) : null}
+            {filters.q ? (
+              <span className="tag">
+                busca: {filters.q}
+                <Link href={withoutFilterHref("q")} aria-label="Remover busca">
+                  <X size={12} aria-hidden="true" />
+                </Link>
+              </span>
+            ) : null}
+          </div>
+        ) : null}
 
         {displayRows.length === 0 && hasFilters ? (
           <div className="empty ops-traces__empty">
             <div className="empty__title">Nenhum trace com esses filtros</div>
-            <p className="empty__desc">Tente outro nome ou situação, ou limpe os filtros.</p>
+            <p className="empty__desc">Tente outro filtro ou limpe todos.</p>
             <Link href={clearFiltersHref} className="btn">Limpar filtros</Link>
           </div>
         ) : displayRows.length === 0 ? (

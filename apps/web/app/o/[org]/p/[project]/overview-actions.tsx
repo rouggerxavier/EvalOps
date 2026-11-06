@@ -7,7 +7,6 @@ import { ArrowRight, Download, GitCompare, Play } from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
 import {
   createExportAction,
-  setEnvironmentAction,
   triggerEvaluationFromOverviewAction,
 } from "@/lib/actions";
 import type { Rubric, Trace } from "@/lib/types";
@@ -221,24 +220,8 @@ export function OverviewMobileFilters({
 }) {
   const currentPath = `/o/${org}/p/${project}`;
   return (
+    // The environment lives in the topbar on every width; this row only adds the period.
     <div className="ops-mobile-filters" aria-label="Filtros do overview">
-      <form action={setEnvironmentAction}>
-        <input type="hidden" name="org" value={org} />
-        <input type="hidden" name="project" value={project} />
-        <input type="hidden" name="current_path" value={currentPath} />
-        <select
-          className="filter-select"
-          name="environment"
-          aria-label="Ambiente"
-          defaultValue={environment ?? "all"}
-          onChange={(event) => event.currentTarget.form?.requestSubmit()}
-        >
-          <option value="all">Todos os ambientes</option>
-          <option value="prod">Produção</option>
-          <option value="staging">Staging</option>
-          <option value="dev">Dev</option>
-        </select>
-      </form>
       <form method="get" action={currentPath}>
         <input type="hidden" name="environment" value={environment ?? ""} />
         <select

@@ -95,21 +95,21 @@ Limites das correções:
 
 ## P2 — Robustez
 
-- **SDK async:** `@evalops.trace` em `async def` fecha o trace antes de rodar: duração 0, spans perdidos, saída `<coroutine object>`. Provado. Não atinge `run_minimal_turn`, que é síncrono.
-- **SDK bloqueia o chamador:** com a fila cheia, o envio vira síncrono com retentativas, cerca de 15 s por turno com a API fora. Risco real para o lease do worker da Grankasa. Leitura (`uploader.py:260`).
-- **SDK perde dados:** sem `atexit` e sem `shutdown` público (provado); `errors[]` em resposta 202 é ignorado, então o trace ruim some em silêncio (`uploader.py:166`, provado).
+- ~~**SDK async:** `@evalops.trace` em `async def` fecha o trace antes de rodar: duração 0, spans perdidos, saída `<coroutine object>`. Provado. Não atinge `run_minimal_turn`, que é síncrono.~~ **Corrigido:** wrapper async para coroutine functions; spans seguem o trace via `contextvars`, inclusive em `asyncio.gather`.
+- ~~**SDK bloqueia o chamador:** com a fila cheia, o envio vira síncrono com retentativas, cerca de 15 s por turno com a API fora. Risco real para o lease do worker da Grankasa. Leitura (`uploader.py:260`).~~ **Corrigido:** com a fila cheia o trace é descartado na hora, com warning e `dropped_count`; nenhum envio roda na thread do chamador.
+- ~~**SDK perde dados:** sem `atexit` e sem `shutdown` público (provado); `errors[]` em resposta 202 é ignorado, então o trace ruim some em silêncio (`uploader.py:166`, provado).~~ **Corrigido:** `evalops.flush(timeout=5.0)` e `evalops.shutdown(timeout=5.0)` têm prazo e devolvem `bool`; o `atexit` usa o mesmo prazo e grava em dead-letter o que não enviou; cada item de `errors[]` vira warning.
 - **Replay:** enfileira antes do commit e pode não achar o trace; fica `queued` para sempre sem worker; não consome orçamento; só fala com OpenAI (`routes_trace_actions.py:433`, leitura).
 - **Juiz:** o texto do trace entra no prompt sem delimitação, abrindo injeção contra a nota. Se o template falha, o juiz recebe o template cru (`llm_judge.py:46`, leitura).
 - **`regex_match`:** regex do usuário roda sem limite de tempo (ReDoS, leitura).
-- **`client_trace_id` opcional:** sem ele, retentativa duplica o trace (provado).
+- ~~**`client_trace_id` opcional:** sem ele, retentativa duplica o trace (provado).~~ **Corrigido no SDK:** todo trace leva `ct_<uuid4>` gerado uma vez e reenviado igual em retentativa, requeue e dead-letter; a API já deduplica por `(project_id, client_trace_id)`. Na API o campo segue opcional para outros clientes.
 - **Redação é tudo ou nada:** ou guarda o texto integral, ou apaga tudo e não dá para avaliar. Não há mascaramento.
-- **Dependências:** `npm audit --omit=dev` aponta `next` como crítico e 4 pacotes transitivos como altos (nanoid, postcss, sharp, source-map-js).
-- **Lockfile web fora de sincronia:** `npm ci` falha por faltar Playwright; a CI usa `npm install` e esconde isso.
-- **Sem lockfile Python:** faixas abertas (`fastapi>=0.115,<1`) causaram o item 8.
+- **Dependências:** `npm audit --omit=dev` aponta `next` como crítico e 4 pacotes transitivos como altos (nanoid, postcss, sharp, source-map-js). Corrigido na branch `fix/web-deps-audit`: `next` 15.5.29 e override de `postcss` 8.5.32; `npm audit --omit=dev` zerado.
+- **Lockfile web fora de sincronia:** `npm ci` falha por faltar Playwright; a CI usa `npm install` e esconde isso. Corrigido na branch `fix/web-deps-audit`: lockfile regenerado, `npm ci` limpo passa.
+- **Sem lockfile Python:** faixas abertas (`fastapi>=0.115,<1`) causaram o item 8. Já resolvido: `apps/api/requirements.lock` (`uv pip compile`, inclui `dev`) fixa todas as dependências instaladas; CI, os dois compose e o README instalam com `-c requirements.lock`. Não há Dockerfile da API.
 - **Limpeza:** `maintenance.run_all` não tem agendamento em compose nem worker.
 - **Papéis:** nenhuma rota verifica papel, só pertencimento. Hoje não há convite, então o risco é baixo; vira real no dia em que houver.
-- **`alembic check`:** acusa 3 índices criados por migration e ausentes dos models; `create_all` fica sem eles.
-- **Docs:** o README cita `docs/04-*`, `docs/07-*`, `docs/11-*` e `docs/plans/`, que não existem, e Next 14 (é 15.5.18). O código cita `docs/ops/database-migrations.md`, também ausente.
+- **`alembic check`:** acusa 3 índices criados por migration e ausentes dos models; `create_all` fica sem eles. Corrigido na branch `claude/schema-docs-902ced`: `ix_evaluation_runs_trace_created` e os dois `ix_traces_metadata_prompt_*` (só Postgres, via `ddl_if`) declarados em `app/models.py`; `alembic check` em Postgres 16 dá `No new upgrade operations detected.`
+- **Docs:** o README cita `docs/04-*`, `docs/07-*`, `docs/11-*` e `docs/plans/`, que não existem, e Next 14 (é 15.5.18). O código cita `docs/ops/database-migrations.md`, também ausente. Corrigido na branch `claude/schema-docs-902ced`: README sem links quebrados e com Next.js 15; `docs/ops/database-migrations.md` criado com o fluxo real. Resta `apps/web/lib/rag.ts` citando `docs/08-*`, fora do escopo.
 
 ## Por que os testes não pegaram
 

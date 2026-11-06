@@ -14,6 +14,7 @@ import {
   SlidersHorizontal,
   Sparkles,
   Target,
+  X,
 } from "lucide-react";
 
 import { APP_SHELL_NAV_SECTIONS, projectHref } from "@/components/app-shell-nav";
@@ -43,6 +44,7 @@ export function Sidebar({
   usage,
   mobileMenuOpen,
   onNavigate,
+  onClose,
 }: {
   org: string;
   project: string;
@@ -51,6 +53,7 @@ export function Sidebar({
   usage: { used: number; limit: number } | null;
   mobileMenuOpen: boolean;
   onNavigate: () => void;
+  onClose: () => void;
 }) {
   const pathname = usePathname();
   const base = `/o/${org}/p/${project}`;
@@ -70,10 +73,17 @@ export function Sidebar({
       role={mobileMenuOpen ? "dialog" : undefined}
       aria-modal={mobileMenuOpen ? true : undefined}
     >
-      <Link className="sb-brand" href={base}>
-        <span className="sb-brand__logo" aria-hidden="true">E</span>
-        <span className="sb-brand__name">EvalOps Studio</span>
-      </Link>
+      <div className="ops-sidebar__head">
+        <Link className="sb-brand" href={base} onClick={onNavigate}>
+          <span className="sb-brand__logo" aria-hidden="true">E</span>
+          <span className="sb-brand__name">EvalOps Studio</span>
+        </Link>
+        {mobileMenuOpen ? (
+          <button type="button" className="ops-sidebar__close" onClick={onClose} aria-label="Fechar menu">
+            <X size={20} aria-hidden="true" />
+          </button>
+        ) : null}
+      </div>
 
       <div className="ops-sidebar__project">
         <WorkspaceSwitcher current={`${org}/${project}`} projects={projects} />
@@ -127,6 +137,7 @@ export function Sidebar({
         >
           <span style={{ width: `${usagePercent}%` }} />
         </div>
+        <Link className="ops-sidebar__docs" href="/docs" onClick={onNavigate}>Documentação</Link>
       </div>
     </aside>
   );

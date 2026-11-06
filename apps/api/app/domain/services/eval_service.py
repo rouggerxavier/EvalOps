@@ -9,8 +9,11 @@ from sqlalchemy.orm import Session
 
 from app.domain.evaluators.base import EvaluatorResult
 from app.domain.evaluators.registry import REGISTRY
+from app.domain.rubrics.outcomes import automatic_fail_flags, automatic_failures
+from app.domain.rubrics.outcomes import raised_flags as _raised_flags
 from app.domain.rubrics.resolver import build_conversation_context, build_trace_context, resolve_dotpath
 from app.domain.services.audit_service import record_audit
+from app.infra.llm.cli_judge import is_cli_model
 from app.domain.services.usage_service import apply_usage_with_quota, enforce_quota, judge_budget_for_org
 from app.models import (
     EvaluationRun,
@@ -104,17 +107,22 @@ def judge_budget_status(project_id: str, db: Session) -> tuple[bool, float, floa
     return spent < budget, spent, budget
 
 
+def _spends_judge_budget(ev_row: EvaluatorRow) -> bool:
+    # A local CLI judge bills the user's plan, not the org's judge budget.
+    return ev_row.type == "llm_judge" and not is_cli_model((ev_row.config or {}).get("model"))
+
+
 def rubric_uses_llm_judge(rubric_version_id: str, db: Session) -> bool:
-    return (
-        db.query(EvaluatorRow.id)
+    rows = (
+        db.query(EvaluatorRow)
         .filter(
             EvaluatorRow.rubric_version_id == rubric_version_id,
             EvaluatorRow.type == "llm_judge",
             EvaluatorRow.enabled.is_(True),
         )
-        .first()
-        is not None
+        .all()
     )
+    return any(_spends_judge_budget(row) for row in rows)
 
 
 def _safe_result_text(value: object, *, fallback: str, context: str) -> str | None:
@@ -190,15 +198,6 @@ def _conversation_context(db: Session, trace: Trace) -> dict:
     return build_conversation_context(conversation_id, [(turn, spans_by_trace[turn.id]) for turn in turns])
 
 
-def _raised_flags(scores: list[EvaluationScore]) -> set[str]:
-    raised: set[str] = set()
-    for score in scores:
-        flags = (score.raw_output or {}).get("flags")
-        if isinstance(flags, list):
-            raised.update(flag for flag in flags if isinstance(flag, str))
-    return raised
-
-
 def run_evaluation(
     trace_id: str,
     rubric_id: str,
@@ -266,12 +265,11 @@ def run_evaluation(
     aggregate_method: str = parsed_spec.get("aggregate", "weighted_mean")
     fail_fast_global: bool = parsed_spec.get("fail_fast", False)
     auto_fail_conditions: list[dict] = parsed_spec.get("automatic_fail_conditions", [])
-    auto_fail_flags: set[str] = {
-        flag["slug"] for flag in parsed_spec.get("critical_flags", []) if flag.get("auto_fail")
-    } | {cond["flag"] for cond in auto_fail_conditions if cond.get("flag")}
+    auto_fail_flags = automatic_fail_flags(parsed_spec)
 
     score_records: list[EvaluationScore] = []
     total_cost = 0.0
+    cost_unknown = False
     should_break = False
 
     for ev_row in evaluator_rows:
@@ -279,7 +277,7 @@ def run_evaluation(
             break
 
         # Budget guard for llm_judge
-        if ev_row.type == "llm_judge":
+        if _spends_judge_budget(ev_row):
             if not _check_judge_budget(trace.project_id, db):
                 err_score = EvaluationScore(
                     id=new_id("evs"),
@@ -329,7 +327,10 @@ def run_evaluation(
         )
         db.add(score_rec)
         score_records.append(score_rec)
-        total_cost += result.cost_usd
+        if result.cost_usd is None:
+            cost_unknown = True
+        else:
+            total_cost += result.cost_usd
 
         # fail_fast logic
         if (ev_row.fail_fast or fail_fast_global) and not result.passed:
@@ -348,12 +349,8 @@ def run_evaluation(
     threshold = float(parsed_spec.get("threshold", 0.7))
 
     # Check automatic_fail_conditions
-    score_by_slug = {sr.evaluator_slug: sr for sr in usable}
     raised_flags = _raised_flags(usable) & auto_fail_flags
-    auto_failed = bool(raised_flags) or any(
-        cond.get("evaluator_id") in score_by_slug and not score_by_slug[cond["evaluator_id"]].passed
-        for cond in auto_fail_conditions
-    )
+    auto_failed = bool(raised_flags) or bool(automatic_failures(usable, auto_fail_conditions))
 
     # JSON columns do not track in-place changes: this dict is assigned once, below.
     metadata = dict(run.run_metadata or {})
@@ -385,7 +382,10 @@ def run_evaluation(
     run.status = status
     run.aggregate_score = aggregate_score
     run.passed = passed
-    run.cost_usd = total_cost
+    if cost_unknown:
+        metadata["cost_unknown"] = True
+    # Known spend still counts toward the budget; only all-unknown is NULL.
+    run.cost_usd = None if cost_unknown and not total_cost else total_cost
     run.run_metadata = metadata
     run.completed_at = _utcnow()
     run.latency_ms = int((time.monotonic() - run_start) * 1000)
@@ -485,7 +485,7 @@ def evaluate_trace(
     previous_cost = 0.0
     attempt = 1
     if previous is not None:
-        previous_cost = float(previous.cost_usd or 0)
+        previous_cost = float(previous.cost_usd or 0)  # NULL adds nothing, and stays NULL below
         attempt = int((previous.run_metadata or {}).get("attempt", 1)) + 1
         db.delete(previous)
         db.flush()
@@ -500,7 +500,8 @@ def evaluate_trace(
     )
     apply_usage_with_quota(db, project, evals=1, cost_usd=float(run.cost_usd or 0))
     if previous is not None:
-        run.cost_usd = float(run.cost_usd or 0) + previous_cost
+        if run.cost_usd is not None or previous_cost:
+            run.cost_usd = float(run.cost_usd or 0) + previous_cost
         run.run_metadata = {**(run.run_metadata or {}), "attempt": attempt}
     _notify_problem(db, run, rubric)
     record_audit(

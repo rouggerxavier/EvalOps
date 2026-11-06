@@ -1,11 +1,12 @@
 import Link from "next/link";
-import { Play } from "lucide-react";
+import { History, Play } from "lucide-react";
 
 import { AuthRequiredPanel } from "@/components/AuthRequiredPanel";
 import { createExperimentAction, runExperimentAction } from "@/lib/actions";
 import {
   getDatasets,
   getExperimentRun,
+  getExperimentRuns,
   getExperiments,
   getRubrics,
   hasAuthToken,
@@ -45,7 +46,7 @@ function formatScore(value: number): string {
   return value.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-function ExperimentRunCard({
+function RunResultCard({
   run,
   experiment,
   org,
@@ -147,7 +148,89 @@ function ExperimentRunCard({
           </tbody>
         </table>
       </div>
+      {run.criteria_failures.length > 0 ? (
+        <p className="ops-note ops-note--critical" role="alert">Critérios não atendidos: {run.criteria_failures.join(", ")}</p>
+      ) : null}
       <p className="ops-note">Latência p95: Sem dados. A média está disponível; o custo é a média por item.</p>
+    </section>
+  );
+}
+
+const RUN_STATUS_LABEL: Record<string, string> = {
+  completed: "Concluída",
+  error: "Erro",
+  running: "Rodando",
+};
+
+function RunHistoryCard({
+  runs,
+  experimentName,
+  activeRunId,
+}: {
+  runs: ExperimentRun[];
+  experimentName: string;
+  activeRunId?: string;
+}) {
+  return (
+    <section className="card">
+      <div className="card__header">
+        <div>
+          <h2 className="card__title">Histórico</h2>
+          <p className="card__subtitle">{experimentName} · {runs.length} execuções recentes</p>
+        </div>
+      </div>
+      {runs.length === 0 ? (
+        <p className="ops-note">Nenhuma run ainda. Use “Rodar” na lista de experimentos para gerar a primeira.</p>
+      ) : (
+        <div className="table-wrap">
+          <table className="t">
+            <thead>
+              <tr>
+                <th>Quando</th>
+                <th>Execução</th>
+                <th>Resultado</th>
+                <th className="t__num">Variantes</th>
+                <th className="t__num">Maior score</th>
+                <th className="t__num">Custo total</th>
+                <th className="t__num">Critérios não atendidos</th>
+                <th>Ações</th>
+              </tr>
+            </thead>
+            <tbody>
+              {runs.map((run) => {
+                const metrics = Object.values(run.by_variant);
+                const best = metrics.length ? Math.max(...metrics.map((m) => m.avg_score)) : null;
+                const cost = metrics.reduce((acc, m) => acc + m.total_cost_usd, 0);
+                const active = run.id === activeRunId;
+                return (
+                  <tr key={run.id} className={active ? "is-selected" : undefined} aria-current={active ? "true" : undefined}>
+                    <td className="t__muted">{relTime(run.completed_at ?? run.created_at)}</td>
+                    <td>{RUN_STATUS_LABEL[run.status] ?? run.status}</td>
+                    <td>
+                      {run.passed === null || run.status === "error" ? (
+                        <span className="t__faint">Sem dados</span>
+                      ) : (
+                        <span className={`badge ${run.passed ? "badge--ok" : "badge--err"}`}>
+                          {run.passed ? "Aprovado" : "Não aprovado"}
+                        </span>
+                      )}
+                    </td>
+                    <td className="t__num">{metrics.length}</td>
+                    <td className="t__num">{best === null ? "Sem dados" : formatScore(best)}</td>
+                    <td className="t__num">US$ {cost.toFixed(5)}</td>
+                    <td className="t__num">{run.criteria_failures.length}</td>
+                    <td>
+                      <Link href={`?experiment_id=${run.experiment_id}&run_id=${run.id}`} className="btn btn--sm">
+                        Ver
+                      </Link>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
     </section>
   );
 }
@@ -175,7 +258,17 @@ export default async function ExperimentosPage({ params, searchParams }: Props) 
     }
   }
 
+  let runHistory: ExperimentRun[] | null = null;
+  if (qp.experiment_id) {
+    try {
+      runHistory = (await getExperimentRuns(qp.experiment_id)).data;
+    } catch {
+      runHistory = null;
+    }
+  }
+
   const experiments = experimentsRes.data;
+  const historyExperiment = experiments.find((exp) => exp.id === qp.experiment_id);
   const experimentForRun = experiments.find((experiment) => experiment.id === qp.experiment_id);
   const datasetName = new Map(datasetsRes.data.map((dataset) => [dataset.id, dataset.slug]));
   const rubricName = new Map(rubricsRes.data.map((rubric) => [rubric.id, rubric.slug]));
@@ -256,12 +349,7 @@ export default async function ExperimentosPage({ params, searchParams }: Props) 
       {qp.run ? <p className="ops-note" role="status">Execução concluída.</p> : null}
 
       {runDetail ? (
-        <ExperimentRunCard
-          run={runDetail.run}
-          experiment={experimentForRun}
-          org={org}
-          project={project}
-        />
+        <RunResultCard run={runDetail.run} experiment={experimentForRun} org={org} project={project} />
       ) : (
         <section className="card ops-empty">
           <div>
@@ -269,11 +357,19 @@ export default async function ExperimentosPage({ params, searchParams }: Props) 
             <p role={runError ? "alert" : undefined}>
               {runError
                 ? "Não foi possível carregar esta execução. Sem dados do resultado."
-                : "Sem dados. A API só retorna uma execução quando o ID é conhecido. Rode um experimento para ver o resultado."}
+                : "Sem dados. Rode um experimento ou abra o histórico de um deles para ver o resultado."}
             </p>
           </div>
         </section>
       )}
+
+      {runHistory ? (
+        <RunHistoryCard
+          runs={runHistory}
+          experimentName={historyExperiment?.name ?? qp.experiment_id ?? ""}
+          activeRunId={qp.run_id}
+        />
+      ) : null}
 
       <section className="card">
         <div className="card__header"><h2 className="card__title">Todos os experimentos</h2></div>
@@ -301,7 +397,10 @@ export default async function ExperimentosPage({ params, searchParams }: Props) 
                   <td className="t__num">{experiment.variants.length}</td>
                   <td>{experiment.baseline_variant ?? experiment.variants[0]?.name ?? "Sem dados"}</td>
                   <td className="t__num">{relTime(experiment.created_at)}</td>
-                  <td>
+                  <td className="ops-row-actions">
+                    <Link href={`?experiment_id=${experiment.id}`} className="btn btn--sm">
+                      <History size={12} aria-hidden="true" /> Histórico
+                    </Link>
                     <form action={runExperimentAction}>
                       <input type="hidden" name="org" value={org} />
                       <input type="hidden" name="project" value={project} />

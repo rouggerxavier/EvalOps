@@ -1,11 +1,14 @@
 import Link from "next/link";
 import { Activity, AlertCircle, ArrowRight, Clock3, Coins, RefreshCw, Target } from "lucide-react";
 
+import { QualityGateCard } from "@/components/QualityGateCard";
 import { AuthRequiredPanel } from "@/components/AuthRequiredPanel";
 import { AreaChart, Card, Metric } from "@/components/ui/index";
 import {
   getAttention,
   getOverview,
+  getQualityGateStatus,
+  getRubricReport,
   getRubrics,
   getSdkStatus,
   getTraces,
@@ -13,9 +16,8 @@ import {
   resolveProject,
 } from "@/lib/api";
 import { getActiveEnvironment } from "@/lib/active-env";
-import type { Trace } from "@/lib/types";
+import type { RubricReport, Trace } from "@/lib/types";
 
-import { getRubricReport, type RubricReport } from "./rubric-report";
 import { EvaluateHeaderButton, OverviewMobileFilters, WindowSelect } from "./overview-actions";
 
 type Window = "24h" | "7d" | "30d";
@@ -121,12 +123,13 @@ export default async function ProjectOverviewPage({ params, searchParams }: Prop
 
   const resolved = await resolveProject(org, project);
   const projectId = resolved.project_id;
-  const [overview, attention, sdk, rubricsRes, flaggedRes] = await Promise.all([
+  const [overview, attention, sdk, rubricsRes, flaggedRes, gate] = await Promise.all([
     getOverview(projectId, environment, window_),
     getAttention(projectId).catch(() => null),
     getSdkStatus(projectId).catch(() => null),
     getRubrics(projectId).catch(() => ({ data: [] })),
     getTraces({ projectId, limit: 25, status: "error,partial", environment }).catch(() => ({ data: [] as Trace[], next_cursor: null })),
+    getQualityGateStatus(projectId, environment, window_).catch(() => null),
   ]);
 
   const rubricReports = await Promise.all(
@@ -174,6 +177,7 @@ export default async function ProjectOverviewPage({ params, searchParams }: Prop
         </div>
       </header>
 
+
       <section className="ops-overview__summary" aria-live="polite">
         <span className={`ops-overview__summary-mark${attention?.count ? " ops-overview__summary-mark--attention" : ""}`}>
           {attention?.count ? <AlertCircle size={14} aria-hidden="true" /> : <Target size={14} aria-hidden="true" />}
@@ -192,6 +196,8 @@ export default async function ProjectOverviewPage({ params, searchParams }: Prop
           <span>Contagem de atenção indisponível.</span>
         )}
       </section>
+
+      <QualityGateCard gate={gate} settingsHref={`/o/${org}/p/${project}/settings#quality-gate`} />
 
       <section className="kpi-grid kpi-grid--5 ops-overview__metrics" aria-label="Indicadores do período">
         <Metric label="Taxa de aprovação" icon={<Target size={13} aria-hidden="true" />} value={approval.rate === null ? "Sem dados" : fmtPercent(approval.rate)} />

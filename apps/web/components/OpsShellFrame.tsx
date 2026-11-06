@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react";
 import { Suspense, useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
 
 import { EvoShortcuts } from "@/components/EvoShortcuts";
 import { EvoToastBridge } from "@/components/EvoToastBridge";
@@ -43,6 +44,12 @@ export function OpsShellFrame({
   usage,
 }: Props) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const pathname = usePathname();
+
+  // Any navigation closes the drawer, not only clicks on its own links.
+  useEffect(() => {
+    setMobileMenuOpen(false);
+  }, [pathname]);
 
   useEffect(() => {
     if (!mobileMenuOpen) return;
@@ -51,14 +58,15 @@ export function OpsShellFrame({
     document.body.style.overflow = "hidden";
     const sidebar = document.getElementById("ops-sidebar");
     const focusable = () => Array.from(
-      sidebar?.querySelectorAll<HTMLElement>('a[href], button:not([disabled]), select:not([disabled])') ?? [],
+      sidebar?.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), select:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      ) ?? [],
     );
     focusable()[0]?.focus();
 
     function onKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
         setMobileMenuOpen(false);
-        document.querySelector<HTMLButtonElement>(".ops-mobile-menu-toggle")?.focus();
         return;
       }
       if (event.key !== "Tab") return;
@@ -75,10 +83,23 @@ export function OpsShellFrame({
       }
     }
 
+    // The drawer exists only below 761px; growing the window must not leave the page scroll-locked.
+    const desktop = window.matchMedia("(min-width: 761px)");
+    function onViewportChange(event: MediaQueryListEvent) {
+      if (event.matches) setMobileMenuOpen(false);
+    }
+
     window.addEventListener("keydown", onKeyDown);
+    desktop.addEventListener("change", onViewportChange);
     return () => {
       window.removeEventListener("keydown", onKeyDown);
+      desktop.removeEventListener("change", onViewportChange);
       document.body.style.overflow = previousOverflow;
+      // Focus goes back to the toggle when it was inside the closed drawer or lost to the body.
+      const active = document.activeElement;
+      if (!active || active === document.body || sidebar?.contains(active)) {
+        document.querySelector<HTMLButtonElement>(".ops-mobile-menu-toggle")?.focus();
+      }
     };
   }, [mobileMenuOpen]);
 
@@ -96,6 +117,7 @@ export function OpsShellFrame({
         usage={usage}
         mobileMenuOpen={mobileMenuOpen}
         onNavigate={closeMobileMenu}
+        onClose={closeMobileMenu}
       />
       <div className="app-main evo-main ops-main">
         <EvoTopbar

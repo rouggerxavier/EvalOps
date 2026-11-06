@@ -87,12 +87,6 @@ export default async function RegisterPage({ searchParams }: { searchParams: Sea
                   autoComplete="organization"
                 />
               </div>
-              <label className="auth-checkbox">
-                <input type="checkbox" name="terms" required defaultChecked /> Eu concordo com os{" "}
-                <a href="#" style={{ color: "var(--primary-300)", marginLeft: 4 }}>Termos</a>
-                &nbsp;e&nbsp;
-                <a href="#" style={{ color: "var(--primary-300)" }}>Política de Privacidade</a>
-              </label>
               <button type="submit" className="mk-btn mk-btn--primary mk-btn--block mk-btn--lg">
                 Criar workspace <ArrowRight />
               </button>
@@ -100,10 +94,6 @@ export default async function RegisterPage({ searchParams }: { searchParams: Sea
 
             <p className="auth-foot">
               Já tem workspace? <Link href="/login">Entrar</Link>
-            </p>
-            <p className="auth-legal">
-              Ao criar um workspace, você receber? dicas de setup e novidades do produto. Voc? pode sair
-              quando quiser. Nunca treinamos modelos com seus prompts ou respostas.
             </p>
           </div>
         </section>

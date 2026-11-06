@@ -1,4 +1,7 @@
 import type {
+  QualityGateConfig,
+  QualityGateSettings,
+  QualityGateStatus,
   AttentionResponse,
   ApiKey,
   ApiKeyCreateResponse,
@@ -17,6 +20,7 @@ import type {
   NotificationListResponse,
   OrgSubscription,
   OrgUsage,
+  CliJudgeOption,
   OverviewResponse,
   Project,
   Prompt,
@@ -25,6 +29,8 @@ import type {
   RagConsolidated,
   ResolvedProject,
   Rubric,
+  RubricReport,
+  RubricReportWindow,
   RubricVersion,
   SdkStatus,
   TraceCompareResponse,
@@ -137,6 +143,15 @@ export async function getTraces(opts: {
   slow_kind?: "trace" | "llm" | "retrieval";
   rag?: boolean;
   flagged?: boolean;
+  conversation_id?: string;
+  since?: string;
+  until?: string;
+  tag?: string;
+  user_ref?: string;
+  model?: string;
+  failed?: boolean;
+  score_lt?: number;
+  q?: string;
 }): Promise<TraceListResponse> {
   const params = new URLSearchParams({
     project_id: opts.projectId,
@@ -150,6 +165,12 @@ export async function getTraces(opts: {
   if (opts.slow_kind) params.set("slow_kind", opts.slow_kind);
   if (opts.rag !== undefined) params.set("rag", String(opts.rag));
   if (opts.flagged !== undefined) params.set("flagged", String(opts.flagged));
+  for (const key of ["conversation_id", "since", "until", "tag", "user_ref", "model", "q"] as const) {
+    const value = opts[key];
+    if (value) params.set(key, value);
+  }
+  if (opts.failed !== undefined) params.set("failed", String(opts.failed));
+  if (opts.score_lt !== undefined) params.set("score_lt", String(opts.score_lt));
   return fetchJson<TraceListResponse>(`/traces?${params.toString()}`);
 }
 
@@ -258,6 +279,15 @@ export async function deleteApiKey(projectId: string, keyId: string): Promise<vo
   }
 }
 
+export async function getCliJudges(): Promise<CliJudgeOption[]> {
+  // Optional helper: an API without this route must not take the rubric screen down.
+  try {
+    return (await fetchJson<{ data: CliJudgeOption[] }>("/judges/cli")).data;
+  } catch {
+    return [];
+  }
+}
+
 export async function getRubrics(projectId: string): Promise<{ data: Rubric[] }> {
   return fetchJson<{ data: Rubric[] }>(`/projects/${projectId}/rubrics`);
 }
@@ -317,6 +347,30 @@ export async function triggerEvaluation(payload: {
     method: "POST",
     body: JSON.stringify(payload),
   });
+}
+
+export async function triggerEvaluationBatch(projectId: string, payload: {
+  rubric_id: string;
+  rubric_version?: number;
+  environment?: string;
+  name_contains?: string;
+  limit?: number;
+}): Promise<{ enqueued: number; rubric_version: number; trace_ids: string[] }> {
+  return requestJson<{ enqueued: number; rubric_version: number; trace_ids: string[] }>(
+    `/projects/${projectId}/evaluations/batch`,
+    { method: "POST", body: JSON.stringify(payload) },
+  );
+}
+
+export async function getRubricReport(
+  projectId: string,
+  rubricId: string,
+  window: RubricReportWindow = "7d",
+  environment?: string,
+): Promise<RubricReport> {
+  const params = new URLSearchParams({ window });
+  if (environment) params.set("environment", environment);
+  return fetchJson<RubricReport>(`/projects/${projectId}/rubrics/${rubricId}/report?${params.toString()}`);
 }
 
 export async function getPrompts(projectId: string): Promise<{ data: Prompt[] }> {
@@ -438,6 +492,10 @@ export async function getExperimentRun(experimentId: string, runId: string): Pro
   return fetchJson<{ run: ExperimentRun }>(`/experiments/${experimentId}/runs/${runId}`);
 }
 
+export async function getExperimentRuns(experimentId: string, limit = 20): Promise<{ data: ExperimentRun[] }> {
+  return fetchJson<{ data: ExperimentRun[] }>(`/experiments/${experimentId}/runs?limit=${limit}`);
+}
+
 export async function createExport(payload: {
   project_id: string;
   format: "jsonl";
@@ -510,4 +568,19 @@ export async function patchProject(projectId: string, payload: {
     method: "PATCH",
     body: JSON.stringify(payload),
   });
+}
+
+
+export async function getQualityGateConfig(projectId: string): Promise<QualityGateConfig> {
+  return fetchJson<QualityGateConfig>(`/projects/${projectId}/quality-gate`);
+}
+
+export async function putQualityGateConfig(projectId: string, config: QualityGateSettings): Promise<QualityGateConfig> {
+  return requestJson<QualityGateConfig>(`/projects/${projectId}/quality-gate`, { method: "PUT", body: JSON.stringify(config) });
+}
+
+export async function getQualityGateStatus(projectId: string, environment?: string, window: "24h" | "7d" | "30d" = "7d"): Promise<QualityGateStatus> {
+  const params = new URLSearchParams({ window });
+  if (environment) params.set("environment", environment);
+  return fetchJson<QualityGateStatus>(`/projects/${projectId}/quality-gate/status?${params.toString()}`);
 }

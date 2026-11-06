@@ -5199,6 +5199,8 @@ a.evo-breadcrumbs__seg:hover { color: var(--text); text-decoration: none; }
   .ops-shell.ops-menu-open .sidebar.evo-sidebar {
     transform: translateX(0);
     visibility: visible;
+    /* Visible from the first frame so the opening effect can move focus inside. */
+    transition: transform 180ms ease, visibility 0s;
   }
 
   .ops-shell .ops-menu-backdrop {
@@ -6188,7 +6190,7 @@ a.evo-breadcrumbs__seg:hover { color: var(--text); text-decoration: none; }
 .card__title { margin: 0; color: var(--fg-1); font-size: 13px; font-weight: 600; }
 .card__subtitle { margin-top: 3px; color: var(--fg-4); font-family: var(--font-mono); font-size: 11.5px; }
 .card__body { padding: var(--sp-4); }
-.card__body--flush { padding: 0; }
+.card__body--flush { padding: 0; overflow-x: auto; }
 
 .kpi-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--sp-3); margin-bottom: var(--sp-4); }
 .kpi-grid--5 { grid-template-columns: repeat(5, minmax(0, 1fr)); }
@@ -6275,7 +6277,7 @@ a.evo-breadcrumbs__seg:hover { color: var(--text); text-decoration: none; }
 .preview-pill__dot { width: 4px; height: 4px; border-radius: 999px; background: currentColor; }
 
 .table-wrap {
-  overflow: hidden;
+  overflow-x: auto;
   border: 1px solid var(--border-subtle);
   border-radius: var(--r-md);
   background: var(--surface-2);
@@ -7195,6 +7197,10 @@ table.t tbody tr.is-flagged:hover { background: rgb(239 93 93 / 0.1); }
 .ops-shell .ops-inline summary {
   color: var(--ops-action);
   cursor: pointer;
+}
+
+.ops-shell .ops-inline summary.btn--primary {
+  color: #FFFFFF;
 }
 
 @media (max-width: 1120px) {
@@ -8143,4 +8149,320 @@ table.t tbody tr.is-flagged:hover { background: rgb(239 93 93 / 0.1); }
   .ops-shell .ops-form__grid {
     grid-template-columns: minmax(0, 1fr);
   }
+}
+/* Project quality policy: follows existing cockpit cards and tokens. */
+.quality-gate__intro { margin: 0 0 16px; color: var(--fg-2); font-size: 13px; line-height: 1.6; }
+.quality-gate__metrics { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; }
+.quality-gate__metric { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 12px; border: 1px solid var(--border); border-radius: 8px; }
+.quality-gate__metric h4 { margin: 0; font-size: 12px; color: var(--fg-3); }
+.quality-gate__metric > strong { font-size: 18px; color: var(--fg-1); }
+.quality-gate__metric > span:not(.badge), .quality-gate__metric p { margin: 0; font-size: 11px; color: var(--fg-3); line-height: 1.5; }
+.quality-gate__note { margin: 16px 0 0; color: var(--fg-3); font-size: 12px; line-height: 1.6; }
+.quality-gate__form { display: flex; flex-direction: column; gap: 14px; }
+.quality-gate__form label { display: flex; flex-direction: column; gap: 6px; color: var(--fg-2); font-size: 12px; }
+.quality-gate__form .filter-input { height: 34px; padding: 0 10px; }
+.quality-gate__form .quality-gate__checkbox { flex-direction: row; align-items: center; gap: 8px; }
+.quality-gate__form .quality-gate__note { margin: 0; }
+@media (max-width: 1000px) { .quality-gate__metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 600px) { .quality-gate__metrics { grid-template-columns: 1fr; } }
+
+/* =====================================================================
+   Painel de operação · funções da main no shell novo
+   ===================================================================== */
+
+.ops-shell .ops-sidebar__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.ops-shell .ops-sidebar__close {
+  display: inline-flex;
+  width: 44px;
+  height: 44px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  margin: -10px -4px 0 0;
+  border: 0;
+  border-radius: var(--ops-radius-control);
+  background: transparent;
+  color: #FFFFFF;
+  cursor: pointer;
+}
+
+.ops-shell .ops-sidebar__close:hover { background: var(--ops-nav-hover); }
+.ops-shell .ops-sidebar__close:focus-visible { outline: 2px solid #FFFFFF; outline-offset: -2px; }
+
+.ops-shell .ops-sidebar__docs {
+  display: inline-block;
+  margin-top: 12px;
+  color: #C6CFEA;
+  font-size: 12px;
+}
+
+.ops-shell .ops-sidebar__docs:hover { color: #FFFFFF; }
+
+/* Quality Gate: mesmos painéis e tokens do shell. */
+.ops-shell .ops-overview > .card,
+.ops-shell #quality-gate {
+  margin-bottom: 12px;
+}
+
+.ops-shell .quality-gate__metric {
+  border-color: var(--ops-border);
+  border-radius: var(--ops-radius-panel);
+}
+
+.ops-shell .quality-gate__metric h4 { color: var(--ops-muted); font-weight: 500; }
+.ops-shell .quality-gate__metric > strong { color: var(--ops-ink); font-variant-numeric: tabular-nums; }
+.ops-shell .quality-gate__metric > span:not(.badge),
+.ops-shell .quality-gate__metric p,
+.ops-shell .quality-gate__note { color: var(--ops-muted); }
+.ops-shell .quality-gate__intro { color: var(--ops-ink); }
+.ops-shell .quality-gate__form { max-width: 560px; }
+.ops-shell .quality-gate__form label { color: var(--ops-ink); font-size: 13px; }
+.ops-shell .quality-gate__form .filter-input { height: var(--ops-control-height); }
+.ops-shell .quality-gate__form .btn { align-self: flex-start; }
+
+/* Lista de traces: filtros da etapa 4. */
+.ops-shell .ops-traces__filters { flex-wrap: wrap; }
+
+.ops-shell .ops-traces__date {
+  gap: 6px;
+  color: var(--ops-muted);
+  font-size: 12px;
+}
+
+.ops-shell .ops-traces__date .filter-input { min-width: 0; width: 140px; padding: 0 8px; }
+.ops-shell .ops-traces__score { width: 132px; min-width: 0; }
+
+.ops-shell .ops-traces__check {
+  display: inline-flex;
+  min-height: var(--ops-control-height);
+  align-items: center;
+  gap: 6px;
+  color: var(--ops-ink);
+  font-size: 13px;
+}
+
+.ops-shell .ops-traces__check input { width: 16px; height: 16px; accent-color: var(--ops-action); }
+
+.ops-shell .ops-traces__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 16px 12px;
+}
+
+.ops-shell .ops-traces__chips .tag {
+  display: inline-flex;
+  max-width: 100%;
+  align-items: center;
+  gap: 4px;
+  overflow-wrap: anywhere;
+}
+
+.ops-shell .ops-traces__chips .tag a {
+  display: inline-flex;
+  width: 24px;
+  height: 24px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  margin-right: -4px;
+  border-radius: 4px;
+  color: inherit;
+}
+
+.ops-shell .ops-traces__chips .tag a:hover { background: var(--ops-border); }
+
+/* Detalhe do trace: turnos da conversa. */
+.ops-shell .ops-detail__turns { margin-bottom: 12px; }
+
+.ops-shell .ops-detail__turn-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding-left: 20px;
+  font-size: 13px;
+}
+
+.ops-shell .ops-detail__turn-list li::marker { color: var(--ops-muted); font-variant-numeric: tabular-nums; }
+
+.ops-shell .ops-detail__turn-list li > * { margin-right: 8px; vertical-align: middle; }
+
+.ops-shell .ops-detail__turn-list a,
+.ops-shell .ops-detail__turn-list strong { overflow-wrap: anywhere; }
+
+/* Rubricas: relatório e lote. */
+.ops-shell .ops-rubric-results {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.ops-shell .ops-rubric-results > .kpi-grid { margin-bottom: 0; }
+
+.ops-shell .ops-rubric-results__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+}
+
+.ops-shell .ops-rubric-results__header h3 { margin: 0; color: var(--ops-ink); font-size: 14px; font-weight: 600; }
+
+.ops-shell .ops-rubric-results__filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.ops-shell .ops-batch-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  align-items: end;
+  gap: 12px;
+}
+
+.ops-shell .ops-batch-form .btn { justify-self: start; }
+
+/* Experimentos: histórico e erros de critério. */
+.ops-shell .ops-row-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+.ops-shell .ops-row-actions form { margin: 0; }
+.ops-shell table.t tbody tr.is-selected { background: #EEF1FA; box-shadow: inset 3px 0 0 var(--ops-action); }
+.ops-shell .ops-note--critical { color: var(--ops-critical-text); }
+
+/* Celular (item 15): menu em gaveta e barra superior sem sobreposição. */
+@media (max-width: 760px) {
+  .ops-shell .topbar,
+  .ops-shell .topbar.evo-topbar {
+    display: grid;
+    flex: none;
+    height: auto;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    align-items: center;
+    gap: 8px;
+    padding: 0 16px 12px;
+    border-bottom: 1px solid var(--ops-border);
+    background: linear-gradient(var(--ops-nav) 0 56px, #FFFFFF 56px);
+  }
+
+  .ops-shell .ops-mobile-brand {
+    grid-column: 1 / -1;
+    margin: 0 -16px;
+  }
+
+  .ops-shell .ops-crumbs {
+    display: none;
+  }
+
+  /* Só o detalhe ganha caminho no celular: a lista já tem o título na página. */
+  .ops-shell .ops-crumbs--detail {
+    display: flex;
+    min-width: 0;
+    grid-column: 1 / -1;
+    flex-wrap: nowrap;
+    overflow: hidden;
+    white-space: nowrap;
+  }
+
+  .ops-shell .ops-crumbs--detail .ops-crumbs__workspace { display: none; }
+
+  .ops-shell .ops-crumbs--detail > strong {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .ops-shell .ops-topbar__search {
+    display: block;
+    flex: none;
+    grid-column: 1 / -1;
+    width: 100%;
+    max-width: none;
+    margin: 0;
+  }
+
+  .ops-shell .ops-topbar__right {
+    display: contents;
+  }
+
+  .ops-shell .ops-environment-form { min-width: 0; }
+
+  .ops-shell .ops-environment-select {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .ops-shell .topbar__search input,
+  .ops-shell .ops-environment-select,
+  .ops-shell .ops-topbar__right .icon-btn,
+  .ops-shell .ops-topbar__right .user-avatar {
+    min-height: 44px;
+    height: 44px;
+  }
+
+  .ops-shell .ops-topbar__right .icon-btn,
+  .ops-shell .ops-topbar__right .user-avatar {
+    width: 44px;
+  }
+
+  .ops-shell .topbar__search-icon { top: 15px; }
+
+  .ops-shell .ops-mobile-filters { grid-template-columns: minmax(0, 1fr); }
+
+  .ops-shell .ops-traces__date { width: 100%; }
+  .ops-shell .ops-traces__date .filter-input { flex: 1; width: auto; }
+  .ops-shell .ops-traces__score { width: 100%; }
+  .ops-shell .ops-row-actions { justify-content: flex-start; }
+}
+
+.ops-shell .ops-traces__more > summary { list-style: none; }
+.ops-shell .ops-traces__more > summary::-webkit-details-marker { display: none; }
+.ops-shell .ops-traces__more > summary .tab__count { margin-left: 6px; }
+
+.ops-shell .ops-traces__more[open] {
+  display: flex;
+  flex-basis: 100%;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.ops-shell .ops-traces__more-body { display: contents; }
+.ops-shell .ops-traces__more-body > .filter-input { width: 168px; min-width: 0; }
+
+@media (max-width: 760px) {
+  .ops-shell .ops-traces__more-body > .filter-input { width: 100%; }
+}
+
+.ops-shell .ops-traces__filters > .filter-group:first-of-type { flex: 1 1 160px; min-width: 160px; }
+.ops-shell .ops-traces__filters > .filter-group:first-of-type .filter-input { width: 100%; min-width: 0; }
+
+.ops-shell .ops-traces__filters > .filter-group:first-of-type svg { top: 50%; transform: translateY(-50%); }
+.ops-shell .ops-traces__filters > .filter-group:first-of-type .filter-input { padding-left: 30px; }
+
+@media (max-width: 760px) {
+  .ops-shell .ops-traces__filters { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .ops-shell .ops-traces__filters > .filter-group:first-of-type,
+  .ops-shell .ops-traces__filters > .filter-select,
+  .ops-shell .ops-traces__more { grid-column: 1 / -1; min-width: 0; width: 100%; }
+  .ops-shell .ops-traces__more[open] { display: block; }
+  .ops-shell .ops-traces__more > summary { width: 100%; justify-content: center; }
+  .ops-shell .ops-traces__more-body { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; margin-top: 8px; }
+  .ops-shell .ops-traces__date .filter-input { width: 100%; }
+}
+
+.notifications-popover { position: absolute; top: 36px; right: 0; z-index: 20; width: 320px; }
+
+@media (max-width: 760px) {
+  /* The bell sits one avatar (44px + 8px gap) left of the page gutter; keep the panel inside the screen. */
+  .ops-shell .ops-topbar__right .notifications-popover { top: 52px; right: -52px; width: min(320px, calc(100vw - 32px)); }
 }

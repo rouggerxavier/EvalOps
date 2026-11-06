@@ -68,7 +68,7 @@ export function TraceEvaluations({ runs, rubrics }: { runs: EvaluationRun[]; rub
                     </td>
                     <td>{reasoning || <span className="t__faint">Sem dados</span>}</td>
                     <td className="t__num">{error ? <span className="t__faint">Sem dados</span> : <ScoreCell value={score.score} />}</td>
-                    <td className="t__num">{formatCost(score.cost_usd)}</td>
+                    <td className="t__num">{score.cost_usd === null ? <span className="t__faint">Sem dados</span> : formatCost(score.cost_usd)}</td>
                   </tr>
                 );
               })}

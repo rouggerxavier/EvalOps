@@ -1,14 +1,25 @@
 # EvalOps Studio
 
-LLMOps cockpit for trace observability, rubric-based evaluations, prompt & experiment
-workflows, and human feedback — opinionated, dark, dense.
+**Controle de qualidade para agentes de IA.** Defina um Quality Gate por projeto
+para acompanhar qualidade das respostas, alucinação/grounding, custo, latência e
+regras críticas, com resultado aprovado, revisão necessária ou reprovado.
+
+A base técnica continua sendo LLMOps: tracing, avaliações com rubricas, workflows
+de prompts e experimentos e feedback humano.
 
 ## Stack
 
 - **API**: FastAPI + SQLAlchemy + Alembic (`apps/api/`)
-- **Web**: Next.js 14 App Router + Server Components + Server Actions + CSS puro (`apps/web/`)
+- **Web**: Next.js 15 App Router + Server Components + Server Actions + CSS puro (`apps/web/`)
 - **SDK**: `evalops-python` (`packages/sdk-python/`)
 - Sem Tailwind, sem shadcn, sem CSS-in-JS. Apenas `lucide-react` no frontend.
+
+## Quality Gate
+
+- Overview: card com métricas, limites, amostras e resultado em PT-BR.
+- Settings: configuração persistente por projeto.
+- API: GET/PUT de configuração e GET de status calculado.
+- [Arquitetura, contrato, limites e roteiro de demonstração](docs/quality-gate.md).
 
 ## Fases entregues
 
@@ -30,7 +41,9 @@ apps/
 packages/
   sdk-python/         evalops-python SDK
 docs/
-  plans/              planos de execução (este arquivo: refatoração_identica.md)
+  plans/              planos de execução
+  ops/                operação (migrations do banco)
+  audits/             auditorias de código e produto
 evalops-preview/      fonte visual do redesign (referência, não buildado)
 ```
 
@@ -71,11 +84,11 @@ cd apps/web && npm run test
 
 ## Docs
 
-- `docs/04-system-architecture.md`
-- `docs/07-api-spec.md`
-- `docs/11-dashboard-and-analytics.md`
-- `docs/plans/refatoração_identica.md` (plano da refatoração atual)
-- `evalops-preview/DESIGN_NOTES.md` (direção visual e decisões de UX)
+- [Índice da documentação atual](docs/README.md)
+- [Quality Gate e demonstração](docs/quality-gate.md)
+- [Plano desta entrega](docs/plans/quality-gate.md)
+- [Migrations do banco](docs/ops/database-migrations.md)
+- `evalops-preview/DESIGN_NOTES.md` (referência visual)
 
 ## Atalhos do app
 

@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, JSON, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, JSON, Numeric, String, Text, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
@@ -57,6 +57,19 @@ class Project(Base):
     organization: Mapped[Organization] = relationship()
 
 
+class QualityGateConfig(Base):
+    """One opt-in quality policy per project; no changes to trace/eval storage."""
+    __tablename__ = "quality_gate_configs"
+
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), primary_key=True)
+    min_score: Mapped[float] = mapped_column(Float, nullable=False)
+    max_ungrounded_rate: Mapped[float] = mapped_column(Float, nullable=False)
+    max_avg_cost_usd: Mapped[float] = mapped_column(Float, nullable=False)
+    max_p95_ms: Mapped[int] = mapped_column(Integer, nullable=False)
+    require_zero_critical: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
 class ApiKey(Base):
     __tablename__ = "api_keys"
 
@@ -76,7 +89,14 @@ class ApiKey(Base):
 
 class Trace(Base):
     __tablename__ = "traces"
-    __table_args__ = (UniqueConstraint("project_id", "client_trace_id", name="uq_traces_project_client"),)
+    __table_args__ = (
+        UniqueConstraint("project_id", "client_trace_id", name="uq_traces_project_client"),
+        # Postgres-only expression indexes, same as migration 0006_prompt_ref_index.
+        Index("ix_traces_metadata_prompt_ref", text("(metadata->>'prompt_ref')")).ddl_if(dialect="postgresql"),
+        Index("ix_traces_metadata_prompt_version_ref", text("(metadata->>'prompt_version_ref')")).ddl_if(
+            dialect="postgresql"
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     project_id: Mapped[str] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
@@ -208,7 +228,11 @@ class EvaluatorRow(Base):
 
 class EvaluationRun(Base):
     __tablename__ = "evaluation_runs"
-    __table_args__ = (UniqueConstraint("trace_id", "rubric_id", "rubric_version", name="uq_eval_runs_trace_rubric_ver"),)
+    __table_args__ = (
+        UniqueConstraint("trace_id", "rubric_id", "rubric_version", name="uq_eval_runs_trace_rubric_ver"),
+        # Same as migration 0007_eval_runs_trace_created.
+        Index("ix_evaluation_runs_trace_created", "trace_id", text("created_at DESC")),
+    )
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     project_id: Mapped[str] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
@@ -219,7 +243,7 @@ class EvaluationRun(Base):
     status: Mapped[str] = mapped_column(String(16))
     aggregate_score: Mapped[float | None] = mapped_column(Numeric(6, 4), nullable=True)
     passed: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
-    cost_usd: Mapped[float] = mapped_column(Numeric(12, 6), default=0)
+    cost_usd: Mapped[float | None] = mapped_column(Numeric(12, 6), nullable=True)
     latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -241,7 +265,7 @@ class EvaluationScore(Base):
     passed: Mapped[bool] = mapped_column(Boolean)
     reasoning: Mapped[str | None] = mapped_column(Text(), nullable=True)
     raw_output: Mapped[dict | None] = mapped_column(JSON, nullable=True)
-    cost_usd: Mapped[float] = mapped_column(Numeric(12, 6), default=0)
+    cost_usd: Mapped[float | None] = mapped_column(Numeric(12, 6), nullable=True)
     latency_ms: Mapped[int] = mapped_column(Integer, default=0)
 
     run: Mapped["EvaluationRun"] = relationship(back_populates="scores")

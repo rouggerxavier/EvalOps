@@ -163,7 +163,7 @@ export type EvaluationScore = {
   passed: boolean;
   reasoning: string | null;
   raw_output: Record<string, unknown> | null;
-  cost_usd: number;
+  cost_usd: number | null;
   latency_ms: number;
 };
 
@@ -177,7 +177,7 @@ export type EvaluationRun = {
   status: string;
   aggregate_score: number | null;
   passed: boolean | null;
-  cost_usd: number;
+  cost_usd: number | null;
   latency_ms: number | null;
   started_at: string | null;
   completed_at: string | null;
@@ -393,11 +393,18 @@ export type RagConsolidated = {
   }>;
 };
 
+export type CliJudgeOption = {
+  provider: string;
+  model: string;
+  status: string;
+  version: string | null;
+};
+
 export type EvaluationSummary = {
   active_rubrics: number;
   runs_7d: number;
   pass_rate: number | null;
-  cost_usd: number;
+  cost_usd: number | null;
 };
 
 export type PromptUsage = {
@@ -457,4 +464,88 @@ export type OrgUsage = {
   spans_ingested: number;
   tokens_ingested: number;
   cost_usd: number;
+};
+
+export type QualityGateSettings = {
+  min_score: number;
+  max_ungrounded_rate: number;
+  max_avg_cost_usd: number;
+  max_p95_ms: number;
+  require_zero_critical: boolean;
+};
+
+export type QualityGateConfig = QualityGateSettings & {
+  project_id: string;
+  configured: boolean;
+  updated_at: string | null;
+};
+
+export type QualityGateState = "pass" | "review" | "fail";
+export type QualityGateMetric = "configuration" | "quality" | "ungrounded" | "avg_cost" | "p95" | "critical";
+export type QualityGateReason = {
+  metric: QualityGateMetric;
+  status: QualityGateState;
+  code: string;
+  observed: number | null;
+  threshold: number | null;
+  sample_count: number;
+};
+
+export type QualityGateStatus = {
+  project_id: string;
+  status: QualityGateState;
+  window: "24h" | "7d" | "30d";
+  environment: string | null;
+  calculated_at: string;
+  config: QualityGateConfig;
+  metrics: {
+    trace_count: number;
+    evaluated_trace_count: number;
+    rag_trace_count: number;
+    grounding_trace_count: number;
+    critical_checked_trace_count: number;
+    avg_score: number | null;
+    ungrounded_rate: number | null;
+    avg_cost_usd: number | null;
+    latency_p95_ms: number | null;
+    critical_violations: number | null;
+  };
+  reasons: QualityGateReason[];
+};
+
+// Counts for one slice of a rubric report. pass_rate is passed / (passed + failed):
+// runs without a result (unknown) or with an error never count as passed.
+export type RubricReportSummary = {
+  runs: number;
+  passed: number;
+  failed: number;
+  unknown: number;
+  errors: number;
+  pass_rate: number | null;
+  avg_score: number | null;
+  score_stddev: number | null;
+  cost_usd: number;
+};
+
+export type RubricReportWindow = "24h" | "7d" | "30d" | "90d";
+
+export type RubricReport = {
+  rubric_id: string;
+  rubric_slug: string;
+  window: RubricReportWindow;
+  environment: string | null;
+  batch: string | null;
+  trace_count: number;
+  totals: RubricReportSummary;
+  by_version: (RubricReportSummary & { rubric_version: number })[];
+  by_day: (RubricReportSummary & { day: string; rubric_version: number })[];
+  by_evaluator: {
+    rubric_version: number;
+    evaluator: string;
+    runs: number;
+    errors: number;
+    pass_rate: number | null;
+    avg_score: number | null;
+    avg_judge_stddev: number | null;
+  }[];
 };

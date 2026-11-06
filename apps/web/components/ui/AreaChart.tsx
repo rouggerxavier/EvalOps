@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 
 import { clamp } from "./utils";
 
@@ -18,7 +18,8 @@ type AreaChartProps = {
 export function AreaChart({ data, color = "var(--primary-400)", height = 200 }: AreaChartProps) {
   const ref = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(560);
-  const gradientId = useMemo(() => `area-${Math.random().toString(36).slice(2, 8)}`, []);
+  // useId keeps server and client markup equal; colons break url(#id) references.
+  const gradientId = `area-${useId().replace(/:/g, "")}`;
 
   useEffect(() => {
     if (!ref.current) return;

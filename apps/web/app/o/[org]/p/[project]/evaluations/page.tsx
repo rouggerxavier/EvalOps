@@ -8,6 +8,7 @@ import { ScoreCell } from "@/components/ui/ScoreCell";
 import {
   getEvaluationSummary,
   getProjectEvaluations,
+  getRubricReport,
   getRubricVersions,
   getRubrics,
   getTraces,
@@ -19,7 +20,6 @@ import { ignoredFieldsNotice, safeErrorMessage } from "@/lib/safe-error";
 import type { EvaluationRun, Rubric, RubricVersion } from "@/lib/types";
 
 import { EvaluationsModals, type EvaluationRowSummary } from "./evaluations-modals";
-import { getRubricReport } from "../rubric-report";
 
 type Props = {
   params: Promise<{ org: string; project: string }>;
@@ -36,8 +36,8 @@ type Props = {
   }>;
 };
 
-type Tab = "active" | "runs" | "paused";
-const TABS: Tab[] = ["active", "runs", "paused"];
+type Tab = "active" | "runs";
+const TABS: Tab[] = ["active", "runs"];
 
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
 const EVALUATION_RUNS_LIMIT = 100;
@@ -271,9 +271,6 @@ export default async function EvaluationsPage({ params, searchParams }: Props) {
         <Link href={tabHref("runs")} className={`ops-tab${tab === "runs" ? " is-active" : ""}`} aria-current={tab === "runs" ? "page" : undefined}>
           Execuções <span className="ops-tab__count">{runs.length.toLocaleString("pt-BR")}</span>
         </Link>
-        <Link href={tabHref("paused")} className={`ops-tab${tab === "paused" ? " is-active" : ""}`} aria-current={tab === "paused" ? "page" : undefined}>
-          Pausadas
-        </Link>
       </nav>
 
       {tab === "active" && (
@@ -412,7 +409,7 @@ export default async function EvaluationsPage({ params, searchParams }: Props) {
                           </span>
                         </td>
                         <td>{run.aggregate_score === null ? "Sem dados" : <ScoreCell value={run.aggregate_score} />}</td>
-                        <td className="ops-table__number">${run.cost_usd.toFixed(6)}</td>
+                        <td className="ops-table__number">{run.cost_usd === null ? "Sem dados" : `$${run.cost_usd.toFixed(6)}`}</td>
                         <td className="ops-table__muted">há {relTime(run.created_at)}</td>
                       </tr>
                     );
@@ -421,13 +418,6 @@ export default async function EvaluationsPage({ params, searchParams }: Props) {
               </table>
             </div>
           )}
-        </section>
-      )}
-
-      {tab === "paused" && (
-        <section className="ops-panel ops-empty">
-          <div className="ops-empty__title">Avaliações pausadas</div>
-          <p className="ops-empty__description">Sem dados. A API não expõe um estado de avaliação pausada.</p>
         </section>
       )}
 

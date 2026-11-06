@@ -82,11 +82,11 @@ export function EvoTopbar({
           {mobileMenuOpen ? <X size={22} aria-hidden="true" /> : <Menu size={22} aria-hidden="true" />}
         </button>
       </div>
-      <nav className="crumbs ops-crumbs" aria-label="Caminho">
-        <span>{orgLabel}</span>
-        <span className="crumbs__sep"><ChevronRight size={12} /></span>
-        <Link href={base}><strong>{projectLabel}</strong></Link>
-        <span className="crumbs__sep"><ChevronRight size={12} /></span>
+      <nav className={`crumbs ops-crumbs${isDetailPage ? " ops-crumbs--detail" : ""}`} aria-label="Caminho">
+        <span className="ops-crumbs__workspace">{orgLabel}</span>
+        <span className="crumbs__sep ops-crumbs__workspace"><ChevronRight size={12} /></span>
+        <Link className="ops-crumbs__workspace" href={base}><strong>{projectLabel}</strong></Link>
+        <span className="crumbs__sep ops-crumbs__workspace"><ChevronRight size={12} /></span>
         {isDetailPage ? (
           <>
             <Link href={projectHref(base, activeItem.path)}>{activeItem.label}</Link>
@@ -98,7 +98,7 @@ export function EvoTopbar({
 
       <form className="topbar__search ops-topbar__search" action={`${base}/traces`} method="get">
         <Search className="topbar__search-icon" size={14} />
-        <input ref={searchRef} name="name" aria-label="Buscar traces pelo nome" placeholder="Buscar traces pelo nome" />
+        <input ref={searchRef} name="q" placeholder="Buscar por nome, id, usuário ou conversa..." aria-label="Buscar traces" />
         <span className="topbar__search-kbd">CmdK</span>
       </form>
 
