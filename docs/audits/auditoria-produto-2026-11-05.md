@@ -20,7 +20,8 @@ não ligada, não contrato quebrado.
 
 ## Status
 
-As etapas 1 a 3 da ordem sugerida foram corrigidas. Itens fechados: S1, 1, 2, 3, 4, 5, 6, 8, 12 e 13.
+As etapas 1 a 3 da ordem sugerida foram corrigidas, e as promessas falsas da etapa 7 saíram da tela. Itens fechados:
+S1, 1, 2, 3, 4, 5, 6, 8, 12, 13 e 21 a 28.
 
 - **Instalação:** a documentação e a landing mandam instalar a partir do repositório e avisam sobre o pacote de
   terceiro. O quickstart usa `set_llm` e `set_trace`, e foi executado contra o SDK real com cliente simulado.
@@ -28,6 +29,11 @@ As etapas 1 a 3 da ordem sugerida foram corrigidas. Itens fechados: S1, 1, 2, 3,
   aparecem no trace e na nova aba Marcados da lista. A coluna Modelo usa o último `llm_call`.
 - **Uso:** YAML padrão válido; erro de rubrica com o campo a corrigir; campos sem efeito avisados na tela; chip de
   ambiente com "todos", seguido também por Avaliações; escopo `evaluate` na criação de chave; Plano e uso em Settings.
+- **Promessas falsas:** login sem "manter conectado", SSO, Termos e Política; cadastro sem aceite de documentos que
+  não existem nem promessa de e-mails; painel lateral com resumo do produto no lugar do depoimento e sem limites de
+  plano inventados. A landing mostra só o SDK Python, com `set_llm` e `set_trace`, e "Como funciona" descreve
+  avaliação sob demanda, quality gate e export JSONL. A aba Pausadas saiu de Avaliações. O quickstart usa
+  `evk_prod_` com `environment="prod"`, que é o prefixo gerado para chave de `prod`, o padrão da tela de chaves.
 
 Validação: 411 testes API, 36 SDK, 156 web, typecheck e build. As regressões de produto e de P1 passaram em Postgres
 16, e as telas foram conferidas no navegador, inclusive em 375 px.
@@ -41,7 +47,8 @@ Limites:
 
 - Na visão geral, Atenção e Cobertura ainda ignoram o ambiente.
 - Com "qualquer env" em Traces e o chip em `dev`, o chip continua mostrando `dev` nessa visão.
-- O exemplo da landing (`SDKShowcase`) ainda não usa `set_llm`, e a aba TypeScript continua lá (item 25).
+- O item 10 só teve o texto da landing corrigido: avaliação automática continua inexistente.
+- O passo a passo da landing (`EvalOpsFeatureStepper`) ainda fala em promover para produção.
 - A Conversa mostra cada chamada separadamente: o histórico repetido fica recolhido, sem transcrição única. A
   linha do tempo da conversa inteira segue no item 9.
 - O painel de run mostra a nota parcial ao lado de "sem veredito", avisando que ela cobre só parte dos avaliadores.
@@ -87,14 +94,14 @@ Limites:
 
 | # | Achado | Onde | Evidência |
 |---|---|---|---|
-| 21 | "Manter conectado por 30 dias": o campo `remember` é ignorado. | `login/page.tsx:70`, `lib/auth-actions.ts` | Leitura |
-| 22 | "SSO disponível no plano Team": não há SSO nem plano Team. | `login/page.tsx:82` | Leitura |
-| 23 | Termos e Política apontam para `#`, e esses documentos não existem. Risco jurídico para quem guarda conversa de cliente. | `login/page.tsx:81` | Leitura |
-| 24 | Depoimento fictício com nome e cargo ("Maya Halil"), citando detecção de drift, que não existe. | `AuthSidePanel.tsx:201` | Leitura |
-| 25 | Aba "TypeScript" no SDK: só existe SDK Python. | `SDKShowcase.tsx:174` | Leitura |
-| 26 | Aba "Pausadas" diz que avaliações são pausadas automaticamente: nada faz isso. | `evaluations/page.tsx:473` | Leitura |
-| 27 | Quickstart não usa `set_llm` nem `set_trace` e não obtém resposta avaliável; a chave do exemplo (`evk_live_`) não segue o prefixo real (`evk_dev_`). | `docs/page.tsx:120` | Leitura |
-| 28 | "Promova a melhor variante" e experimentos "entre modelos": não há promoção, e experimentos são simulados. | `HowItWorksPipeline.tsx` | Leitura |
+| 21 | **Fechado.** "Manter conectado por 30 dias": o campo `remember` é ignorado. | `login/page.tsx:70`, `lib/auth-actions.ts` | Leitura |
+| 22 | **Fechado.** "SSO disponível no plano Team": não há SSO nem plano Team. | `login/page.tsx:82` | Leitura |
+| 23 | **Fechado.** Termos e Política apontam para `#`, e esses documentos não existem. Risco jurídico para quem guarda conversa de cliente. | `login/page.tsx:81` | Leitura |
+| 24 | **Fechado.** Depoimento fictício com nome e cargo ("Maya Halil"), citando detecção de drift, que não existe. | `AuthSidePanel.tsx:201` | Leitura |
+| 25 | **Fechado.** Aba "TypeScript" no SDK: só existe SDK Python. | `SDKShowcase.tsx:174` | Leitura |
+| 26 | **Fechado.** Aba "Pausadas" diz que avaliações são pausadas automaticamente: nada faz isso. | `evaluations/page.tsx:473` | Leitura |
+| 27 | **Fechado.** Quickstart não usa `set_llm` nem `set_trace` e não obtém resposta avaliável; a chave do exemplo (`evk_live_`) não segue o prefixo real (`evk_dev_`). | `docs/page.tsx:120` | Leitura |
+| 28 | **Fechado.** "Promova a melhor variante" e experimentos "entre modelos": não há promoção, e experimentos são simulados. | `HowItWorksPipeline.tsx` | Leitura |
 
 ## Funcionalidade ausente
 

@@ -70,3 +70,38 @@ test("rubric form starts from YAML the parser accepts", () => {
   assert.doesNotMatch(modal, /type: builtin/);
   assert.match(modal, /name: Nova rubrica/);
 });
+
+test("auth pages promise nothing that does not exist", () => {
+  const login = read("app/login/page.tsx");
+  assert.doesNotMatch(login, /name="remember"|30 dias/);
+  assert.doesNotMatch(login, /SSO|plano Team/);
+  for (const path of ["app/login/page.tsx", "app/register/page.tsx"]) {
+    assert.doesNotMatch(read(path), /href="#"|Termos|Política de Privacidade|dicas de setup/, path);
+  }
+  const panel = read("components/AuthSidePanel.tsx");
+  assert.doesNotMatch(panel, /Maya Halil|drift|1M traces|retenção de 90 dias|Self-host/);
+});
+
+test("landing SDK card shows only the Python SDK and records the model call", () => {
+  const showcase = read("components/SDKShowcase.tsx");
+  assert.doesNotMatch(showcase, /TypeScript|OpenTelemetry/);
+  assert.match(showcase, /evalops\.set_trace\(/);
+  assert.match(showcase, /span\.set_llm\(/);
+});
+
+test("docs quickstart traces the conversation with a real key prefix", () => {
+  const docs = read("app/docs/page.tsx");
+  assert.match(docs, /evalops\.set_trace\(conversation_id=/);
+  assert.match(docs, /messages_out=\[/);
+  // Keys are minted as evk_{environment}_ (apps/api/app/security.py).
+  assert.match(docs, /api_key="evk_(dev|staging|prod)_\.\.\.", project="[^"]+", environment="\1"/);
+});
+
+test("evaluations has no paused tab without a data source", () => {
+  assert.doesNotMatch(read(`${PROJECT}/evaluations/page.tsx`), /paused|Pausadas|pausadas automaticamente/);
+});
+
+test("how it works describes only features that exist", () => {
+  const pipeline = read("components/HowItWorksPipeline.tsx");
+  assert.doesNotMatch(pipeline, /Promova|entre prompts, modelos|na ingestão|fine-tuning|Ready to deploy/);
+});

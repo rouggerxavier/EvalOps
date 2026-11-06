@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, JSON, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, JSON, Numeric, String, Text, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
@@ -89,7 +89,14 @@ class ApiKey(Base):
 
 class Trace(Base):
     __tablename__ = "traces"
-    __table_args__ = (UniqueConstraint("project_id", "client_trace_id", name="uq_traces_project_client"),)
+    __table_args__ = (
+        UniqueConstraint("project_id", "client_trace_id", name="uq_traces_project_client"),
+        # Postgres-only expression indexes, same as migration 0006_prompt_ref_index.
+        Index("ix_traces_metadata_prompt_ref", text("(metadata->>'prompt_ref')")).ddl_if(dialect="postgresql"),
+        Index("ix_traces_metadata_prompt_version_ref", text("(metadata->>'prompt_version_ref')")).ddl_if(
+            dialect="postgresql"
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     project_id: Mapped[str] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
@@ -221,7 +228,11 @@ class EvaluatorRow(Base):
 
 class EvaluationRun(Base):
     __tablename__ = "evaluation_runs"
-    __table_args__ = (UniqueConstraint("trace_id", "rubric_id", "rubric_version", name="uq_eval_runs_trace_rubric_ver"),)
+    __table_args__ = (
+        UniqueConstraint("trace_id", "rubric_id", "rubric_version", name="uq_eval_runs_trace_rubric_ver"),
+        # Same as migration 0007_eval_runs_trace_created.
+        Index("ix_evaluation_runs_trace_created", "trace_id", text("created_at DESC")),
+    )
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     project_id: Mapped[str] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
