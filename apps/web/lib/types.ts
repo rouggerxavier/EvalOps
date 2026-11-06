@@ -465,3 +465,50 @@ export type OrgUsage = {
   tokens_ingested: number;
   cost_usd: number;
 };
+
+export type QualityGateSettings = {
+  min_score: number;
+  max_ungrounded_rate: number;
+  max_avg_cost_usd: number;
+  max_p95_ms: number;
+  require_zero_critical: boolean;
+};
+
+export type QualityGateConfig = QualityGateSettings & {
+  project_id: string;
+  configured: boolean;
+  updated_at: string | null;
+};
+
+export type QualityGateState = "pass" | "review" | "fail";
+export type QualityGateMetric = "configuration" | "quality" | "ungrounded" | "avg_cost" | "p95" | "critical";
+export type QualityGateReason = {
+  metric: QualityGateMetric;
+  status: QualityGateState;
+  code: string;
+  observed: number | null;
+  threshold: number | null;
+  sample_count: number;
+};
+
+export type QualityGateStatus = {
+  project_id: string;
+  status: QualityGateState;
+  window: "24h" | "7d" | "30d";
+  environment: string | null;
+  calculated_at: string;
+  config: QualityGateConfig;
+  metrics: {
+    trace_count: number;
+    evaluated_trace_count: number;
+    rag_trace_count: number;
+    grounding_trace_count: number;
+    critical_checked_trace_count: number;
+    avg_score: number | null;
+    ungrounded_rate: number | null;
+    avg_cost_usd: number | null;
+    latency_p95_ms: number | null;
+    critical_violations: number | null;
+  };
+  reasons: QualityGateReason[];
+};

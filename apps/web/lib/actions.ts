@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 import { isRedirectError } from "next/dist/client/components/redirect-error";
 
 import { setApiKeyFlash } from "@/lib/flash";
+import { parseQualityGateForm } from "@/lib/quality-gate";
 import { sanitizeApiError } from "@/lib/safe-error";
 import {
   bulkFlagTraces,
@@ -26,6 +27,8 @@ import {
   flagTrace,
   markNotificationsRead,
   patchProject,
+  putQualityGateConfig,
+  resolveProject,
   rerunTrace,
   revokeApiKey,
   runExperiment,
@@ -664,4 +667,24 @@ export async function patchProjectAction(formData: FormData): Promise<void> {
     errorMsg = messageFromActionError(error, "Failed to update project");
   }
   redirectWithMessage(path, errorMsg ? { error: errorMsg } : { updated: "1" });
+}
+
+
+export async function saveQualityGateAction(formData: FormData): Promise<void> {
+  const org = String(formData.get("org") ?? "");
+  const project = String(formData.get("project") ?? "");
+  const path = projectPath(org, project, "settings");
+  const config = parseQualityGateForm(formData);
+  if (!config) redirectWithMessage(path, { error: "Dados inválidos. Verifique os limites do Quality Gate." });
+  let errorMsg: string | null = null;
+  try {
+    // Resolve authenticated URL context; never trust a submitted project ID.
+    const resolved = await resolveProject(org, project);
+    await putQualityGateConfig(resolved.project_id, config);
+    revalidatePath(path);
+    revalidatePath(`/o/${org}/p/${project}`);
+  } catch (error) {
+    errorMsg = messageFromActionError(error, "Não foi possível salvar o Quality Gate.");
+  }
+  redirectWithMessage(path, errorMsg ? { error: errorMsg } : { gate_saved: "1" });
 }

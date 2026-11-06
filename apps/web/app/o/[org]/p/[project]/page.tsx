@@ -10,6 +10,7 @@ import {
   Target,
 } from "lucide-react";
 
+import { QualityGateCard } from "@/components/QualityGateCard";
 import { AuthRequiredPanel } from "@/components/AuthRequiredPanel";
 import {
   AreaChart,
@@ -25,6 +26,7 @@ import {
   getAttention,
   getCoverage,
   getOverview,
+  getQualityGateStatus,
   getRubrics,
   getSdkStatus,
   getTraces,
@@ -112,13 +114,15 @@ export default async function ProjectOverviewPage({ params, searchParams }: Prop
   const resolved = await resolveProject(org, project);
   const projectId = resolved.project_id;
 
-  const [overview, attention, coverage, sdk, rubricsRes, flaggedRes] = await Promise.all([
+  const [overview, attention, coverage, sdk, rubricsRes, flaggedRes, gate] = await Promise.all([
     getOverview(projectId, environment, window_),
+
     getAttention(projectId).catch(() => ({ count: 0, items: [] as const })),
     getCoverage(projectId, window_).catch(() => ({ data: [] as const })),
     getSdkStatus(projectId).catch(() => null),
     getRubrics(projectId).catch(() => ({ data: [] })),
     getTraces({ projectId, limit: 4, status: "error,partial", environment }).catch(() => ({ data: [] as Trace[], next_cursor: null })),
+    getQualityGateStatus(projectId, environment, window_).catch(() => null),
   ]);
 
   const { kpis, cost_by_day, model_breakdown, recent_flagged } = overview;
@@ -152,6 +156,9 @@ export default async function ProjectOverviewPage({ params, searchParams }: Prop
           </>
         }
       />
+
+      <QualityGateCard gate={gate} settingsHref={`/o/${org}/p/${project}/settings#quality-gate`} />
+      <div style={{ height: 16 }} />
 
       {attention.count > 0 ? (
         <AttentionStrip

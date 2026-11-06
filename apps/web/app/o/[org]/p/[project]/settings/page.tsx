@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { AlertCircle, CheckCircle2, Cog, Plus, Users } from "lucide-react";
 
+import { QualityGateForm } from "@/components/QualityGateForm";
 import { AuthRequiredPanel } from "@/components/AuthRequiredPanel";
 import { PlanUsage } from "@/components/PlanUsage";
 import { Badge } from "@/components/ui/Badge";
@@ -8,6 +9,7 @@ import { Card } from "@/components/ui/Card";
 import { Copyable } from "@/components/ui/Copyable";
 import { createProjectAction, patchProjectAction } from "@/lib/actions";
 import {
+  getQualityGateConfig,
   getMembers,
   getOrganizationSubscription,
   getOrganizationUsage,
@@ -21,7 +23,7 @@ import type { Member, Project } from "@/lib/types";
 
 type Props = {
   params: Promise<{ org: string; project: string }>;
-  searchParams: Promise<{ updated?: string; created?: string; error?: string }>;
+  searchParams: Promise<{ updated?: string; created?: string; error?: string; gate_saved?: string }>;
 };
 
 export default async function SettingsPage({ params, searchParams }: Props) {
@@ -32,7 +34,7 @@ export default async function SettingsPage({ params, searchParams }: Props) {
 
   const resolved = await resolveProject(org, project);
 
-  const [projectsRes, membersRes, usageResult, subResult] = await Promise.all([
+  const [projectsRes, membersRes, usageResult, subResult, gateConfig] = await Promise.all([
     getProjects(resolved.org_id).catch(() => ({ data: [] as Project[] })),
     getMembers(resolved.org_id).catch(() => ({ data: [] as Member[] })),
     getOrganizationUsage(resolved.org_id)
@@ -41,6 +43,7 @@ export default async function SettingsPage({ params, searchParams }: Props) {
     getOrganizationSubscription(resolved.org_id)
       .then((subscription) => ({ subscription, error: null as string | null }))
       .catch((error) => ({ subscription: null, error: safeErrorMessage(error, "Falha ao carregar plano.") })),
+    getQualityGateConfig(resolved.project_id).catch(() => null),
   ]);
 
   const projectRecord =
@@ -61,7 +64,7 @@ export default async function SettingsPage({ params, searchParams }: Props) {
             <Cog size={18} /> Settings
           </h1>
           <div className="page-header__subtitle">
-            Projeto · membros · plano e uso
+            Qualidade dos agentes · projeto · membros · plano e uso
           </div>
         </div>
       </header>
@@ -95,6 +98,10 @@ export default async function SettingsPage({ params, searchParams }: Props) {
           </div>
         </div>
       ) : null}
+
+      {qp.gate_saved === "1" && <p role="status" className="quality-gate__intro">Quality Gate salvo. Confira o resultado na visão geral.</p>}
+      <QualityGateForm config={gateConfig} org={org} project={project} />
+      <div style={{ height: 16 }} />
 
       <section className="grid-detail">
         <Card

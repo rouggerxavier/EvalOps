@@ -7,9 +7,9 @@ export function FinalLandingCta() {
   return (
     <div className={styles.finalCtaRoot}>
       <span className={styles.finalCtaBadge}>PRONTO PARA COMEÇAR</span>
-      <h2>Pare de debugar seu agente por screenshots.</h2>
+      <h2>Seu agente atende aos requisitos da empresa?</h2>
       <p>
-        Crie um projeto, conecte o SDK e veja seus primeiros traces avaliados fluindo em menos de cinco minutos.
+        Conecte o SDK, avalie respostas com rubricas e configure um Quality Gate para acompanhar qualidade, custo e latência.
       </p>
 
       <div className={styles.finalCtaActions}>

@@ -24,7 +24,7 @@ npm run dev
 ## Main routes
 
 - `/` - project entry
-- `/o/[org]/p/[project]` - overview
+- `/o/[org]/p/[project]` - overview + Quality Gate
 - `/o/[org]/p/[project]/traces`
 - `/o/[org]/p/[project]/traces/[trace]`
 - `/o/[org]/p/[project]/evaluations`
@@ -32,6 +32,7 @@ npm run dev
 - `/o/[org]/p/[project]/prompts`
 - `/o/[org]/p/[project]/datasets`
 - `/o/[org]/p/[project]/experiments`
+- `/o/[org]/p/[project]/settings#quality-gate` - project quality thresholds
 - `/o/[org]/p/[project]/keys`
 - `/o/[org]/p/[project]/exports`
 - `/docs`
@@ -42,3 +43,9 @@ npm run dev
 ```bash
 npm run build
 ```
+
+## Quality Gate
+
+See [architecture, API and demonstration](../../docs/quality-gate.md). Unit tests
+exercise production TS/TSX through TypeScript transpilation, including rendering
+and server action behavior. `e2e/quality-gate.spec.ts` covers live review/pass/fail.

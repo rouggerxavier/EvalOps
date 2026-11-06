@@ -1,5 +1,4 @@
 import base64
-import math
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
@@ -10,6 +9,11 @@ from sqlalchemy.orm import Session
 from app.db import get_db
 from app.deps import ensure_org_membership, get_current_user, get_project_from_api_key
 from app.domain.services import api_key_service
+from app.domain.services.analytics_service import (
+    p95_nearest_rank as _p95_nearest_rank,
+    resolve_overview_cutoff as _resolve_overview_cutoff,
+)
+from app.domain.services.rag_service import rag_filter_predicate as _rag_filter_predicate
 from app.domain.services.audit_service import record_audit
 from app.domain.services.trace_ingest_service import ingest_trace_batch
 from app.models import EvaluationRun, Event, HumanFeedback, Membership, Notification, Organization, Project, Span, Trace, TraceFlag, User, utcnow
@@ -34,15 +38,6 @@ from app.schemas import (
 from app.security import new_id
 
 router = APIRouter(prefix="/v1")
-
-
-def _p95_nearest_rank(values: list[int | float]) -> int | float:
-    if not values:
-        return 0
-    sorted_values = sorted(values)
-    n = len(sorted_values)
-    index = min(n - 1, max(0, math.ceil(0.95 * n) - 1))
-    return sorted_values[index]
 
 
 def _encode_cursor(created_at: datetime, trace_id: str) -> str:
@@ -551,63 +546,6 @@ def _classify_cost_source(trace: Trace, *, span_label: str | None = None) -> str
     return "unknown"
 
 
-# Contract for "is this a RAG trace?" — kept in sync with the frontend's
-# isRagTrace() in apps/web/lib/rag.ts so the list filter and the detail page
-# decide on the exact same signals.
-_RAG_SPAN_NAMES_EXACT: tuple[str, ...] = (
-    "rag.retrieve",
-    "rag.grounding.validate",
-    "response.finalize",
-)
-_RAG_METADATA_KEYS: tuple[str, ...] = (
-    "pipeline_version",
-    "retrieved_count",
-    "citation_count",
-    "grounding_ok",
-    "quality_level",
-    "quality_score",
-    "support_rate",
-)
-
-
-def _rag_filter_predicate():
-    """Return a SQLAlchemy filter expression selecting traces with RAG evidence.
-
-    The predicate matches any of:
-    - ``trace.name`` starts with ``rag.`` (legacy convention).
-    - ``trace.metadata.is_rag`` truthy (explicit flag).
-    - ``trace.metadata`` contains any of ``_RAG_METADATA_KEYS``.
-    - any span belongs to ``_RAG_SPAN_NAMES_EXACT`` or has a name like
-      ``rag.%``.
-
-    Matches the contract used by the trace detail UI; keeps list and detail
-    aligned.
-    """
-    # Note: `.as_string()` is required for cross-dialect JSON key-existence —
-    # bare `Trace.metadata_json[key].isnot(None)` returns true on SQLite even
-    # for absent keys (different cast pipeline). The text projection collapses
-    # both backends to "string or NULL", and IS NOT NULL then matches presence.
-    metadata_clauses = [
-        Trace.metadata_json[key].as_string().isnot(None) for key in _RAG_METADATA_KEYS
-    ]
-    span_subq = (
-        select(Span.trace_id)
-        .where(
-            or_(
-                Span.name.in_(_RAG_SPAN_NAMES_EXACT),
-                Span.name.ilike("rag.%"),
-            )
-        )
-        .scalar_subquery()
-    )
-    return or_(
-        Trace.name.ilike("rag.%"),
-        Trace.metadata_json["is_rag"].as_string().in_(("true", "1")),
-        *metadata_clauses,
-        Trace.id.in_(span_subq),
-    )
-
-
 _SLOW_KIND_TO_SPAN_PREDICATE: dict[str, object] = {
     "llm": Span.type == "llm_call",
     "retrieval": or_(
@@ -828,29 +766,6 @@ def delete_trace(
         payload={"project_id": trace.project_id, "trace_name": trace.name},
     )
     db.commit()
-
-
-_OVERVIEW_WINDOW_TO_TIMEDELTA: dict[str, timedelta] = {
-    "24h": timedelta(hours=24),
-    "7d": timedelta(days=7),
-    "30d": timedelta(days=30),
-}
-
-
-def _resolve_overview_cutoff(window: str | None, limit_days: int) -> tuple[datetime, int | None]:
-    """Resolve the overview cutoff timestamp and an optional day-cap.
-
-    ``window`` takes precedence over ``limit_days``. When ``window`` is set the
-    cutoff itself bounds ``cost_by_day`` (no additional ``LIMIT``) so the daily
-    series sums back to the same trace universe as the KPIs — a 24 h window
-    crossing midnight still returns two calendar-day buckets, matching the
-    KPI ``traces`` count. ``limit_days`` callers keep the legacy bucket cap.
-    """
-    if window in _OVERVIEW_WINDOW_TO_TIMEDELTA:
-        delta = _OVERVIEW_WINDOW_TO_TIMEDELTA[window]
-        return utcnow() - delta, None
-    days = max(1, min(limit_days, 90))
-    return utcnow() - timedelta(days=days), days
 
 
 def _evaluation_kpis(db: Session, traces) -> tuple[float | None, int]:

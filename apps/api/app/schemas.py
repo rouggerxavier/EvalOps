@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -638,3 +639,54 @@ class NotificationListResponse(BaseModel):
 
 class NotificationMarkReadIn(BaseModel):
     ids: list[str] = Field(min_length=1, max_length=200)
+
+
+class QualityGateSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False, strict=True)
+
+    min_score: float = Field(default=0.8, ge=0, le=1)
+    max_ungrounded_rate: float = Field(default=0.05, ge=0, le=1)
+    max_avg_cost_usd: float = Field(default=0.05, ge=0)
+    max_p95_ms: int = Field(default=2000, ge=0, le=86400000)
+    require_zero_critical: bool = True
+
+
+class QualityGateConfigOut(QualityGateSettings):
+    model_config = ConfigDict(from_attributes=True, allow_inf_nan=False)
+
+    project_id: str
+    configured: bool
+    updated_at: datetime | None = None
+
+
+class QualityGateReason(BaseModel):
+    metric: Literal["configuration", "quality", "ungrounded", "avg_cost", "p95", "critical"]
+    status: Literal["pass", "review", "fail"]
+    code: str
+    observed: float | None
+    threshold: float | None
+    sample_count: int
+
+
+class QualityGateMetrics(BaseModel):
+    trace_count: int
+    evaluated_trace_count: int
+    rag_trace_count: int
+    grounding_trace_count: int
+    critical_checked_trace_count: int
+    avg_score: float | None
+    ungrounded_rate: float | None
+    avg_cost_usd: float | None
+    latency_p95_ms: int | None
+    critical_violations: int | None
+
+
+class QualityGateStatusOut(BaseModel):
+    project_id: str
+    status: Literal["pass", "review", "fail"]
+    window: Literal["24h", "7d", "30d"]
+    environment: str | None
+    calculated_at: datetime
+    config: QualityGateConfigOut
+    metrics: QualityGateMetrics
+    reasons: list[QualityGateReason]

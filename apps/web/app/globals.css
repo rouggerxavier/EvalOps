@@ -5480,3 +5480,19 @@ table.t tbody tr.is-flagged:hover { background: rgb(239 93 93 / 0.1); }
   .waterfall__scale { grid-template-columns: 1fr; }
   .topbar__search { max-width: none; margin-left: 0; }
 }
+
+/* Project quality policy: follows existing cockpit cards and tokens. */
+.quality-gate__intro { margin: 0 0 16px; color: var(--fg-2); font-size: 13px; line-height: 1.6; }
+.quality-gate__metrics { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; }
+.quality-gate__metric { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 12px; border: 1px solid var(--border); border-radius: 8px; }
+.quality-gate__metric h4 { margin: 0; font-size: 12px; color: var(--fg-3); }
+.quality-gate__metric > strong { font-size: 18px; color: var(--fg-1); }
+.quality-gate__metric > span:not(.badge), .quality-gate__metric p { margin: 0; font-size: 11px; color: var(--fg-3); line-height: 1.5; }
+.quality-gate__note { margin: 16px 0 0; color: var(--fg-3); font-size: 12px; line-height: 1.6; }
+.quality-gate__form { display: flex; flex-direction: column; gap: 14px; }
+.quality-gate__form label { display: flex; flex-direction: column; gap: 6px; color: var(--fg-2); font-size: 12px; }
+.quality-gate__form .filter-input { height: 34px; padding: 0 10px; }
+.quality-gate__form .quality-gate__checkbox { flex-direction: row; align-items: center; gap: 8px; }
+.quality-gate__form .quality-gate__note { margin: 0; }
+@media (max-width: 1000px) { .quality-gate__metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 600px) { .quality-gate__metrics { grid-template-columns: 1fr; } }

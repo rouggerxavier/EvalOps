@@ -63,22 +63,22 @@ export default function HomePage() {
       <main className="mk-wrap">
         <section className="hero mk-container">
           <span className="hero__pill">
-            <span>Observabilidade contínua para apps de IA em produção</span>
-            <span>v0.7 - tracing, avaliação e experimentos</span>
+            <span>Controle de qualidade para agentes de IA</span>
+            <span>LLMOps · tracing, avaliação e experimentos</span>
             <span className="arrow">&rsaquo;</span>
           </span>
           <h1>
-            Observabilidade e <em>avaliação</em>
+            Controle de qualidade
             <br />
-            para aplicações de IA.
+            para <em>agentes de IA.</em>
           </h1>
           <p className="hero__lede">
-            Trace cada chamada LLM. Avalie cada resposta com rubricas declarativas. Compare prompts e modelos
-            em tráfego de produção antes que a qualidade desvie em silêncio.
+            Saiba se seu agente atende aos requisitos da empresa. Defina limites de qualidade, respostas sem suporte, custo e latência com um Quality Gate por projeto.
+            Tracing, rubricas e experimentos LLMOps fornecem as evidências para decidir.
           </p>
           <div className="hero__cta">
             <Link className="mk-btn mk-btn--primary mk-btn--lg" href="/register">
-              Comece a rastrear grátis
+              Comece a medir qualidade
               <ArrowRight />
             </Link>
             <Link className="mk-btn mk-btn--secondary mk-btn--lg" href="/docs">

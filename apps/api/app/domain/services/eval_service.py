@@ -9,6 +9,8 @@ from sqlalchemy.orm import Session
 
 from app.domain.evaluators.base import EvaluatorResult
 from app.domain.evaluators.registry import REGISTRY
+from app.domain.rubrics.outcomes import automatic_fail_flags, automatic_failures
+from app.domain.rubrics.outcomes import raised_flags as _raised_flags
 from app.domain.rubrics.resolver import build_conversation_context, build_trace_context, resolve_dotpath
 from app.domain.services.audit_service import record_audit
 from app.infra.llm.cli_judge import is_cli_model
@@ -196,15 +198,6 @@ def _conversation_context(db: Session, trace: Trace) -> dict:
     return build_conversation_context(conversation_id, [(turn, spans_by_trace[turn.id]) for turn in turns])
 
 
-def _raised_flags(scores: list[EvaluationScore]) -> set[str]:
-    raised: set[str] = set()
-    for score in scores:
-        flags = (score.raw_output or {}).get("flags")
-        if isinstance(flags, list):
-            raised.update(flag for flag in flags if isinstance(flag, str))
-    return raised
-
-
 def run_evaluation(
     trace_id: str,
     rubric_id: str,
@@ -272,9 +265,7 @@ def run_evaluation(
     aggregate_method: str = parsed_spec.get("aggregate", "weighted_mean")
     fail_fast_global: bool = parsed_spec.get("fail_fast", False)
     auto_fail_conditions: list[dict] = parsed_spec.get("automatic_fail_conditions", [])
-    auto_fail_flags: set[str] = {
-        flag["slug"] for flag in parsed_spec.get("critical_flags", []) if flag.get("auto_fail")
-    } | {cond["flag"] for cond in auto_fail_conditions if cond.get("flag")}
+    auto_fail_flags = automatic_fail_flags(parsed_spec)
 
     score_records: list[EvaluationScore] = []
     total_cost = 0.0
@@ -358,12 +349,8 @@ def run_evaluation(
     threshold = float(parsed_spec.get("threshold", 0.7))
 
     # Check automatic_fail_conditions
-    score_by_slug = {sr.evaluator_slug: sr for sr in usable}
     raised_flags = _raised_flags(usable) & auto_fail_flags
-    auto_failed = bool(raised_flags) or any(
-        cond.get("evaluator_id") in score_by_slug and not score_by_slug[cond["evaluator_id"]].passed
-        for cond in auto_fail_conditions
-    )
+    auto_failed = bool(raised_flags) or bool(automatic_failures(usable, auto_fail_conditions))
 
     # JSON columns do not track in-place changes: this dict is assigned once, below.
     metadata = dict(run.run_metadata or {})

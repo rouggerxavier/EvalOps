@@ -1,4 +1,7 @@
 import type {
+  QualityGateConfig,
+  QualityGateSettings,
+  QualityGateStatus,
   AttentionResponse,
   ApiKey,
   ApiKeyCreateResponse,
@@ -520,4 +523,19 @@ export async function patchProject(projectId: string, payload: {
     method: "PATCH",
     body: JSON.stringify(payload),
   });
+}
+
+
+export async function getQualityGateConfig(projectId: string): Promise<QualityGateConfig> {
+  return fetchJson<QualityGateConfig>(`/projects/${projectId}/quality-gate`);
+}
+
+export async function putQualityGateConfig(projectId: string, config: QualityGateSettings): Promise<QualityGateConfig> {
+  return requestJson<QualityGateConfig>(`/projects/${projectId}/quality-gate`, { method: "PUT", body: JSON.stringify(config) });
+}
+
+export async function getQualityGateStatus(projectId: string, environment?: string, window: "24h" | "7d" | "30d" = "7d"): Promise<QualityGateStatus> {
+  const params = new URLSearchParams({ window });
+  if (environment) params.set("environment", environment);
+  return fetchJson<QualityGateStatus>(`/projects/${projectId}/quality-gate/status?${params.toString()}`);
 }

@@ -7,6 +7,7 @@ FastAPI backend for EvalOps Studio.
 - Identity and tenancy: users, orgs, projects, memberships
 - API keys: create/list/revoke with hashed storage
 - Tracing: ingest/list/detail/delete
+- Project Quality Gate: persistent configuration, computed pass/review/fail status
 - Analytics overview
 - Rubrics and evaluations (sync)
 - Prompts, datasets, experiments
@@ -76,6 +77,7 @@ pytest -q
 
 Phase-based suites:
 
+- `tests/test_quality_gate.py` (calculation, configuration, ownership, migration rollback)
 - `tests/test_phase1_identity_access.py`
 - `tests/test_phase2_tracing.py`
 - `tests/test_phase3_analytics.py`
