@@ -31,13 +31,45 @@ answer("hello")
 evalops.flush()
 ```
 
-`flush()` drains the local SDK queue. It does not guarantee that the backend has
-accepted every trace; retry-exhausted transient failures are counted and written
-to local dead-letter files as described below.
+`flush(timeout=5.0)` waits up to `timeout` seconds for the background uploader
+to send what is queued and returns `False` if something is still pending. It
+does not guarantee that the backend has accepted every trace; retry-exhausted
+transient failures are counted and written to local dead-letter files as
+described below.
+
+`shutdown(timeout=5.0)` stops the uploader within `timeout` seconds. What it
+could not send by then, including a batch still in flight, goes to a
+dead-letter file, and it returns `False`. It also runs at normal process exit
+with the default timeout, and when `init()` is called again. A trace that
+arrives after shutdown goes straight to dead-letter.
 
 `environment` must be `dev`, `staging` or `prod`; `init` raises `ValueError` for
-anything else. Queued traces are sent at normal process exit, or call
-`evalops.shutdown()` to send them earlier.
+anything else.
+
+The SDK never blocks the traced call: when the local queue (1024 traces) is
+full, for example while the API is down, the new trace is dropped, a warning is
+logged and `dropped_count` grows. When the API answers `2xx` but rejects single
+traces in `errors[]`, each rejection is logged as a warning. Values that cannot
+be sent as JSON never break the traced call: `NaN` and infinity become `null`,
+and an object whose `repr()` raises becomes `<TypeName>`.
+
+Each trace carries a `client_trace_id` generated once. Retries, requeues and
+dead-letter replays resend the same id, and the API keeps one trace per id.
+
+## Async
+
+`@evalops.trace` works on `async def` functions too. Spans opened inside the
+coroutine, including in tasks started with `asyncio.gather`, belong to its trace.
+A cancelled coroutine is recorded with status `error`. A span opened after its
+trace has closed is dropped. Generator functions, sync or async, raise
+`TypeError` at decoration: trace the function that consumes them.
+
+```python
+@evalops.trace("support.turn")
+async def answer(msg: str) -> str:
+    with evalops.span("llm.generate", type="llm_call"):
+        return await call_model(msg)
+```
 
 ## Recording model calls
 
@@ -110,6 +142,7 @@ ok = evalops.instrument_openai()
 ```
 
 `instrument_openai()` is best-effort and safe to call even when OpenAI dependency is missing.
+Calls with `stream=True` are not traced; record them with `set_llm`.
 
 ## Retry, dead-letter, and replay
 
@@ -149,9 +182,10 @@ configuration. Replay never uses the `api_url` stored in a dead-letter file as
 the destination by default. A successful replay removes the dead-letter file;
 a failed replay keeps it in place.
 
-Replay can resend old data and can duplicate traces or ingest if the backend
-accepts the same payload more than once. The SDK does not promise exactly-once
-delivery; review old payloads before replaying them.
+Replay resends old data. The API ignores a trace whose `client_trace_id` it
+already stored, but answers `409` for a batch with a trace that was deleted
+since. The SDK does not promise exactly-once delivery; review old payloads
+before replaying them.
 
 ## Test
 

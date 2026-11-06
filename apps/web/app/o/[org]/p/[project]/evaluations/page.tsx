@@ -39,8 +39,8 @@ type Props = {
   }>;
 };
 
-type Tab = "active" | "runs" | "paused";
-const TABS: Tab[] = ["active", "runs", "paused"];
+type Tab = "active" | "runs";
+const TABS: Tab[] = ["active", "runs"];
 
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
 const EVALUATION_RUNS_LIMIT = 100;
@@ -306,10 +306,6 @@ export default async function EvaluationsPage({ params, searchParams }: Props) {
           <History size={11} /> Runs recentes
           <span className="tab__count">{runs.length.toLocaleString("pt-BR")}</span>
         </Link>
-        <Link href={tabHref("paused")} className={`tab${tab === "paused" ? " is-active" : ""}`}>
-          Pausadas
-          <span className="tab__count">0</span>
-        </Link>
       </nav>
 
       {tab === "active" && (
@@ -469,16 +465,6 @@ export default async function EvaluationsPage({ params, searchParams }: Props) {
               </tbody>
             </table>
           )}
-        </div>
-      )}
-
-      {tab === "paused" && (
-        <div className="empty">
-          <div className="empty__icon"><Target size={18} /></div>
-          <div className="empty__title">Nenhuma avaliação pausada</div>
-          <div className="empty__desc">
-            Avaliações são pausadas automaticamente quando custo excede o limite ou quando o judge model fica indisponível.
-          </div>
         </div>
       )}
 

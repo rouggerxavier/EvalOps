@@ -265,7 +265,7 @@ export default function HomePage() {
         <section className="mk-section" id="how">
           <div className="mk-container">
             <span className="mk-eyebrow">Como funciona</span>
-            <h2>Do tráfego de produção a um deploy testado contra regressões.</h2>
+            <h2>Do tráfego de produção ao quality gate do projeto.</h2>
             <HowItWorksPipeline />
           </div>
         </section>

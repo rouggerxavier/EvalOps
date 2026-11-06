@@ -6,11 +6,17 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from functools import wraps
 import atexit
+import inspect
+import logging
+import math
 import random
 import secrets
-from typing import Any, Callable
+from typing import Any, Callable, Iterator
+from uuid import uuid4
 
-from evalops.uploader import BackgroundUploader, UploaderConfig
+from evalops.uploader import DEFAULT_TIMEOUT_S, BackgroundUploader, UploaderConfig
+
+logger = logging.getLogger(__name__)
 
 
 def _utc_iso(dt: datetime) -> str:
@@ -25,22 +31,41 @@ def _now() -> datetime:
 ENVIRONMENTS = ("dev", "staging", "prod")
 
 
+def _text(value: Any, convert: Callable[[Any], str] = str) -> str:
+    # A broken __str__ or __repr__ in user code must not break the traced call.
+    try:
+        return convert(value)
+    except Exception:  # noqa: BLE001
+        return f"<{type(value).__name__}>"
+
+
 def _safe(value: Any) -> Any:
-    if value is None or isinstance(value, (str, int, float, bool)):
+    try:
+        return _to_json(value)
+    except Exception:  # noqa: BLE001  (RecursionError on a self-referencing value, for one)
+        return f"<{type(value).__name__}>"
+
+
+def _to_json(value: Any) -> Any:
+    if value is None or isinstance(value, (str, int, bool)):
         return value
+    if isinstance(value, float):
+        # httpx sends with allow_nan=False: one NaN fails the whole batch on every retry.
+        return value if math.isfinite(value) else None
     if isinstance(value, list):
-        return [_safe(v) for v in value]
+        return [_to_json(v) for v in value]
     if isinstance(value, dict):
-        return {str(k): _safe(v) for k, v in value.items()}
-    return repr(value)
+        return {_text(k): _to_json(v) for k, v in value.items()}
+    return _text(value, repr)
 
 
 def _number(value: Any, kind: Callable[[Any], Any]) -> Any:
     # Telemetry must never raise inside the traced call.
     try:
-        return None if value is None else kind(value)
-    except (TypeError, ValueError):
+        number = None if value is None else kind(value)
+    except (TypeError, ValueError, OverflowError):
         return None
+    return None if isinstance(number, float) and not math.isfinite(number) else number
 
 
 def _messages(value: Any) -> list[dict] | None:
@@ -114,6 +139,7 @@ class TraceRecord:
     error: dict | None = None
     user_ref: str | None = None
     metadata: dict = field(default_factory=dict)
+    closed: bool = False
 
     def to_payload(self) -> dict[str, Any]:
         ended_at = _now()
@@ -206,6 +232,11 @@ class EvalOpsTracer:
         self._tags = tags or {}
         self._sample_rate = sample_rate
         self._disabled = disabled
+        if self._uploader is not None:
+            # Re-init: send what the old uploader holds instead of leaving its thread behind.
+            atexit.unregister(self._uploader.shutdown)
+            self._uploader.shutdown()
+            self._uploader = None
         if self._disabled:
             return
         self._uploader = BackgroundUploader(UploaderConfig(api_url=api_url.rstrip("/"), api_key=api_key))
@@ -214,47 +245,77 @@ class EvalOpsTracer:
 
     def trace(self, name: str) -> Callable:
         def decorator(func: Callable) -> Callable:
+            if inspect.isgeneratorfunction(func) or inspect.isasyncgenfunction(func):
+                # The call only builds the generator: the trace would close before any of its work runs.
+                raise TypeError(
+                    f"@evalops.trace does not support generator functions ({func.__qualname__}); "
+                    "trace the function that consumes the generator instead"
+                )
+            if inspect.iscoroutinefunction(func):
+
+                @wraps(func)
+                async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
+                    with self._trace_scope(name, args, kwargs) as root:
+                        result = await func(*args, **kwargs)
+                        if root is not None:
+                            root.set_io(output={"result": _safe(result)})
+                        return result
+
+                return async_wrapper
+
             @wraps(func)
             def wrapper(*args: Any, **kwargs: Any) -> Any:
-                if self._disabled or random.random() > self._sample_rate:
-                    return func(*args, **kwargs)
-                if self._trace_ctx.get() is not None:
-                    return func(*args, **kwargs)
-
-                record = TraceRecord(
-                    client_trace_id=f"ct_{secrets.token_hex(8)}",
-                    name=name,
-                    started_at=_now(),
-                    service=self._service,
-                    environment=self._environment,
-                    tags=self._tags,
-                )
-                token_trace = self._trace_ctx.set(record)
-                token_stack = self._span_stack.set([])
-                try:
-                    with self.span(name=name, type="chain") as root:
-                        root.set_io(input={"args": _safe(list(args)), "kwargs": _safe(kwargs)})
-                        result = func(*args, **kwargs)
+                with self._trace_scope(name, args, kwargs) as root:
+                    result = func(*args, **kwargs)
+                    if root is not None:
                         root.set_io(output={"result": _safe(result)})
                     return result
-                except Exception as exc:  # noqa: BLE001
-                    record.status = "error"
-                    record.error = {"type": exc.__class__.__name__, "message": str(exc)}
-                    raise
-                finally:
-                    self._trace_ctx.reset(token_trace)
-                    self._span_stack.reset(token_stack)
-                    if self._uploader is not None:
-                        self._uploader.submit(record.to_payload())
 
             return wrapper
 
         return decorator
 
     @contextmanager
+    def _trace_scope(self, name: str, args: tuple, kwargs: dict) -> Iterator[SpanHandle | None]:
+        """Open a trace around one call; yields None when this call is not traced."""
+        if self._disabled or random.random() > self._sample_rate or self._trace_ctx.get() is not None:
+            yield None
+            return
+
+        record = TraceRecord(
+            # Built once per trace: every retry, requeue and dead-letter resends this id, and the API dedups on it.
+            client_trace_id=f"ct_{uuid4().hex}",
+            name=name,
+            started_at=_now(),
+            service=self._service,
+            environment=self._environment,
+            tags=self._tags,
+        )
+        token_trace = self._trace_ctx.set(record)
+        token_stack = self._span_stack.set([])
+        try:
+            with self.span(name=name, type="chain") as root:
+                root.set_io(input={"args": _safe(list(args)), "kwargs": _safe(kwargs)})
+                yield root
+        except BaseException as exc:  # CancelledError and KeyboardInterrupt must not be recorded as ok.
+            record.status = "error"
+            record.error = {"type": exc.__class__.__name__, "message": _text(exc)}
+            raise
+        finally:
+            record.closed = True
+            self._trace_ctx.reset(token_trace)
+            self._span_stack.reset(token_stack)
+            if self._uploader is not None:
+                try:
+                    self._uploader.submit(record.to_payload())
+                except Exception as exc:  # noqa: BLE001  (must not replace the traced call's own exception)
+                    logger.warning("evalops sdk could not build trace payload: %s", exc.__class__.__name__)
+
+    @contextmanager
     def span(self, name: str, type: str = "chain") -> Any:
         trace = self._trace_ctx.get()
-        if self._disabled or trace is None:
+        # shortcut: a span opened after its trace closed (a task that outlived it) is dropped, not sent on its own.
+        if self._disabled or trace is None or trace.closed:
             yield SpanHandle(
                 SpanRecord(
                     client_span_id="noop",
@@ -282,8 +343,8 @@ class EvalOpsTracer:
         handle = SpanHandle(record)
         try:
             yield handle
-        except Exception as exc:  # noqa: BLE001
-            handle.set_error(message=str(exc), type=exc.__class__.__name__)
+        except BaseException as exc:
+            handle.set_error(message=_text(exc), type=exc.__class__.__name__)
             raise
         finally:
             record.finish()
@@ -316,10 +377,8 @@ class EvalOpsTracer:
         if tags:
             trace.tags = {**trace.tags, **tags}
 
-    def flush(self) -> None:
-        if self._uploader is not None:
-            self._uploader.flush()
+    def flush(self, timeout: float = DEFAULT_TIMEOUT_S) -> bool:
+        return self._uploader.flush(timeout) if self._uploader is not None else True
 
-    def shutdown(self) -> None:
-        if self._uploader is not None:
-            self._uploader.shutdown()
+    def shutdown(self, timeout: float = DEFAULT_TIMEOUT_S) -> bool:
+        return self._uploader.shutdown(timeout) if self._uploader is not None else True
