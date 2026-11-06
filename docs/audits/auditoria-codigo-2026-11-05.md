@@ -103,8 +103,8 @@ Limites das correções:
 - **`regex_match`:** regex do usuário roda sem limite de tempo (ReDoS, leitura).
 - **`client_trace_id` opcional:** sem ele, retentativa duplica o trace (provado).
 - **Redação é tudo ou nada:** ou guarda o texto integral, ou apaga tudo e não dá para avaliar. Não há mascaramento.
-- **Dependências:** `npm audit --omit=dev` aponta `next` como crítico e 4 pacotes transitivos como altos (nanoid, postcss, sharp, source-map-js).
-- **Lockfile web fora de sincronia:** `npm ci` falha por faltar Playwright; a CI usa `npm install` e esconde isso.
+- **Dependências:** `npm audit --omit=dev` aponta `next` como crítico e 4 pacotes transitivos como altos (nanoid, postcss, sharp, source-map-js). Corrigido na branch `fix/web-deps-audit`: `next` 15.5.29 e override de `postcss` 8.5.32; `npm audit --omit=dev` zerado.
+- **Lockfile web fora de sincronia:** `npm ci` falha por faltar Playwright; a CI usa `npm install` e esconde isso. Corrigido na branch `fix/web-deps-audit`: lockfile regenerado, `npm ci` limpo passa.
 - **Sem lockfile Python:** faixas abertas (`fastapi>=0.115,<1`) causaram o item 8.
 - **Limpeza:** `maintenance.run_all` não tem agendamento em compose nem worker.
 - **Papéis:** nenhuma rota verifica papel, só pertencimento. Hoje não há convite, então o risco é baixo; vira real no dia em que houver.
