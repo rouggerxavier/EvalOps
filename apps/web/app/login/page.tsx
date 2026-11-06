@@ -66,9 +66,6 @@ export default async function LoginPage({ searchParams }: { searchParams: Search
                   required
                 />
               </div>
-              <label className="auth-checkbox">
-                <input type="checkbox" name="remember" defaultChecked /> Manter conectado por 30 dias
-              </label>
               <button type="submit" className="mk-btn mk-btn--primary mk-btn--block mk-btn--lg">
                 Entrar <ArrowRight />
               </button>
@@ -76,10 +73,6 @@ export default async function LoginPage({ searchParams }: { searchParams: Search
 
             <p className="auth-foot">
               Ainda não tem workspace? <Link href="/register">Crie um</Link>
-            </p>
-            <p className="auth-legal">
-              Ao entrar, você concorda com nossos <a href="#">Termos</a> e <a href="#">Política de Privacidade</a>.
-              Single sign-on (SSO) está disponível no plano Team.
             </p>
           </div>
         </section>

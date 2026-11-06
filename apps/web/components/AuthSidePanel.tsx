@@ -20,7 +20,7 @@ function LoginPanel(): ReactNode {
         <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--fg-2)" }}>
           trace_9f8d2a7c &middot; gpt-4o
         </span>
-        <span style={{ marginLeft: "auto", fontSize: 11, color: "var(--fg-3)" }}>h? 2 min</span>
+        <span style={{ marginLeft: "auto", fontSize: 11, color: "var(--fg-3)" }}>há 2 min</span>
       </div>
       <div
         style={{
@@ -198,21 +198,21 @@ export function AuthSidePanel({ variant }: Props) {
         {variant === "login" ? (
           <>
             <p className="auth-quote">
-              O EvalOps nos deu detecção de drift e custo por feature na mesma semana em que plugamos. Paramos
-              de voar às cegas na qualidade dos agentes.
+              Cada trace guarda a conversa, as ferramentas e o custo. Avalie com rubricas e leia a nota e o motivo
+              de cada avaliador.
             </p>
             <p className="auth-attrib">
-              <strong>Maya Halil</strong> &middot; Engenheira Staff de IA, DocOps Agent
+              <strong>EvalOps Studio</strong> &middot; traces, rubricas e quality gate para agentes LLM
             </p>
           </>
         ) : (
           <>
             <p className="auth-quote">
-              Grátis durante o beta. Limites generosos. Self-host quando fizer sentido &mdash; seus dados, sua decisão.
+              Grátis durante o beta. Crie o workspace, gere uma chave e envie o primeiro trace pelo SDK Python.
             </p>
             <p className="auth-attrib">
-              <strong>Inclui:</strong> 1M traces/mês &middot; rubricas ilimitadas &middot; 5 membros no time
-              &middot; retenção de 90 dias
+              <strong>Plano Free:</strong> limites mensais de traces, avaliações e exports &middot; uso visível em
+              Settings
             </p>
           </>
         )}
