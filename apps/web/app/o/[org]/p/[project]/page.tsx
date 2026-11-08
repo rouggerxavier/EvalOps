@@ -125,7 +125,7 @@ export default async function ProjectOverviewPage({ params, searchParams }: Prop
   const projectId = resolved.project_id;
   const [overview, attention, sdk, rubricsRes, flaggedRes, gate] = await Promise.all([
     getOverview(projectId, environment, window_),
-    getAttention(projectId).catch(() => null),
+    getAttention(projectId, environment).catch(() => null),
     getSdkStatus(projectId).catch(() => null),
     getRubrics(projectId).catch(() => ({ data: [] })),
     getTraces({ projectId, limit: 25, status: "error,partial", environment }).catch(() => ({ data: [] as Trace[], next_cursor: null })),
@@ -143,9 +143,11 @@ export default async function ProjectOverviewPage({ params, searchParams }: Prop
   const flaggedTraces = flaggedRes.data;
   const traceById = new Map(flaggedTraces.map((trace) => [trace.id, trace]));
   const attentionItems = attention?.items.slice(0, 3) ?? [];
-  const tracesHref = `/o/${org}/p/${project}/traces${environment ? `?environment=${encodeURIComponent(environment)}` : ""}`;
+  const environmentQuery = `environment=${encodeURIComponent(environment ?? "")}`;
+  const tracesHref = `/o/${org}/p/${project}/traces?${environmentQuery}`;
+  const evaluationsHref = `/o/${org}/p/${project}/evaluations?${environmentQuery}`;
   const exportHref = `/o/${org}/p/${project}/exports`;
-  const refreshHref = `/o/${org}/p/${project}?window=${window_}${environment ? `&environment=${encodeURIComponent(environment)}` : ""}`;
+  const refreshHref = `/o/${org}/p/${project}?window=${window_}&${environmentQuery}`;
   const actionsCtx = {
     org,
     project,
@@ -189,7 +191,7 @@ export default async function ProjectOverviewPage({ params, searchParams }: Prop
             : "Sem dados de aprovação no período selecionado."}
         </strong>
         {attention?.count ? (
-          <span>{attention.count >= 25 ? "25+" : fmtInteger(attention.count)} traces com erro ou parciais nas últimas 24h · todos os ambientes.</span>
+          <span>{attention.count >= 25 ? "25+" : fmtInteger(attention.count)} traces com erro ou parciais nas últimas 24h · {environmentLabel}.</span>
         ) : attention ? (
           <span>Nenhum trace com erro ou parcial nas últimas 24h.</span>
         ) : (
@@ -210,7 +212,7 @@ export default async function ProjectOverviewPage({ params, searchParams }: Prop
       <section className="ops-overview__grid ops-overview__grid--top">
         <Card
           title="Precisa de atenção"
-          subtitle="últimas 24 horas · todos os ambientes"
+          subtitle={`últimas 24 horas · ${environmentLabel}`}
           action={<Link href={tracesHref} className="ops-overview__text-link">Ver todos os traces</Link>}
           flush
         >
@@ -245,7 +247,7 @@ export default async function ProjectOverviewPage({ params, searchParams }: Prop
                         </td>
                         <td className="t__mono">{item.service ?? "—"}</td>
                         <td>
-                          <Link className="ops-overview__trace-link" href={`/o/${org}/p/${project}/traces/${item.trace_id}`}>
+                          <Link className="ops-overview__trace-link" href={`/o/${org}/p/${project}/traces/${item.trace_id}?${environmentQuery}`}>
                             {item.trace_id.slice(0, 10)}
                           </Link>
                         </td>
@@ -260,7 +262,7 @@ export default async function ProjectOverviewPage({ params, searchParams }: Prop
           )}
         </Card>
 
-        <Card title="Aprovação por rubrica" action={<Link href={`/o/${org}/p/${project}/evaluations`} className="ops-overview__text-link">Detalhes</Link>}>
+        <Card title="Aprovação por rubrica" action={<Link href={evaluationsHref} className="ops-overview__text-link">Detalhes</Link>}>
           {rubricReports.length === 0 ? (
             <div className="ops-overview__empty ops-overview__empty--compact">
               <strong>Sem dados de aprovação.</strong>
@@ -296,7 +298,7 @@ export default async function ProjectOverviewPage({ params, searchParams }: Prop
           ) : (
             <div className="ops-overview__empty">
               <strong>Sem dados para mostrar a evolução da taxa de aprovação.</strong>
-              <Link href={`/o/${org}/p/${project}/evaluations`}>Abrir avaliações <ArrowRight size={12} /></Link>
+              <Link href={evaluationsHref}>Abrir avaliações <ArrowRight size={12} /></Link>
             </div>
           )}
         </Card>

@@ -348,11 +348,12 @@ def _delta_ms(later: datetime, earlier: datetime) -> int:
 
 @router.get("/projects/{project_id}/attention", response_model=AttentionResponse)
 def get_project_attention(
+    environment: str | None = Query(None, pattern=r"^(dev|staging|prod)$"),
     project: Project = Depends(get_owned_project),
     db: Session = Depends(get_db),
 ) -> dict:
     cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
-    traces = (
+    query = (
         db.query(Trace)
         .filter(
             Trace.project_id == project.id,
@@ -360,10 +361,10 @@ def get_project_attention(
             Trace.status != "ok",
             Trace.created_at >= cutoff,
         )
-        .order_by(Trace.created_at.desc())
-        .limit(25)
-        .all()
     )
+    if environment:
+        query = query.filter(Trace.environment == environment)
+    traces = query.order_by(Trace.created_at.desc()).limit(25).all()
     trace_ids = [trace.id for trace in traces]
     spans = db.query(Span).filter(Span.trace_id.in_(trace_ids)).all() if trace_ids else []
     spans_by_trace: dict[str, list[Span]] = {}
