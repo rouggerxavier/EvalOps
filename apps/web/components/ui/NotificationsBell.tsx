@@ -44,7 +44,7 @@ export function NotificationsBell({
         {unread.length > 0 ? <span className="icon-btn__badge" /> : null}
       </button>
       {open ? (
-        <div className="card" style={{ position: "absolute", right: 0, top: 36, width: 320, zIndex: 20 }}>
+        <div className="card notifications-popover">
           <div
             className="card__header"
             style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}

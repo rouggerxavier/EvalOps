@@ -2,12 +2,13 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from decimal import Decimal
+from hashlib import sha256
 
 from fastapi import HTTPException, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Query, Session
 
-from app.models import Plan, Project, Subscription, UsageCounter
+from app.models import Notification, Plan, Project, Subscription, UsageCounter
 from app.security import new_id
 
 
@@ -59,7 +60,11 @@ def _counter_query(db: Session, org_id: str, period: str, *, lock: bool) -> Quer
         UsageCounter.period == period,
     )
     if lock and _is_postgres(db):
-        query = query.with_for_update()
+        # Refresh preflight reads after waiting, preserving this transaction's pending increments.
+        for row in list(db.dirty):
+            if isinstance(row, UsageCounter) and row.organization_id == org_id and row.period == period:
+                db.flush([row])
+        query = query.with_for_update().populate_existing()
     return query
 
 
@@ -155,6 +160,51 @@ def _plan_limit(plan: Plan, field: str) -> int | None:
     return mapping.get(field)
 
 
+def _notify_quota_threshold(db: Session, counter: UsageCounter, field: str, limit: int, previous: int) -> None:
+    """Warn once at 80%, in the usage transaction, including jumps to exhaustion.
+
+    Copies belong to the org's currently active projects, with independent read
+    state. Projects created later wait for the next crossing/month. Judge spend
+    is excluded: the usage cost counter also includes non-judge ingestion cost.
+    """
+    used = int(getattr(counter, field) or 0)
+    if limit <= 0 or previous * 100 >= limit * 80 or used * 100 < limit * 80:
+        return
+    labels = {
+        "traces_ingested": "traces",
+        "evaluations_run": "avaliações",
+        "exports_created": "exportações",
+        "spans_ingested": "spans",
+        "tokens_ingested": "tokens",
+    }
+    projects = db.query(Project.id).filter(
+        Project.organization_id == counter.organization_id,
+        Project.archived_at.is_(None),
+    ).all()
+    for (project_id,) in projects:
+        key = f"{counter.organization_id}:{counter.period}:{field}:80:{project_id}"
+        notification_id = "ntf_" + sha256(key.encode()).hexdigest()[:60]
+        if db.get(Notification, notification_id) is not None or any(
+            isinstance(row, Notification) and row.id == notification_id for row in db.new
+        ):
+            continue
+        db.add(Notification(
+            id=notification_id,
+            project_id=project_id,
+            kind="warn",
+            title=f"Cota da organização: {labels[field]} em 80% ou mais ({used}/{limit})",
+            meta={
+                "scope": "organization",
+                "organization_id": counter.organization_id,
+                "period": counter.period,
+                "resource": field,
+                "threshold_percent": 80,
+                "used": used,
+                "limit": limit,
+            },
+        ))
+
+
 def enforce_quota(db: Session, project: Project, field: str, increment: int = 1) -> None:
     """Raise 402 if the increment would exceed the plan's monthly limit for ``field``.
 
@@ -201,6 +251,7 @@ def apply_usage_with_quota(
         spans=spans,
         tokens=tokens,
     )
+    previous = {field: int(getattr(counter, field) or 0) for field in deltas}
     if plan is not None:
         for field, delta in deltas.items():
             if delta <= 0:
@@ -222,6 +273,11 @@ def apply_usage_with_quota(
         tokens=tokens,
     )
     db.add(counter)
+    if plan is not None:
+        for field, delta in deltas.items():
+            limit = _plan_limit(plan, field)
+            if delta > 0 and limit is not None:
+                _notify_quota_threshold(db, counter, field, limit, previous[field])
     return counter
 
 
@@ -244,6 +300,10 @@ def increment_usage(
     single-process ingest.
     """
     row = get_or_create_counter(db, org_id, current_period(), lock=True)
+    sub = ensure_subscription(db, org_id)
+    plan = db.get(Plan, sub.plan_id)
+    deltas = _usage_deltas(traces=traces, evals=evals, exports=exports, spans=spans, tokens=tokens)
+    previous = {field: int(getattr(row, field) or 0) for field in deltas}
     _apply_counter_deltas(
         row,
         traces=traces,
@@ -254,6 +314,11 @@ def increment_usage(
         tokens=tokens,
     )
     db.add(row)
+    if plan is not None:
+        for field, delta in deltas.items():
+            limit = _plan_limit(plan, field)
+            if delta > 0 and limit is not None:
+                _notify_quota_threshold(db, row, field, limit, previous[field])
     return row
 
 

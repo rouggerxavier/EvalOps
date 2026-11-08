@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-const appShell = readFileSync(new URL("../components/AppShell.tsx", import.meta.url), "utf8");
+const appShell = readFileSync(new URL("../components/OpsShellFrame.tsx", import.meta.url), "utf8");
 const shortcuts = readFileSync(new URL("../components/EvoShortcuts.tsx", import.meta.url), "utf8");
 const toastHost = readFileSync(new URL("../components/EvoToastHost.tsx", import.meta.url), "utf8");
 const toastBridge = readFileSync(new URL("../components/EvoToastBridge.tsx", import.meta.url), "utf8");
@@ -10,7 +10,7 @@ const toastLib = readFileSync(new URL("../lib/toast.ts", import.meta.url), "utf8
 const nav = readFileSync(new URL("../components/app-shell-nav.ts", import.meta.url), "utf8");
 const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
 
-test("P6 AppShell mounts shortcuts, toast bridge and toast host", () => {
+test("P6 internal shell mounts shortcuts, toast bridge and toast host", () => {
   assert.match(appShell, /<EvoShortcuts \/>/);
   assert.match(appShell, /<EvoToastBridge \/>/);
   assert.match(appShell, /<EvoToastHost \/>/);

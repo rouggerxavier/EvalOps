@@ -33,8 +33,8 @@ test("rubrics: selected rubric shows the report (totals, versions, trend, evalua
   assert.match(page, /<AreaChart data=\{trendSeries\}/);
   assert.match(page, /Nenhuma avaliação neste período/);
   // Existing definition and version history stay.
-  assert.match(page, /<YamlBlock code=\{latestVersion\.yaml_source\}/);
-  assert.match(page, /<VersionsList /);
+  assert.match(page, /latestVersion\?\.yaml_source \?\? "Sem dados de YAML/);
+  assert.match(page, /\[\.\.\.versions\]\.reverse\(\)\.map\(\(version\)/);
 });
 
 test("rubrics: unknown and errored runs are never shown as passed", () => {

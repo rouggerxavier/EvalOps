@@ -52,7 +52,9 @@ test("status text says why an option is off", () => {
 test("rubric screen: every YAML form uses the editor and blocks unavailable judges", () => {
   const page = read("../app/o/[org]/p/[project]/rubrics/page.tsx");
   const editor = read("../components/RubricYamlEditor.tsx");
-  assert.equal(page.match(/<RubricYamlEditor/g).length, 3);
+  // Create and new-version forms; no raw YAML textarea is left.
+  assert.equal(page.match(/<RubricYamlEditor/g).length, 2);
+  assert.doesNotMatch(page, /<textarea[^>]*name="yaml_source"/);
   assert.match(page, /getCliJudges\(\)/);
   assert.match(editor, /disabled=\{option\.status !== "available"\}/);
   assert.match(editor, /Modo local/);
@@ -60,6 +62,6 @@ test("rubric screen: every YAML form uses the editor and blocks unavailable judg
 });
 
 test("unknown cost renders as unknown, never $0", () => {
-  assert.match(read("../app/o/[org]/p/[project]/evaluations/page.tsx"), /run\.cost_usd === null \? "—"/);
-  assert.match(read("../app/o/[org]/p/[project]/traces/[trace]/trace-evaluations.tsx"), /custo desconhecido/);
+  assert.match(read("../app/o/[org]/p/[project]/evaluations/page.tsx"), /run\.cost_usd === null \? "Sem dados"/);
+  assert.match(read("../app/o/[org]/p/[project]/traces/[trace]/trace-evaluations.tsx"), /score\.cost_usd === null \? <span className="t__faint">Sem dados/);
 });
