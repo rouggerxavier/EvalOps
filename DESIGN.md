@@ -51,3 +51,7 @@ Todos os números vêm de endpoints existentes. Status de ingestão e veredito d
 ## Verificação
 
 `apps/web` passa `npm run test` (184 testes), `npx tsc --noEmit` e `npm run build`. Todas as telas do projeto foram abertas em 1280 px e 375 px com a API local em SQLite: sem rolagem lateral da página, sem sobreposição na barra superior, menu do celular operado pelo teclado. Capturas de antes e depois em `docs/audits/img/redesign-*.jpg`.
+
+Retomada D31 em 2026-11-08: gates repetidos com sucesso e 13 testes smoke Playwright
+verdes, incluindo 1280/375 px e menu por teclado. Ambiente, capturas e lacunas em
+[`docs/audits/redesign-qa-2026-11-08.md`](docs/audits/redesign-qa-2026-11-08.md).

@@ -45,7 +45,12 @@ Para cada uma das 11 rotas (`overview`, `traces`, `traces/compare`, `evaluations
 verifica:
 
 - Render OK (status 2xx)
-- `h1.page-header__title` com texto esperado
+- H1 com o título atual em pt-BR
 - Sem error boundary visível
+- Layout em 1280×900 e 375×900 sem rolagem lateral da página
 
-Cobre também o atalho global `G T` → `/traces`.
+Cobre também o atalho global `G T` → `/traces` e a gaveta móvel com Enter,
+Tab/Shift+Tab, Escape, retorno de foco, navegação e mudança para desktop.
+
+O usuário de `E2E_EMAIL` precisa ser membro da organização/projeto configurados;
+criar automaticamente outro usuário não concede acesso ao workspace do seed.
