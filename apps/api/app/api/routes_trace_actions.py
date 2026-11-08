@@ -9,7 +9,10 @@ from app.domain.services.rag_service import consolidate_rag
 from app.db import get_db
 from app.deps import get_current_user
 from app.domain.services.audit_service import record_audit
+from app.domain.services.eval_service import judge_budget_status
+from app.domain.services.usage_service import current_period, get_or_create_counter
 from app.workers.queue import get_arq_pool
+from app.workers.replay_worker import book_replay_cost, estimate_replay_reservation, set_replay_status
 from app.models import Span, Trace, TraceFlag, User, utcnow
 from app.ownership import load_trace
 from app.schemas import (
@@ -206,11 +209,26 @@ async def rerun_trace(
 ) -> dict:
     trace = load_trace(db, user.id, trace_id)
     now = utcnow()
+    period = current_period(now)
+    # Replay calls the provider with platform keys, so it spends the same judge budget.
+    # Lock the org's counter first so concurrent replays see each other's reservations.
+    # shortcut: evaluations do not take this lock and SQLite ignores it, so an eval racing a replay can still overshoot by one call; move evals onto the counter if that matters.
+    get_or_create_counter(db, trace.organization_id, period, lock=True)
+    has_budget, spent, budget = judge_budget_status(trace.project_id, db)
+    if not has_budget:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail={"error": "judge_budget_exhausted", "spent_usd": round(spent, 6), "budget_usd": round(budget, 6)},
+        )
+    reserved = estimate_replay_reservation(db, trace.id, payload.model, payload.variables)
+    book_replay_cost(db, trace.organization_id, period, reserved)
     metadata = dict(trace.metadata_json or {})
     metadata.update(
         {
             "replay_of": trace.id,
             "replay_status": "queued",
+            "replay_reserved_usd": str(reserved),
             "rerun_model": payload.model,
             "rerun_variables": payload.variables,
         }
@@ -233,25 +251,13 @@ async def rerun_trace(
         tags=dict(trace.tags or {}),
         user_ref=trace.user_ref,
         metadata_json=metadata,
+        created_at=now,
     )
     db.add(new_trace)
     new_trace_id = new_trace.id
     original_id = trace.id
     org_id = trace.organization_id
     actor_id = user.id
-
-    try:
-        await arq_pool.enqueue_job(
-            "replay_trace",
-            original_trace_id=original_id,
-            new_trace_id=new_trace_id,
-        )
-    except Exception as exc:
-        db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="replay_unavailable",
-        ) from exc
 
     record_audit(
         db,
@@ -266,7 +272,23 @@ async def rerun_trace(
             "variables": payload.variables,
         },
     )
+    # Commit before enqueueing: the worker opens its own session and must find the placeholder.
     db.commit()
+
+    try:
+        await arq_pool.enqueue_job(
+            "replay_trace",
+            original_trace_id=original_id,
+            new_trace_id=new_trace_id,
+        )
+    except Exception as exc:
+        # Never leave a placeholder stuck in `queued` with no job behind it; this also frees the reservation.
+        set_replay_status(db, new_trace, "failed", error="queue_unavailable")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="replay_unavailable",
+        ) from exc
+
     return {"new_trace_id": new_trace_id, "status": "queued", "replay_status": "queued"}
 
 

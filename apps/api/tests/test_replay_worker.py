@@ -256,6 +256,165 @@ def test_replay_trace_provider_error_marks_failed(monkeypatch) -> None:
         assert ph.status == "partial"
 
 
+def test_replay_trace_missing_original_marks_failed(monkeypatch) -> None:
+    org_id, project_id = _seed_project()
+    placeholder_id = _seed_placeholder(org_id, project_id, "tr_gone")
+    monkeypatch.setattr(llm_judge, "call_llm", lambda *a, **k: pytest.fail("não deveria chamar o provider"))
+
+    result = asyncio.run(replay_trace(_ctx(), "tr_gone", placeholder_id))
+    assert result == {"status": "failed", "reason": "original_trace_not_found"}
+    with SessionLocal() as db:
+        ph = db.get(Trace, placeholder_id)
+        assert ph.metadata_json["replay_status"] == "failed"
+        assert ph.metadata_json["replay_error"] == "original_trace_not_found"
+
+
+def test_replay_trace_missing_placeholder_returns_failed() -> None:
+    org_id, project_id = _seed_project()
+    original_id = _seed_original_trace_with_llm_span(org_id, project_id)
+    result = asyncio.run(replay_trace(_ctx(), original_id, "tr_missing"))
+    assert result["status"] == "failed"
+    assert result["reason"] == "trace_not_found:tr_missing"
+
+
+def test_replay_trace_unsupported_provider_has_clear_error(monkeypatch) -> None:
+    org_id, project_id = _seed_project()
+    original_id = _seed_original_trace_with_llm_span(org_id, project_id)
+    placeholder_id = _seed_placeholder(org_id, project_id, original_id, rerun_model="anthropic/claude-x")
+    monkeypatch.setattr(llm_judge, "call_llm", llm_judge._call_llm)
+
+    result = asyncio.run(replay_trace(_ctx(), original_id, placeholder_id))
+    assert result["reason"] == "unsupported_judge_provider:anthropic"
+    with SessionLocal() as db:
+        assert db.get(Trace, placeholder_id).metadata_json["replay_error"] == "unsupported_judge_provider:anthropic"
+
+
+def _ledger(org_id: str) -> float:
+    from app.domain.services.usage_service import current_period
+    from app.models import UsageCounter
+
+    with SessionLocal() as db:
+        row = (
+            db.query(UsageCounter)
+            .filter(UsageCounter.organization_id == org_id, UsageCounter.period == current_period())
+            .one_or_none()
+        )
+        return float(row.replay_cost_usd or 0) if row else 0.0
+
+
+def test_replay_cost_counts_toward_judge_budget(monkeypatch) -> None:
+    from app.domain.services.eval_service import judge_budget_status
+
+    org_id, project_id = _seed_project()
+    original_id = _seed_original_trace_with_llm_span(org_id, project_id)
+    placeholder_id = _seed_placeholder(org_id, project_id, original_id)
+    monkeypatch.setattr(llm_judge, "call_llm", lambda *a, **k: "resposta " * 200)
+
+    with SessionLocal() as db:
+        _, spent_before, _ = judge_budget_status(project_id, db)
+    assert asyncio.run(replay_trace(_ctx(), original_id, placeholder_id))["status"] == "completed"
+    with SessionLocal() as db:
+        replay_cost = float(db.get(Trace, placeholder_id).total_cost_usd)
+        _, spent_after, _ = judge_budget_status(project_id, db)
+    assert replay_cost > 0
+    assert spent_after == pytest.approx(spent_before + replay_cost)
+
+
+def test_client_metadata_cannot_fake_replay_spend() -> None:
+    from app.domain.services.eval_service import judge_budget_status
+
+    org_id, project_id = _seed_project()
+    original_id = _seed_original_trace_with_llm_span(org_id, project_id)
+    # An ingested trace that claims to be a replay in its client metadata.
+    _seed_placeholder(org_id, project_id, original_id, replay_status="completed")
+    with SessionLocal() as db:
+        db.query(Trace).filter(Trace.id != original_id).update({Trace.total_cost_usd: 999})
+        db.commit()
+        _, spent, _ = judge_budget_status(project_id, db)
+    assert spent == 0
+
+
+def test_replay_unpriced_model_override_still_costs(monkeypatch) -> None:
+    org_id, project_id = _seed_project()
+    original_id = _seed_original_trace_with_llm_span(org_id, project_id)
+    placeholder_id = _seed_placeholder(org_id, project_id, original_id, rerun_model="openai/gpt-4o")
+    monkeypatch.setattr(llm_judge, "call_llm", lambda *a, **k: "OK")
+
+    assert asyncio.run(replay_trace(_ctx(), original_id, placeholder_id))["status"] == "completed"
+    with SessionLocal() as db:
+        ph = db.get(Trace, placeholder_id)
+        span = db.query(Span).filter(Span.trace_id == placeholder_id).one()
+        assert float(ph.total_cost_usd) > 0, "modelo fora da tabela usa o fallback A-08, nunca 0"
+        assert (span.provider, span.model) == ("openai", "gpt-4o")
+    assert _ledger(org_id) == pytest.approx(float(ph.total_cost_usd))
+
+
+def test_replay_settles_reservation_with_real_cost(monkeypatch) -> None:
+    from decimal import Decimal
+
+    from app.domain.services.usage_service import current_period
+    from app.workers.replay_worker import book_replay_cost
+
+    org_id, project_id = _seed_project()
+    original_id = _seed_original_trace_with_llm_span(org_id, project_id)
+    placeholder_id = _seed_placeholder(org_id, project_id, original_id, replay_reserved_usd="0.5")
+    with SessionLocal() as db:
+        book_replay_cost(db, org_id, current_period(), Decimal("0.5"))
+        db.commit()
+    monkeypatch.setattr(llm_judge, "call_llm", lambda *a, **k: "OK")
+
+    assert asyncio.run(replay_trace(_ctx(), original_id, placeholder_id))["status"] == "completed"
+    with SessionLocal() as db:
+        ph = db.get(Trace, placeholder_id)
+        assert "replay_reserved_usd" not in ph.metadata_json
+    assert _ledger(org_id) == pytest.approx(float(ph.total_cost_usd))
+
+
+def test_replay_failure_releases_reservation(monkeypatch) -> None:
+    from decimal import Decimal
+
+    from app.domain.services.usage_service import current_period
+    from app.workers.replay_worker import book_replay_cost
+
+    org_id, project_id = _seed_project()
+    original_id = _seed_original_trace_with_llm_span(org_id, project_id)
+    placeholder_id = _seed_placeholder(org_id, project_id, original_id, replay_reserved_usd="0.5")
+    with SessionLocal() as db:
+        book_replay_cost(db, org_id, current_period(), Decimal("0.5"))
+        db.commit()
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("upstream_500")
+
+    monkeypatch.setattr(llm_judge, "call_llm", boom)
+    assert asyncio.run(replay_trace(_ctx(), original_id, placeholder_id))["status"] == "failed"
+    assert _ledger(org_id) == 0
+
+
+def test_replay_ingest_failure_marks_failed_and_keeps_cost(monkeypatch) -> None:
+    from app.workers import replay_worker
+
+    org_id, project_id = _seed_project()
+    original_id = _seed_original_trace_with_llm_span(org_id, project_id)
+    placeholder_id = _seed_placeholder(org_id, project_id, original_id)
+    monkeypatch.setattr(llm_judge, "call_llm", lambda *a, **k: "OK")
+
+    def broken_ingest(db, *args, **kwargs):
+        db.add(Span(id="sp_dup", trace_id=placeholder_id))  # missing NOT NULL columns
+        db.commit()
+
+    monkeypatch.setattr(replay_worker, "_ingest_replay_result", broken_ingest)
+    result = asyncio.run(replay_trace(_ctx(), original_id, placeholder_id))
+    assert result["status"] == "failed"
+    assert result["reason"] == "ingest_failed"
+    with SessionLocal() as db:
+        ph = db.get(Trace, placeholder_id)
+        assert ph.metadata_json["replay_status"] == "failed", "não pode ficar em running"
+        assert ph.metadata_json["replay_error"] == "ingest_failed"
+        assert float(ph.total_cost_usd) > 0
+    assert _ledger(org_id) == pytest.approx(float(ph.total_cost_usd)), "o provider cobrou: o custo fica no orçamento"
+
+
 def test_build_messages_handles_non_dict_entries_and_missing_content() -> None:
     span = Span(
         id="sp",

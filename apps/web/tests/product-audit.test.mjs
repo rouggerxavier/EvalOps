@@ -71,6 +71,43 @@ test("rubric form starts from YAML the parser accepts", () => {
   assert.match(modal, /name: Nova rubrica/);
 });
 
+test("trace list filters by period, tag, user, model, score and failures, and the topbar searches everything", () => {
+  const page = read(`${PROJECT}/traces/page.tsx`);
+  for (const name of ["since", "until", "tag", "user_ref", "model", "score_lt", "failed"]) {
+    assert.match(page, new RegExp(`name="${name}"`), name);
+  }
+  assert.match(page, /for \(const \[key, value\] of Object\.entries\(filters\)\) baseParams\.set\(key, value\)/);
+  assert.match(page, /key === "tag" && !\/\^\[\^:\]\+:\.\+\$\/\.test\(value\)/);
+  const api = read("lib/api.ts");
+  assert.match(api, /\["conversation_id", "since", "until", "tag", "user_ref", "model", "q"\]/);
+  assert.match(api, /params\.set\("score_lt"/);
+  const topbar = read("components/EvoTopbar.tsx");
+  assert.match(topbar, /name="q" placeholder="Buscar por nome, id, usuário ou conversa\.\.\."/);
+  assert.doesNotMatch(topbar, /name="name"/);
+});
+
+test("conversation turns are listed on the trace and filterable in the list", () => {
+  const detail = read(`${PROJECT}/traces/[trace]/page.tsx`);
+  assert.match(detail, /getTraces\(\{ projectId: t\.project_id, conversation_id: conversationId, limit: 50 \}\)/);
+  assert.match(detail, /title="Conversa"/);
+  assert.match(detail, /\[\.\.\.conversation\.data\]\.reverse\(\)/);
+  assert.match(detail, /este turno/);
+  assert.match(detail, /turn\.redacted \? <span className="tag">redigido<\/span>/);
+  const list = read(`${PROJECT}/traces/page.tsx`);
+  assert.match(list, /conversation_id: filters\.conversation_id/);
+  assert.match(list, /withoutFilterHref\("conversation_id"\)/);
+});
+
+test("etapa 4 screens survive narrow screens, impossible dates and hydration", () => {
+  const css = read("app/globals.css");
+  assert.match(css, /\.card__body--flush \{ padding: 0; overflow-x: auto; \}/);
+  assert.match(css, /\.table-wrap \{\n  overflow-x: auto;/);
+  assert.match(read(`${PROJECT}/traces/page.tsx`), /!isRealDate\(value\)/);
+  assert.doesNotMatch(read("components/ui/AreaChart.tsx"), /Math\.random/);
+  assert.match(read(`${PROJECT}/traces/[trace]/page.tsx`), /conversation_id=\$\{encodeURIComponent\(conversationId\)\}&environment=`/);
+  assert.doesNotMatch(read(`${PROJECT}/rubrics/page.tsx`), /versão\{/);
+});
+
 test("auth pages promise nothing that does not exist", () => {
   const login = read("app/login/page.tsx");
   assert.doesNotMatch(login, /name="remember"|30 dias/);

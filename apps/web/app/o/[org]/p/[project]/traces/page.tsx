@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { AlertCircle, Clock, Download, Flag, Layers, Search } from "lucide-react";
+import { AlertCircle, Clock, Download, Flag, Layers, Search, X } from "lucide-react";
 
 import { AuthRequiredPanel } from "@/components/AuthRequiredPanel";
 import { getActiveEnvironment } from "@/lib/active-env";
@@ -20,8 +20,41 @@ type Props = {
     tab?: string;
     cursor?: string;
     slow_kind?: string;
+    q?: string;
+    conversation_id?: string;
+    since?: string;
+    until?: string;
+    tag?: string;
+    user_ref?: string;
+    model?: string;
+    failed?: string;
+    score_lt?: string;
   }>;
 };
+
+// Filters kept across tabs, pagination and refresh; invalid values are dropped so the API never answers 422.
+const FILTER_KEYS = ["q", "conversation_id", "since", "until", "tag", "user_ref", "model", "failed", "score_lt"] as const;
+type FilterKey = (typeof FILTER_KEYS)[number];
+
+function isRealDate(value: string): boolean {
+  const date = new Date(`${value}T00:00:00Z`);
+  return /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(date.getTime()) && date.toISOString().startsWith(value);
+}
+
+function validFilters(qp: Partial<Record<FilterKey, string>>): Partial<Record<FilterKey, string>> {
+  const out: Partial<Record<FilterKey, string>> = {};
+  for (const key of FILTER_KEYS) {
+    const value = qp[key]?.trim();
+    if (!value) continue;
+    // The round trip rejects impossible dates like 2026-02-30, which the API answers with 422.
+    if ((key === "since" || key === "until") && !isRealDate(value)) continue;
+    if (key === "tag" && !/^[^:]+:.+$/.test(value)) continue;
+    if (key === "failed" && value !== "true") continue;
+    if (key === "score_lt" && !(Number(value) >= 0 && Number(value) <= 1)) continue;
+    out[key] = value;
+  }
+  return out;
+}
 
 function parseTab(value: string | undefined): Tab {
   if (value === "errors" || value === "partial" || value === "slow" || value === "rag" || value === "flagged") return value;
@@ -45,6 +78,7 @@ export default async function TracesListPage({ params, searchParams }: Props) {
   const tabStatus = tab === "errors" ? "error" : tab === "partial" ? "partial" : qp.status;
   const slowKind: SlowKind = tab === "slow" ? parseSlowKind(qp.slow_kind) : "trace";
   const environment = await getActiveEnvironment(qp.environment);
+  const filters = validFilters(qp);
   const traces = await getTraces({
     projectId: resolved.project_id,
     status: tabStatus,
@@ -56,6 +90,16 @@ export default async function TracesListPage({ params, searchParams }: Props) {
     slow_kind: tab === "slow" ? slowKind : undefined,
     rag: tab === "rag" ? true : undefined,
     flagged: tab === "flagged" ? true : undefined,
+    q: filters.q,
+    conversation_id: filters.conversation_id,
+    // shortcut: dates are whole days in UTC, not the viewer's timezone; upgrade when the UI knows the user's timezone
+    since: filters.since ? `${filters.since}T00:00:00` : undefined,
+    until: filters.until ? `${filters.until}T23:59:59.999` : undefined,
+    tag: filters.tag,
+    user_ref: filters.user_ref,
+    model: filters.model,
+    failed: filters.failed ? true : undefined,
+    score_lt: filters.score_lt ? Number(filters.score_lt) : undefined,
   });
 
   const rows = traces.data;
@@ -75,6 +119,15 @@ export default async function TracesListPage({ params, searchParams }: Props) {
   // user that picked "LLM call" / "Retrieval" doesn't silently fall back to
   // "Trace inteiro" after the next click.
   if (tab === "slow" && slowKind !== "trace") baseParams.set("slow_kind", slowKind);
+  for (const [key, value] of Object.entries(filters)) baseParams.set(key, value);
+
+  const withoutFilterHref = (key: FilterKey) => {
+    const p = new URLSearchParams(baseParams);
+    p.delete(key);
+    if (tab !== "all") p.set("tab", tab);
+    const s = p.toString();
+    return s ? `${tabBase}?${s}` : tabBase;
+  };
 
   const tabHref = (t: Tab) => {
     const p = new URLSearchParams(baseParams);
@@ -205,6 +258,8 @@ export default async function TracesListPage({ params, searchParams }: Props) {
         {tab === "slow" && slowKind !== "trace" ? (
           <input type="hidden" name="slow_kind" value={slowKind} />
         ) : null}
+        {filters.q ? <input type="hidden" name="q" value={filters.q} /> : null}
+        {filters.conversation_id ? <input type="hidden" name="conversation_id" value={filters.conversation_id} /> : null}
         <label className="filter-group">
           <Search size={12} />
           <input
@@ -226,6 +281,54 @@ export default async function TracesListPage({ params, searchParams }: Props) {
           <option value="staging">staging</option>
           <option value="dev">dev</option>
         </select>
+        <label className="row faint" style={{ gap: 4, fontSize: 11.5 }}>
+          de
+          <input className="filter-input" type="date" name="since" defaultValue={filters.since ?? ""} style={{ minWidth: 0, padding: "0 6px" }} />
+        </label>
+        <label className="row faint" style={{ gap: 4, fontSize: 11.5 }}>
+          até
+          <input className="filter-input" type="date" name="until" defaultValue={filters.until ?? ""} style={{ minWidth: 0, padding: "0 6px" }} />
+        </label>
+        <input
+          className="filter-input"
+          name="tag"
+          defaultValue={filters.tag ?? ""}
+          placeholder="tag (ex: canal:whatsapp)"
+          aria-label="Tag no formato chave:valor"
+          style={{ minWidth: 150, padding: "0 10px" }}
+        />
+        <input
+          className="filter-input"
+          name="user_ref"
+          defaultValue={filters.user_ref ?? ""}
+          placeholder="usuário"
+          aria-label="Usuário"
+          style={{ minWidth: 110, padding: "0 10px" }}
+        />
+        <input
+          className="filter-input"
+          name="model"
+          defaultValue={filters.model ?? ""}
+          placeholder="modelo (ex: gpt-4o-mini)"
+          aria-label="Modelo"
+          style={{ minWidth: 150, padding: "0 10px" }}
+        />
+        <input
+          className="filter-input"
+          type="number"
+          name="score_lt"
+          min={0}
+          max={1}
+          step={0.05}
+          defaultValue={filters.score_lt ?? ""}
+          placeholder="nota abaixo de"
+          aria-label="Nota abaixo de (0 a 1)"
+          style={{ minWidth: 0, width: 120, padding: "0 10px" }}
+        />
+        <label className="row faint" style={{ gap: 4, fontSize: 11.5 }}>
+          <input type="checkbox" name="failed" value="true" defaultChecked={Boolean(filters.failed)} style={{ accentColor: "var(--primary-400)" }} />
+          só reprovados
+        </label>
         <button type="submit" className="btn btn--sm">
           Aplicar
         </button>
@@ -234,6 +337,27 @@ export default async function TracesListPage({ params, searchParams }: Props) {
           {displayRows.length} de {rows.length}
         </span>
       </form>
+
+      {filters.q || filters.conversation_id ? (
+        <div className="row" style={{ gap: 6, marginBottom: 8 }}>
+          {filters.conversation_id ? (
+            <span className="tag" data-testid="conversation-filter-chip">
+              conversa: {filters.conversation_id}
+              <Link href={withoutFilterHref("conversation_id")} aria-label="Remover filtro de conversa" style={{ marginLeft: 6, color: "inherit" }}>
+                <X size={11} />
+              </Link>
+            </span>
+          ) : null}
+          {filters.q ? (
+            <span className="tag">
+              busca: {filters.q}
+              <Link href={withoutFilterHref("q")} aria-label="Remover busca" style={{ marginLeft: 6, color: "inherit" }}>
+                <X size={11} />
+              </Link>
+            </span>
+          ) : null}
+        </div>
+      ) : null}
 
       {displayRows.length === 0 ? (
         <TracesEmpty project={project} />

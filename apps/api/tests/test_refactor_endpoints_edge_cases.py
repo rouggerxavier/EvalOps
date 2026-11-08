@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta, timezone
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.db import Base, SessionLocal, engine
@@ -702,6 +703,101 @@ def test_rerun_trace_returns_503_when_enqueue_raises(fake_arq_pool) -> None:
             app.dependency_overrides.pop(get_arq_pool, None)
     assert response.status_code == 503
     assert response.json()["detail"] == "replay_unavailable"
+    with SessionLocal() as db:
+        placeholders = db.query(Trace).filter(Trace.metadata_json["replay_of"].as_string() == trace_id).all()
+        assert len(placeholders) == 1
+        assert placeholders[0].metadata_json["replay_status"] == "failed", "nada pode ficar preso em queued"
+        assert placeholders[0].metadata_json["replay_error"] == "queue_unavailable"
+        assert "replay_reserved_usd" not in placeholders[0].metadata_json
+        assert _replay_ledger(db, placeholders[0].organization_id) == 0, "a reserva volta quando a fila falha"
+
+
+def test_rerun_trace_commits_placeholder_before_enqueue() -> None:
+    from app.workers.queue import get_arq_pool
+
+    _restore = app.dependency_overrides.get(get_arq_pool)
+    client = TestClient(app)
+    headers, _, api_key = _bootstrap(client)
+    trace_id = _ingest_trace(client, api_key, status="ok")
+    seen: list[bool] = []
+
+    class _CheckingPool:
+        async def enqueue_job(self, function_name, *, original_trace_id, new_trace_id):
+            # The worker uses its own session: the placeholder must already be committed.
+            with SessionLocal() as other:
+                seen.append(other.get(Trace, new_trace_id) is not None)
+
+    app.dependency_overrides[get_arq_pool] = lambda: _CheckingPool()
+    try:
+        response = client.post(f"/v1/traces/{trace_id}/rerun", headers=headers, json={"model": None, "variables": {}})
+    finally:
+        if _restore is not None:
+            app.dependency_overrides[get_arq_pool] = _restore
+        else:
+            app.dependency_overrides.pop(get_arq_pool, None)
+    assert response.status_code == 200, response.text
+    assert seen == [True]
+
+
+def _replay_ledger(db, org_id: str) -> float:
+    from app.domain.services.usage_service import current_period
+    from app.models import UsageCounter
+
+    row = (
+        db.query(UsageCounter)
+        .filter(UsageCounter.organization_id == org_id, UsageCounter.period == current_period())
+        .one_or_none()
+    )
+    return float(row.replay_cost_usd or 0) if row else 0.0
+
+
+def test_rerun_trace_blocked_when_judge_budget_exhausted(fake_arq_pool) -> None:
+    from app.domain.services.usage_service import current_period, get_or_create_counter
+
+    fake_arq_pool.jobs.clear()
+    client = TestClient(app)
+    headers, _, api_key = _bootstrap(client)
+    trace_id = _ingest_trace(client, api_key, status="ok")
+    with SessionLocal() as db:
+        org_id = db.get(Trace, trace_id).organization_id
+        # Past replays already ate the whole monthly judge budget.
+        get_or_create_counter(db, org_id, current_period()).replay_cost_usd = 10_000
+        db.commit()
+
+    response = client.post(f"/v1/traces/{trace_id}/rerun", headers=headers, json={"model": None, "variables": {}})
+    assert response.status_code == 402, response.text
+    assert response.json()["detail"]["error"] == "judge_budget_exhausted"
+    assert fake_arq_pool.jobs == []
+    with SessionLocal() as db:
+        queued = db.query(Trace).filter(Trace.metadata_json["replay_status"].as_string() == "queued").all()
+        assert queued == []
+        assert _replay_ledger(db, org_id) == 10_000
+
+
+def test_rerun_trace_reserves_budget_so_a_burst_cannot_overspend(fake_arq_pool) -> None:
+    from app.domain.services.usage_service import set_org_plan_limits
+
+    fake_arq_pool.jobs.clear()
+    client = TestClient(app)
+    headers, _, api_key = _bootstrap(client)
+    trace_id = _ingest_trace(client, api_key, status="ok")
+    with SessionLocal() as db:
+        org_id = db.get(Trace, trace_id).organization_id
+        # Below one replay's reservation (512 assumed output tokens on gpt-4o-mini is ~0.0003 USD).
+        set_org_plan_limits(db, org_id, monthly_judge_budget_usd=0.0002)
+        db.commit()
+
+    body = {"model": None, "variables": {}}
+    first = client.post(f"/v1/traces/{trace_id}/rerun", headers=headers, json=body)
+    second = client.post(f"/v1/traces/{trace_id}/rerun", headers=headers, json=body)
+    assert first.status_code == 200, first.text
+    assert second.status_code == 402, "a reserva do primeiro replay ainda pendente precisa contar"
+    assert len(fake_arq_pool.jobs) == 1
+    with SessionLocal() as db:
+        placeholder = db.get(Trace, first.json()["new_trace_id"])
+        reserved = float(placeholder.metadata_json["replay_reserved_usd"])
+        assert reserved > 0
+        assert _replay_ledger(db, org_id) == pytest.approx(reserved)
 
 
 def test_members_listing_paginates_with_cursor() -> None:

@@ -460,6 +460,8 @@ class UsageCounter(Base):
     #   ALTER TABLE usage_counters ADD COLUMN tokens_ingested BIGINT NOT NULL DEFAULT 0;
     spans_ingested: Mapped[int] = mapped_column(Integer, default=0)
     tokens_ingested: Mapped[int] = mapped_column(Integer, default=0)
+    # Judge-budget spend of trace replays (reserved at enqueue, settled by the worker); server-only.
+    replay_cost_usd: Mapped[float] = mapped_column(Numeric(12, 6), default=0, server_default="0")
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
 

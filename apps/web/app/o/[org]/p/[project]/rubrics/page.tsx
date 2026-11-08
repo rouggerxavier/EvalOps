@@ -3,15 +3,38 @@ import Link from "next/link";
 
 import { AuthRequiredPanel } from "@/components/AuthRequiredPanel";
 import { RubricYamlEditor } from "@/components/RubricYamlEditor";
-import { createRubricAction, createRubricVersionAction } from "@/lib/actions";
-import { getCliJudges, getRubrics, getRubricVersions, hasAuthToken, resolveProject } from "@/lib/api";
+import { AreaChart, Card, EmptyState, Metric } from "@/components/ui/index";
+import { createRubricAction, createRubricVersionAction, triggerEvaluationBatchAction } from "@/lib/actions";
+import { getActiveEnvironment } from "@/lib/active-env";
+import { getCliJudges, getRubricReport, getRubrics, getRubricVersions, hasAuthToken, resolveProject } from "@/lib/api";
+import { formatCost, formatPercent } from "@/lib/format";
 import { ignoredFieldsNotice } from "@/lib/safe-error";
-import type { RubricVersion } from "@/lib/types";
+import type { RubricReport, RubricReportWindow, RubricVersion } from "@/lib/types";
 
 type Props = {
   params: Promise<{ org: string; project: string }>;
-  searchParams: Promise<{ ignored?: string; rubric?: string; error?: string; created?: string; versioned?: string }>;
+  searchParams: Promise<{
+    ignored?: string;
+    rubric?: string;
+    error?: string;
+    created?: string;
+    versioned?: string;
+    batched?: string;
+    window?: string;
+    environment?: string;
+  }>;
 };
+
+const REPORT_WINDOWS: RubricReportWindow[] = ["24h", "7d", "30d", "90d"];
+const WINDOW_LABELS: Record<RubricReportWindow, string> = {
+  "24h": "Últimas 24h",
+  "7d": "Últimos 7 dias",
+  "30d": "Últimos 30 dias",
+  "90d": "Últimos 90 dias",
+};
+
+const pctOrDash = (value: number | null) => (value == null ? "—" : formatPercent(value));
+const scoreOrDash = (value: number | null) => (value == null ? "—" : value.toFixed(2));
 
 function relTime(iso: string): string {
   const diff = Date.now() - Date.parse(iso);
@@ -156,10 +179,21 @@ export default async function RubricsPage({ params, searchParams }: Props) {
   const selectedId = qp.rubric ?? null;
   const selected = selectedId ? (rubrics.find((r) => r.id === selectedId) ?? null) : null;
 
+  const reportWindow = REPORT_WINDOWS.find((w) => w === qp.window) ?? "7d";
+  const environment = await getActiveEnvironment(qp.environment);
+
   let versions: RubricVersion[] = [];
+  let report: RubricReport | null = null;
   if (selected) {
     versions = (await getRubricVersions(selected.id)).data;
+    // A failed report must not hide the rubric definition: the card shows a notice instead.
+    report = await getRubricReport(resolved.project_id, selected.id, reportWindow, environment).catch(() => null);
   }
+  // Trend of the newest version that has runs; the version table compares all of them.
+  const trendVersion = report?.by_version.at(-1)?.rubric_version ?? null;
+  const trendSeries = (report?.by_day ?? [])
+    .filter((d) => d.rubric_version === trendVersion && d.avg_score != null)
+    .map((d) => ({ label: `${d.day.slice(8, 10)}/${d.day.slice(5, 7)}`, value: d.avg_score as number }));
 
   const latestVersion = versions.length > 0 ? versions[versions.length - 1] : null;
   const evaluators = latestVersion?.parsed_spec?.evaluators ?? [];
@@ -256,6 +290,24 @@ export default async function RubricsPage({ params, searchParams }: Props) {
           {ignoredFieldsNotice(qp.ignored) ? ` ${ignoredFieldsNotice(qp.ignored)}` : ""}
         </div>
       )}
+      {qp.batched && (
+        <div
+          role="status"
+          style={{
+            background: "var(--ok-bg)",
+            border: "1px solid var(--ok-border)",
+            borderRadius: 6,
+            padding: "10px 14px",
+            fontSize: 13,
+            color: "var(--ok)",
+            marginBottom: 12,
+          }}
+        >
+          {qp.batched === "0"
+            ? "Nenhum trace novo para avaliar: os traces que batem com o filtro já têm resultado nesta versão."
+            : `${qp.batched} traces na fila. Os resultados aparecem no relatório abaixo conforme forem avaliados; recarregue a página em alguns instantes.`}
+        </div>
+      )}
 
       {/* Summary row — só dados reais do payload */}
       <section className="module-summary" aria-label="Resumo de rubricas">
@@ -280,6 +332,7 @@ export default async function RubricsPage({ params, searchParams }: Props) {
 
       {selected ? (
         /* ---- DETAIL VIEW ---- */
+        <>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 360px", gap: 12 }}>
           {/* Left: YAML code block */}
           <div className="card">
@@ -312,7 +365,7 @@ export default async function RubricsPage({ params, searchParams }: Props) {
               <div className="card__header">
                 <h3 className="card__title">Versões</h3>
                 <span style={{ fontSize: 11, color: "var(--text-faint)" }}>
-                  {versions.length} versão{versions.length !== 1 ? "ões" : ""}
+                  {versions.length} {versions.length !== 1 ? "versões" : "versão"}
                 </span>
               </div>
               <VersionsList versions={versions} currentVersion={selected.current_version} />
@@ -413,6 +466,173 @@ export default async function RubricsPage({ params, searchParams }: Props) {
             </details>
           </div>
         </div>
+
+        {/* ---- RESULTADOS (relatório da rubrica) ---- */}
+        <section aria-label="Resultados da rubrica" style={{ marginTop: 16 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12, flexWrap: "wrap" }}>
+            <h2 className="card__title" style={{ flex: 1, margin: 0 }}>Resultados</h2>
+            <form method="get" action={baseUrl} style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+              <input type="hidden" name="rubric" value={selected.id} />
+              <select className="filter-select" name="window" defaultValue={reportWindow} aria-label="Período">
+                {REPORT_WINDOWS.map((w) => (
+                  <option key={w} value={w}>{WINDOW_LABELS[w]}</option>
+                ))}
+              </select>
+              <select className="filter-select" name="environment" defaultValue={environment ?? ""} aria-label="Ambiente">
+                <option value="">qualquer env</option>
+                <option value="prod">prod</option>
+                <option value="staging">staging</option>
+                <option value="dev">dev</option>
+              </select>
+              <button type="submit" className="btn btn--sm">Aplicar</button>
+            </form>
+          </div>
+
+          {!report ? (
+            <EmptyState
+              title="Não foi possível carregar o relatório"
+              description="Tente recarregar a página. A definição da rubrica acima continua disponível."
+            />
+          ) : report.totals.runs === 0 ? (
+            <EmptyState
+              title="Nenhuma avaliação neste período"
+              description={`${report.trace_count.toLocaleString("pt-BR")} traces no período ainda não foram avaliados com esta rubrica. Use "Avaliar em lote" abaixo para começar.`}
+            />
+          ) : (
+            <>
+              <section className="kpi-grid kpi-grid--5">
+                <Metric label="Avaliações" value={report.totals.runs.toLocaleString("pt-BR")} delta={`${report.trace_count.toLocaleString("pt-BR")} traces no período`} />
+                <Metric
+                  label="Aprovação"
+                  value={pctOrDash(report.totals.pass_rate)}
+                  delta={`${report.totals.passed} aprovadas · ${report.totals.failed} reprovadas`}
+                />
+                <Metric label="Score médio" value={scoreOrDash(report.totals.avg_score)} />
+                <Metric
+                  label="Sem resultado"
+                  value={(report.totals.unknown + report.totals.errors).toLocaleString("pt-BR")}
+                  delta={`${report.totals.unknown} pendentes ou parciais · ${report.totals.errors} com erro`}
+                  deltaTone={report.totals.unknown + report.totals.errors > 0 ? "down" : "neutral"}
+                />
+                <Metric label="Custo" value={formatCost(report.totals.cost_usd)} />
+              </section>
+
+              <section className="grid-2-eq" style={{ marginBottom: 12 }}>
+                <Card title="Tendência do score" subtitle={`score médio por dia · v${trendVersion}`}>
+                  <AreaChart data={trendSeries} color="var(--success)" />
+                </Card>
+
+                <Card title="Comparação entre versões" subtitle="aprovação conta só avaliações com resultado" flush>
+                  <table className="t">
+                    <thead>
+                      <tr>
+                        <th>Versão</th>
+                        <th>Avaliações</th>
+                        <th>Aprovação</th>
+                        <th>Score médio</th>
+                        <th>Sem resultado</th>
+                        <th>Custo</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {report.by_version.map((v) => (
+                        <tr key={v.rubric_version}>
+                          <td style={{ fontFamily: "var(--font-mono)" }}>v{v.rubric_version}</td>
+                          <td>{v.runs}</td>
+                          <td>{pctOrDash(v.pass_rate)}</td>
+                          <td>{scoreOrDash(v.avg_score)}</td>
+                          <td>{v.unknown + v.errors}</td>
+                          <td>{formatCost(v.cost_usd)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </Card>
+              </section>
+
+              <Card title="Por avaliador" subtitle="cada critério da rubrica, por versão" flush>
+                <table className="t">
+                  <thead>
+                    <tr>
+                      <th>Versão</th>
+                      <th>Avaliador</th>
+                      <th>Avaliações</th>
+                      <th>Aprovação</th>
+                      <th>Score médio</th>
+                      <th>Com erro</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {report.by_evaluator.map((e) => (
+                      <tr key={`${e.rubric_version}-${e.evaluator}`}>
+                        <td style={{ fontFamily: "var(--font-mono)" }}>v{e.rubric_version}</td>
+                        <td>{e.evaluator}</td>
+                        <td>{e.runs}</td>
+                        <td>{pctOrDash(e.pass_rate)}</td>
+                        <td>{scoreOrDash(e.avg_score)}</td>
+                        <td>{e.errors}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </Card>
+            </>
+          )}
+
+          <div style={{ height: 12 }} />
+          <Card title="Avaliar em lote" subtitle="avalia os traces mais recentes que ainda não têm resultado nesta versão">
+            <form action={triggerEvaluationBatchAction} style={{ display: "flex", gap: 12, alignItems: "flex-end", flexWrap: "wrap" }}>
+              <input type="hidden" name="org" value={org} />
+              <input type="hidden" name="project" value={project} />
+              <input type="hidden" name="project_id" value={resolved.project_id} />
+              <input type="hidden" name="rubric_id" value={selected.id} />
+              <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                <span style={{ fontSize: 11, color: "var(--fg-3)" }}>Versão da rubrica</span>
+                <select className="filter-select" name="rubric_version" defaultValue={String(selected.current_version)}>
+                  {[...versions].reverse().map((v) => (
+                    <option key={v.id} value={v.version}>v{v.version}</option>
+                  ))}
+                </select>
+              </label>
+              <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                <span style={{ fontSize: 11, color: "var(--fg-3)" }}>Ambiente</span>
+                <select className="filter-select" name="environment" defaultValue={environment ?? ""}>
+                  <option value="">qualquer env</option>
+                  <option value="prod">prod</option>
+                  <option value="staging">staging</option>
+                  <option value="dev">dev</option>
+                </select>
+              </label>
+              <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                <span style={{ fontSize: 11, color: "var(--fg-3)" }}>Máximo de traces</span>
+                <input
+                  className="filter-input"
+                  type="number"
+                  name="limit"
+                  min={1}
+                  max={500}
+                  defaultValue={100}
+                  required
+                  style={{ minWidth: 0, width: 110, paddingLeft: 10 }}
+                />
+              </label>
+              <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                <span style={{ fontSize: 11, color: "var(--fg-3)" }}>Nome do trace contém (opcional)</span>
+                <input
+                  className="filter-input"
+                  name="name_contains"
+                  maxLength={255}
+                  placeholder="ex: refund"
+                  style={{ paddingLeft: 10 }}
+                />
+              </label>
+              <button type="submit" className="btn btn--sm btn--primary">
+                Enfileirar avaliações
+              </button>
+            </form>
+          </Card>
+        </section>
+        </>
       ) : rubrics.length === 0 ? (
         /* ---- EMPTY STATE ---- */
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>

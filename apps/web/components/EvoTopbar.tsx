@@ -80,7 +80,7 @@ export function EvoTopbar({
 
       <form className="topbar__search" action={`${base}/traces`} method="get">
         <Search className="topbar__search-icon" size={14} />
-        <input ref={searchRef} name="name" placeholder="Buscar traces por nome..." />
+        <input ref={searchRef} name="q" placeholder="Buscar por nome, id, usuário ou conversa..." />
         <span className="topbar__search-kbd">CmdK</span>
       </form>
 
