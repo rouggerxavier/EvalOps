@@ -40,7 +40,7 @@ test("trace page shows the conversation and evaluation results", () => {
   assert.match(evaluations, /score\.raw_output/);
   assert.match(evaluations, /score\.reasoning/);
   assert.match(evaluations, /score\.passed/);
-  assert.doesNotMatch(evaluations, /raised_flags/);
+  assert.match(evaluations, /raised_flags/);
   assert.match(read(`${PROJECT}/traces/[trace]/trace-conversation.tsx`), /messages_out/);
 });
 
