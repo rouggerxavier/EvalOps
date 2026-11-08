@@ -467,7 +467,7 @@ def test_rubric_reads_the_conversation_up_to_the_evaluated_turn(monkeypatch) -> 
     prompts = []
 
     def fake(model, messages, temperature):
-        prompts.append(messages[0]["content"])
+        prompts.append(messages[-1]["content"])
         return '{"score": 0.9}'
 
     monkeypatch.setattr(llm_judge, "call_llm", fake)
@@ -481,7 +481,7 @@ def test_rubric_reads_the_conversation_up_to_the_evaluated_turn(monkeypatch) -> 
     ws.ingest(user="outra conversa", answer="fora", offset_s=5, metadata={"conversation_id": "c2"})
 
     assert ws.evaluate(second, rubric_id).status_code == 201
-    assert prompts == ["user: quero alugar\nassistant: em qual bairro?\nuser: Copacabana\nassistant: achei três"]
+    assert prompts == ["<trace_data>user: quero alugar\nassistant: em qual bairro?\nuser: Copacabana\nassistant: achei três</trace_data>"]
     listed = client.get("/v1/traces", headers=ws.headers, params={"project_id": ws.project_id, "conversation_id": "c1"}).json()
     assert len(listed["data"]) == 3
 
