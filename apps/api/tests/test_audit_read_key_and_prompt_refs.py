@@ -115,7 +115,7 @@ def test_read_key_does_not_write(ws) -> None:
     assert client.post(f"/v1/projects/{project}/evaluations/batch", headers=read, json={"rubric_id": ws["rubric"]}).status_code == 403
     assert client.post(f"/v1/projects/{project}/prompts", headers=read, json={"slug": "x", "template": "y"}).status_code == 401
     assert client.post(f"/v1/projects/{project}/rubrics", headers=read, json={"yaml_source": RUBRIC}).status_code == 401
-    assert client.post(f"/v1/traces/{trace}/feedback", headers=read, json={"thumbs": "down"}).status_code == 401
+    assert client.post(f"/v1/traces/{trace}/feedback", headers=read, json={"thumbs": "down"}).status_code == 403
     assert client.post(
         "/v1/evaluations/run", headers=read, json={"trace_id": trace, "rubric_id": ws["rubric"], "triggered_by": "t"}
     ).status_code == 401
