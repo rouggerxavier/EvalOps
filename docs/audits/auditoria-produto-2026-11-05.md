@@ -20,8 +20,10 @@ não ligada, não contrato quebrado.
 
 ## Status
 
-As etapas 1 a 3 da ordem sugerida foram corrigidas, e as promessas falsas da etapa 7 saíram da tela. Itens fechados:
-S1, 1, 2, 3, 4, 5, 6, 8, 12, 13, 15 e 21 a 28.
+As etapas 1 a 4 foram corrigidas, e as promessas falsas da etapa 7 saíram da tela.
+A etapa 6 tem amostragem, feedback por chave/SDK, busca de prompts e avisos de cota
+integrados. Itens fechados no escopo descrito abaixo: S1, 1 a 17 e 19 a 28. O item
+18 permanece parcial porque o feedback ainda não compõe métricas agregadas.
 
 - **Instalação:** a documentação e a landing mandam instalar a partir do repositório e avisam sobre o pacote de
   terceiro. O quickstart usa `set_llm` e `set_trace`, e foi executado contra o SDK real com cliente simulado.
@@ -42,7 +44,7 @@ S1, 1, 2, 3, 4, 5, 6, 8, 12, 13, 15 e 21 a 28.
   projeto foram abertas em 375 px e 1280 px sem rolagem lateral da página. Antes e depois em
   [`img/`](img/redesign-antes-visao-geral-375.jpg).
 
-Validação: 411 testes API, 36 SDK, 156 web, typecheck e build. As regressões de produto e de P1 passaram em Postgres
+Validação da rodada inicial: 411 testes API, 36 SDK, 156 web, typecheck e build. As regressões de produto e de P1 passaram em Postgres
 16, e as telas foram conferidas no navegador, inclusive em 375 px.
 
 Dois defeitos novos apareceram e foram corrigidos:
@@ -50,16 +52,18 @@ Dois defeitos novos apareceram e foram corrigidos:
 - `POST /v1/organizations` dava `ForeignKeyViolation` em Postgres, porque faltava `flush`. Em SQLite passava.
 - Avaliações, Settings e Trace sanitizavam o erro duas vezes, então toda falha virava "Algo deu errado".
 
-Limites:
+Limites atuais:
 
 - Na visão geral, Atenção e Cobertura ainda ignoram o ambiente.
 - Com "qualquer env" em Traces e o chip em `dev`, o chip continua mostrando `dev` nessa visão.
-- O item 10 só teve o texto da landing corrigido: avaliação automática continua inexistente.
-- O passo a passo da landing (`EvalOpsFeatureStepper`) ainda fala em promover para produção.
-- A Conversa mostra cada chamada separadamente: o histórico repetido fica recolhido, sem transcrição única. A
-  linha do tempo da conversa inteira segue no item 9.
-- O painel de run mostra a nota parcial ao lado de "sem veredito", avisando que ela cobre só parte dos avaliadores.
-- O pacote `evalops-python` segue sem publicação, e o nome está livre no PyPI. Publicar é decisão pendente.
+- Tags sem `:` são descartadas no filtro sem aviso.
+- A navegação por conversa mostra os 50 turnos mais recentes, sem paginação no detalhe. O título Conversa aparece no agrupamento e na aba.
+- O painel de run mostra nota parcial ao lado de "sem veredito", avisando que ela cobre apenas os avaliadores que mediram.
+- A interface do lote não explica o reenvio de traces parciais ou com erro.
+- Há horários sem fuso nas respostas da API, afetando a apresentação relativa.
+- O stepper da landing fala em checklist antes de promover para produção; o produto apoia essa decisão, sem promover variantes automaticamente.
+- O feedback ainda não é agregado às métricas, e os avisos não cobrem orçamento do juiz por fonte incompleta de gasto.
+- O pacote `evalops-python` segue sem publicação. A instalação pelo repositório continua válida; publicar é decisão pendente.
 
 ### Atualização em 2026-11-08: feedback e prompts no SDK
 
@@ -104,6 +108,32 @@ contador termina em 100. O orçamento do juiz segue fora dos avisos por falta de
 uma fonte completa de gasto. O flush seletivo utilizado é suportado na versão
 instalada do SQLAlchemy, com aviso de depreciação para manutenção futura.
 
+### Atualização em 2026-11-08: avaliação por amostragem
+
+O [PR #34](https://github.com/rouggerxavier/EvalOps/pull/34) integrou a regra
+"avaliar X% do que chega", com rubrica e versão fixa por projeto. Ela começa
+desativada e vale para todos os ambientes. A seleção é persistida junto do trace;
+falha de fila não desfaz a ingestão aceita. O painel mostra configuração,
+resultados e ações necessárias.
+
+A revisão inicial encontrou recuperação automática capaz de repetir uma chamada
+paga após crash. A correção foi revisada novamente: o início da tentativa fica
+durável antes do provider, e a recuperação transforma execução interrompida em
+resultado incerto, sem nova chamada automática. Retry manual exige confirmação de
+possível cobrança e é auditado. Gasto anterior ao crash pode ficar sem
+contabilização; não há promessa de execução única no provider.
+
+Passaram 202 testes web, typecheck/build, 86 testes API afetados e 14 testes em
+Postgres 16. A migração upgrade/downgrade/upgrade e a limpeza de advisory locks
+foram verificadas. O fluxo com API, Redis e worker reais isolados concluiu uma
+avaliação heurística, sem LLM pago. Configuração, confirmação e aviso de cota
+foram conferidos em 1280/375 px. Revisões independentes de backend e UI e CI final
+verde precederam o merge.
+
+Operação, migração e limites estão em
+[avaliacao-amostragem.md](../ops/avaliacao-amostragem.md). Comandos, cenários e
+capturas estão em [amostragem-qa-2026-11-08.md](amostragem-qa-2026-11-08.md).
+
 ## Segurança
 
 | # | Achado | Onde | Evidência |
@@ -123,7 +153,7 @@ instalada do SQLAlchemy, com aviso de depreciação para manutenção futura.
 | 7 | **Lote e relatório só existem na API.** Na tela, avalia-se um trace por vez. Não há tendência de score (o gráfico do overview é só custo), nem comparação entre versões de rubrica, embora `/rubrics/{id}/report` já calcule. | `routes_evaluations.py:131,196` | Provado |
 | 8 | **Chave `evaluate` não pode ser criada na tela:** os checkboxes só oferecem `ingest` e `read`. | `keys/page.tsx:468` | Leitura |
 | 9 | **Conversa invisível.** `conversation_id` existe na API, sem filtro nem linha do tempo. Trace é um turno, então uma conversa da Grankasa fica espalhada na lista. | `traces/page.tsx` | Leitura |
-| 10 | **Sem avaliação automática.** Não há regra "avaliar X% do que chega". A landing promete "rubricas na ingestão". | `HowItWorksPipeline.tsx:24` | Leitura |
+| 10 | **Fechado.** O #34 adiciona configuração de amostragem em Ajustes, com percentual, rubrica e versão fixa, desativada por padrão. Seleção durável, worker e recuperação preservam o trace aceito. Resultado incerto exige confirmação de possível nova cobrança antes de retry. | `routes_sampling.py`, Settings, worker | Corrigido, revisado e testado |
 | 11 | **Filtros de trace insuficientes:** sem período, tag, `user_ref`, modelo, nota, reprovados ou flag. A busca da topbar só procura por nome. | `lib/api.ts:129` | Leitura |
 
 ## Quebrado ou sem saída

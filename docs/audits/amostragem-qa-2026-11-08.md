@@ -36,9 +36,12 @@ visível na consulta limitada a 20.
 - Typecheck e build passaram.
 - Detector Impeccable dos componentes alterados: zero achados.
 
-Os gates de CI e a revisão independente do delta de UI ainda precisam ser
-concluídos antes do merge. O gate anterior do backend não aprova automaticamente
-o novo endpoint web nem as alterações de apresentação.
+O delta final de UI foi aprovado em revisão independente no SHA
+`f4dc5bd9eded4d4e96abeb6966ec9bcb8b155418`: 69 testes web direcionados, uma
+regressão API e quatro verificações extras de Origin/Host/protocolo passaram.
+Todos os nove checks do PR ficaram verdes antes do merge #34, em
+`07dccce105ce842961215160905a30993a5560ab`. A revisão anterior do backend foi
+complementada por essa revisão do novo endpoint web e da apresentação.
 
 ## Fluxo real isolado
 
