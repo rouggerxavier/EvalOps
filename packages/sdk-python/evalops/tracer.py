@@ -377,6 +377,10 @@ class EvalOpsTracer:
         if tags:
             trace.tags = {**trace.tags, **tags}
 
+    def current_client_trace_id(self) -> str | None:
+        record = self._trace_ctx.get()
+        return record.client_trace_id if record is not None and not record.closed else None
+
     def flush(self, timeout: float = DEFAULT_TIMEOUT_S) -> bool:
         return self._uploader.flush(timeout) if self._uploader is not None else True
 
