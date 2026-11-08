@@ -6,7 +6,7 @@ from app.deps import get_current_user
 from app.domain.rubrics.parser import ignored_fields, parse_rubric_yaml
 from app.domain.services.audit_service import record_audit
 from app.models import EvaluatorRow, Project, Rubric, RubricVersion, User
-from app.ownership import get_owned_project, get_owned_rubric
+from app.ownership import get_owned_project, get_owned_rubric, project_access, rubric_access
 from app.safe_errors import safe_message
 from app.schemas import RubricCreate, RubricOut, RubricVersionCreate, RubricVersionOut
 from app.security import new_id
@@ -43,7 +43,7 @@ def _invalid_rubric(exc: ValueError) -> str:
 
 @router.get("/projects/{project_id}/rubrics")
 def list_rubrics(
-    project: Project = Depends(get_owned_project),
+    project: Project = Depends(project_access("read")),
     db: Session = Depends(get_db),
 ) -> dict:
     rubrics = db.query(Rubric).filter(Rubric.project_id == project.id).order_by(Rubric.created_at.desc()).all()
@@ -127,14 +127,14 @@ def create_rubric(
 
 @router.get("/rubrics/{rubric_id}")
 def get_rubric(
-    rubric: Rubric = Depends(get_owned_rubric),
+    rubric: Rubric = Depends(rubric_access("read")),
 ) -> dict:
     return RubricOut.model_validate(rubric).model_dump()
 
 
 @router.get("/rubrics/{rubric_id}/versions")
 def list_rubric_versions(
-    rubric: Rubric = Depends(get_owned_rubric),
+    rubric: Rubric = Depends(rubric_access("read")),
     db: Session = Depends(get_db),
 ) -> dict:
     versions = (
@@ -149,7 +149,7 @@ def list_rubric_versions(
 @router.get("/rubrics/{rubric_id}/versions/{version_num}")
 def get_rubric_version(
     version_num: int,
-    rubric: Rubric = Depends(get_owned_rubric),
+    rubric: Rubric = Depends(rubric_access("read")),
     db: Session = Depends(get_db),
 ) -> dict:
     ver = (

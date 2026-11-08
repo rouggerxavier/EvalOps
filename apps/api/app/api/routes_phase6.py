@@ -18,7 +18,7 @@ from app.domain.services.usage_service import (
     get_or_create_counter,
 )
 from app.models import AuditLog, ExportJob, HumanFeedback, Plan, Trace, User, utcnow
-from app.ownership import get_owned_trace, load_export, load_project
+from app.ownership import get_owned_trace, load_export, load_project, trace_access
 from app.schemas import ExportJobCreate, ExportJobOut, ExportListResponse, HumanFeedbackCreate, HumanFeedbackOut
 from app.security import new_id
 
@@ -79,7 +79,7 @@ def create_feedback(
 
 @router.get("/traces/{trace_id}/feedback")
 def list_feedback(
-    trace: Trace = Depends(get_owned_trace),
+    trace: Trace = Depends(trace_access("read")),
     db: Session = Depends(get_db),
 ) -> dict:
     rows = (

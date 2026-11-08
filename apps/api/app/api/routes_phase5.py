@@ -18,6 +18,8 @@ from app.domain.services.experiment_service import (
     validate_variants,
 )
 from app.ownership import (
+    Actor,
+    actor_access,
     load_dataset as _dataset_or_404_base,
     load_experiment as _experiment_or_404_base,
     load_project as _project_or_404_base,
@@ -63,11 +65,11 @@ router = APIRouter(prefix="/v1")
 # Ownership is centralised in app.ownership. These keep the
 # (id, user_id, db) call shape the handlers below already use.
 
-def _project_or_404(project_id: str, user_id: str, db: Session) -> Project:
+def _project_or_404(project_id: str, user_id: Actor, db: Session) -> Project:
     return _project_or_404_base(db, user_id, project_id)
 
 
-def _prompt_or_404(prompt_id: str, user_id: str, db: Session) -> Prompt:
+def _prompt_or_404(prompt_id: str, user_id: Actor, db: Session) -> Prompt:
     return _prompt_or_404_base(db, user_id, prompt_id)
 
 
@@ -82,10 +84,10 @@ def _experiment_or_404(experiment_id: str, user_id: str, db: Session) -> Experim
 @router.get("/projects/{project_id}/prompts")
 def list_prompts(
     project_id: str,
-    user: User = Depends(get_current_user),
+    actor: Actor = Depends(actor_access("read")),
     db: Session = Depends(get_db),
 ) -> dict:
-    _project_or_404(project_id, user.id, db)
+    _project_or_404(project_id, actor, db)
     rows = db.query(Prompt).filter(Prompt.project_id == project_id).order_by(Prompt.created_at.desc()).all()
     return {"data": [PromptOut.model_validate(row).model_dump() for row in rows]}
 
@@ -147,20 +149,20 @@ def create_prompt(
 @router.get("/prompts/{prompt_id}")
 def get_prompt(
     prompt_id: str,
-    user: User = Depends(get_current_user),
+    actor: Actor = Depends(actor_access("read")),
     db: Session = Depends(get_db),
 ) -> dict:
-    prompt = _prompt_or_404(prompt_id, user.id, db)
+    prompt = _prompt_or_404(prompt_id, actor, db)
     return PromptOut.model_validate(prompt).model_dump()
 
 
 @router.get("/prompts/{prompt_id}/versions")
 def list_prompt_versions(
     prompt_id: str,
-    user: User = Depends(get_current_user),
+    actor: Actor = Depends(actor_access("read")),
     db: Session = Depends(get_db),
 ) -> dict:
-    _prompt_or_404(prompt_id, user.id, db)
+    _prompt_or_404(prompt_id, actor, db)
     rows = (
         db.query(PromptVersion)
         .filter(PromptVersion.prompt_id == prompt_id)
@@ -174,10 +176,10 @@ def list_prompt_versions(
 def get_prompt_usage(
     prompt_id: str,
     limit: int = Query(default=50, ge=1, le=200),
-    user: User = Depends(get_current_user),
+    actor: Actor = Depends(actor_access("read")),
     db: Session = Depends(get_db),
 ) -> dict:
-    prompt = _prompt_or_404(prompt_id, user.id, db)
+    prompt = _prompt_or_404(prompt_id, actor, db)
     versions = (
         db.query(PromptVersion)
         .filter(PromptVersion.prompt_id == prompt.id)
