@@ -207,6 +207,39 @@ export function OverviewSuggestions({ ctx }: { ctx: Context }) {
   );
 }
 
+export function OverviewMobileFilters({
+  org,
+  project,
+  current,
+  environment,
+}: {
+  org: string;
+  project: string;
+  current: "24h" | "7d" | "30d";
+  environment?: string;
+}) {
+  const currentPath = `/o/${org}/p/${project}`;
+  return (
+    // The environment lives in the topbar on every width; this row only adds the period.
+    <div className="ops-mobile-filters" aria-label="Filtros do overview">
+      <form method="get" action={currentPath}>
+        <input type="hidden" name="environment" value={environment ?? ""} />
+        <select
+          className="filter-select"
+          name="window"
+          aria-label="Período"
+          defaultValue={current}
+          onChange={(event) => event.currentTarget.form?.requestSubmit()}
+        >
+          <option value="24h">Últimas 24h</option>
+          <option value="7d">Últimos 7 dias</option>
+          <option value="30d">Últimos 30 dias</option>
+        </select>
+      </form>
+    </div>
+  );
+}
+
 export function WindowSelect({
   org,
   project,
@@ -219,21 +252,19 @@ export function WindowSelect({
   environment?: string;
 }) {
   return (
-    <form method="get" action={`/o/${org}/p/${project}`} style={{ display: "inline-flex" }}>
-      {environment ? <input type="hidden" name="environment" value={environment} /> : null}
-      <select
-        className="filter-select"
-        name="window"
-        defaultValue={current}
-        onChange={(e) => e.currentTarget.form?.requestSubmit()}
-      >
-        <option value="24h">Últimas 24h</option>
-        <option value="7d">Últimos 7 dias</option>
-        <option value="30d">Últimos 30 dias</option>
-      </select>
-      <noscript>
-        <button type="submit" className="btn btn--sm">Aplicar</button>
-      </noscript>
+    <form method="get" action={`/o/${org}/p/${project}`} className="ops-window-group" role="group" aria-label="Período">
+      <input type="hidden" name="environment" value={environment ?? ""} />
+      {(["24h", "7d", "30d"] as const).map((window) => (
+        <button
+          key={window}
+          type="submit"
+          name="window"
+          value={window}
+          aria-pressed={current === window}
+        >
+          {window === "24h" ? "24h" : window === "7d" ? "7 dias" : "30 dias"}
+        </button>
+      ))}
     </form>
   );
 }

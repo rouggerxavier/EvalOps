@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { AlertCircle, Clock, Download, Flag, Layers, Search, X } from "lucide-react";
+import { Clock, Download, GitCompareArrows, Layers, Search, X } from "lucide-react";
 
 import { AuthRequiredPanel } from "@/components/AuthRequiredPanel";
 import { getActiveEnvironment } from "@/lib/active-env";
@@ -7,6 +7,7 @@ import { getTraces, hasAuthToken, resolveProject } from "@/lib/api";
 
 import { TracesAutoRefresh } from "./traces-auto-refresh";
 import { TracesEmpty, TracesTable } from "./traces-table";
+import type { EvaluationVerdict } from "./trace-status";
 
 type Tab = "all" | "errors" | "partial" | "slow" | "rag" | "flagged";
 type SlowKind = "trace" | "llm" | "retrieval";
@@ -20,6 +21,7 @@ type Props = {
     tab?: string;
     cursor?: string;
     slow_kind?: string;
+    verdict?: string;
     q?: string;
     conversation_id?: string;
     since?: string;
@@ -75,10 +77,13 @@ export default async function TracesListPage({ params, searchParams }: Props) {
 
   const resolved = await resolveProject(org, project);
 
-  const tabStatus = tab === "errors" ? "error" : tab === "partial" ? "partial" : qp.status;
+  const tabStatus = tab === "errors" ? "error,partial" : tab === "partial" ? "partial" : qp.status;
   const slowKind: SlowKind = tab === "slow" ? parseSlowKind(qp.slow_kind) : "trace";
   const environment = await getActiveEnvironment(qp.environment);
   const filters = validFilters(qp);
+  const verdictFilter = ["approved", "partial", "rejected", "unknown"].includes(qp.verdict ?? "")
+    ? qp.verdict as EvaluationVerdict
+    : undefined;
   const traces = await getTraces({
     projectId: resolved.project_id,
     status: tabStatus,
@@ -100,12 +105,14 @@ export default async function TracesListPage({ params, searchParams }: Props) {
     model: filters.model,
     failed: filters.failed ? true : undefined,
     score_lt: filters.score_lt ? Number(filters.score_lt) : undefined,
+    verdict: verdictFilter,
   });
 
   const rows = traces.data;
-  const displayRows = rows;
-
-  const activeCount = rows.length;
+  const verdicts = Object.fromEntries(rows.map((trace) => [
+    trace.id,
+    trace.last_verdict ?? "unknown",
+  ]));
 
   const tabBase = `/o/${org}/p/${project}/traces`;
   const baseParams = new URLSearchParams();
@@ -115,10 +122,12 @@ export default async function TracesListPage({ params, searchParams }: Props) {
   else if (qp.environment === "") baseParams.set("environment", "");
   if (qp.name && tab !== "rag") baseParams.set("name", qp.name);
   if (qp.status && tab !== "errors" && tab !== "partial") baseParams.set("status", qp.status);
+  if (verdictFilter) baseParams.set("verdict", verdictFilter);
   // Persist slow_kind across pagination, filter submit and refresh links so a
   // user that picked "LLM call" / "Retrieval" doesn't silently fall back to
   // "Trace inteiro" after the next click.
   if (tab === "slow" && slowKind !== "trace") baseParams.set("slow_kind", slowKind);
+
   for (const [key, value] of Object.entries(filters)) baseParams.set(key, value);
 
   const withoutFilterHref = (key: FilterKey) => {
@@ -165,16 +174,20 @@ export default async function TracesListPage({ params, searchParams }: Props) {
   const hasCursor = Boolean(qp.cursor);
   const autoRefreshEnabled = !hasCursor && rows.length > 0;
   const autoRefreshDisabledReason = hasCursor ? "Pausado em página paginada" : undefined;
+  // Period, tag, user, model, score and failures live behind "Mais filtros"; q and conversation show as chips.
+  const advancedFilterCount = (["since", "until", "tag", "user_ref", "model", "score_lt", "failed"] as const).filter((key) => filters[key]).length;
+  const hasFilters = Boolean(qp.name || qp.status || verdictFilter || Object.keys(filters).length > 0);
+  const clearParams = new URLSearchParams();
+  if (environment) clearParams.set("environment", environment);
+  if (tab !== "all") clearParams.set("tab", tab);
+  const clearFiltersHref = clearParams.toString() ? `${tabBase}?${clearParams}` : tabBase;
 
   return (
     <div className="page">
       <header className="page-header">
         <div>
-          <div className="page-header__eyebrow">Observabilidade</div>
           <h1 className="page-header__title">Traces</h1>
-          <div className="page-header__subtitle">
-            {rows.length.toLocaleString("pt-BR")} trace{rows.length === 1 ? "" : "s"} na página atual · auto-refresh 30s
-          </div>
+          <div className="page-header__subtitle">Cada trace é uma execução da IA, do pedido à resposta</div>
         </div>
         <div className="page-header__actions">
           {autoRefreshEnabled ? (
@@ -183,8 +196,11 @@ export default async function TracesListPage({ params, searchParams }: Props) {
               ao vivo
             </span>
           ) : null}
-          <Link href={exportsHref} className="btn btn--sm">
-            <Download size={12} /> Exportar JSONL
+          <Link href={`/o/${org}/p/${project}/traces/compare`} className="btn">
+            <GitCompareArrows size={14} /> Comparar
+          </Link>
+          <Link href={exportsHref} className="btn">
+            <Download size={14} /> Exportar
           </Link>
           <TracesAutoRefresh
             enabledByDefault={autoRefreshEnabled}
@@ -194,204 +210,163 @@ export default async function TracesListPage({ params, searchParams }: Props) {
         </div>
       </header>
 
-      <nav className="tabs" aria-label="Segmentos de traces">
-        <Link href={tabHref("all")} className={`tab${tab === "all" ? " is-active" : ""}`}>
-          Todos
-          {tab === "all" ? <span className="tab__count">{activeCount}</span> : null}
-        </Link>
-        <Link href={tabHref("errors")} className={`tab${tab === "errors" ? " is-active" : ""}`}>
-          <AlertCircle size={11} /> Erros
-          {tab === "errors" ? <span className="tab__count">{activeCount}</span> : null}
-        </Link>
-        <Link href={tabHref("partial")} className={`tab${tab === "partial" ? " is-active" : ""}`}>
-          <Flag size={11} /> Parciais
-          {tab === "partial" ? <span className="tab__count">{activeCount}</span> : null}
-        </Link>
-        <Link href={tabHref("slow")} className={`tab${tab === "slow" ? " is-active" : ""}`}>
-          <Clock size={11} /> Lentos
-          {tab === "slow" ? <span className="tab__count">{activeCount}</span> : null}
-        </Link>
-        <Link
-          href={tabHref("rag")}
-          className={`tab${tab === "rag" ? " is-active" : ""}`}
-          data-testid="trace-list-rag-tab"
-        >
-          <Layers size={11} /> RAG
-          {tab === "rag" ? <span className="tab__count">{activeCount}</span> : null}
-        </Link>
-        <Link href={tabHref("flagged")} className={`tab${tab === "flagged" ? " is-active" : ""}`}>
-          <Flag size={11} /> Marcados
-          {tab === "flagged" ? <span className="tab__count">{activeCount}</span> : null}
-        </Link>
-      </nav>
-
-      {tab === "slow" ? (
-        <nav
-          className="tabs tabs--sub"
-          aria-label="Origem da lentidão"
-          data-testid="slow-kind-tabs"
-          style={{ marginTop: 4, fontSize: 12 }}
-        >
-          <Link
-            href={slowKindHref("trace")}
-            className={`tab${slowKind === "trace" ? " is-active" : ""}`}
-          >
-            Trace inteiro
+      <section className="card ops-traces__panel">
+        <nav className="tabs" aria-label="Segmentos de traces">
+          <Link href={tabHref("all")} className={`tab${tab === "all" ? " is-active" : ""}`} aria-current={tab === "all" ? "page" : undefined}>
+            Todos
           </Link>
-          <Link
-            href={slowKindHref("llm")}
-            className={`tab${slowKind === "llm" ? " is-active" : ""}`}
-          >
-            LLM call
+          <Link href={tabHref("errors")} className={`tab${tab === "errors" || tab === "partial" ? " is-active" : ""}`} aria-current={tab === "errors" || tab === "partial" ? "page" : undefined}>
+            Com problema
           </Link>
-          <Link
-            href={slowKindHref("retrieval")}
-            className={`tab${slowKind === "retrieval" ? " is-active" : ""}`}
-          >
-            Retrieval
+          <Link href={tabHref("flagged")} className={`tab${tab === "flagged" ? " is-active" : ""}`} aria-current={tab === "flagged" ? "page" : undefined}>
+            Marcados
+          </Link>
+          <Link href={tabHref("slow")} className={`tab${tab === "slow" ? " is-active" : ""}`} aria-current={tab === "slow" ? "page" : undefined}>
+            <Clock size={13} /> Lentos
           </Link>
         </nav>
-      ) : null}
 
-      <form method="get" className="filters" action={tabBase}>
-        {tab !== "all" ? <input type="hidden" name="tab" value={tab} /> : null}
-        {tab === "slow" && slowKind !== "trace" ? (
-          <input type="hidden" name="slow_kind" value={slowKind} />
+        {tab === "slow" ? (
+          <nav className="tabs tabs--sub" aria-label="Origem da lentidão" data-testid="slow-kind-tabs">
+            <Link href={slowKindHref("trace")} className={`tab${slowKind === "trace" ? " is-active" : ""}`}>Trace inteiro</Link>
+            <Link href={slowKindHref("llm")} className={`tab${slowKind === "llm" ? " is-active" : ""}`}>LLM call</Link>
+            <Link href={slowKindHref("retrieval")} className={`tab${slowKind === "retrieval" ? " is-active" : ""}`}>Retrieval</Link>
+          </nav>
         ) : null}
-        {filters.q ? <input type="hidden" name="q" value={filters.q} /> : null}
-        {filters.conversation_id ? <input type="hidden" name="conversation_id" value={filters.conversation_id} /> : null}
-        <label className="filter-group">
-          <Search size={12} />
-          <input
-            className="filter-input"
-            name="name"
-            defaultValue={qp.name ?? ""}
-            placeholder="buscar por nome (ex: refund, chat.answer)"
-          />
-        </label>
-        <select className="filter-select" name="status" defaultValue={qp.status ?? ""}>
-          <option value="">qualquer status</option>
-          <option value="ok">ok</option>
-          <option value="partial">parcial</option>
-          <option value="error">erro</option>
-        </select>
-        <select className="filter-select" name="environment" defaultValue={environment ?? ""}>
-          <option value="">qualquer env</option>
-          <option value="prod">prod</option>
-          <option value="staging">staging</option>
-          <option value="dev">dev</option>
-        </select>
-        <label className="row faint" style={{ gap: 4, fontSize: 11.5 }}>
-          de
-          <input className="filter-input" type="date" name="since" defaultValue={filters.since ?? ""} style={{ minWidth: 0, padding: "0 6px" }} />
-        </label>
-        <label className="row faint" style={{ gap: 4, fontSize: 11.5 }}>
-          até
-          <input className="filter-input" type="date" name="until" defaultValue={filters.until ?? ""} style={{ minWidth: 0, padding: "0 6px" }} />
-        </label>
-        <input
-          className="filter-input"
-          name="tag"
-          defaultValue={filters.tag ?? ""}
-          placeholder="tag (ex: canal:whatsapp)"
-          aria-label="Tag no formato chave:valor"
-          style={{ minWidth: 150, padding: "0 10px" }}
-        />
-        <input
-          className="filter-input"
-          name="user_ref"
-          defaultValue={filters.user_ref ?? ""}
-          placeholder="usuário"
-          aria-label="Usuário"
-          style={{ minWidth: 110, padding: "0 10px" }}
-        />
-        <input
-          className="filter-input"
-          name="model"
-          defaultValue={filters.model ?? ""}
-          placeholder="modelo (ex: gpt-4o-mini)"
-          aria-label="Modelo"
-          style={{ minWidth: 150, padding: "0 10px" }}
-        />
-        <input
-          className="filter-input"
-          type="number"
-          name="score_lt"
-          min={0}
-          max={1}
-          step={0.05}
-          defaultValue={filters.score_lt ?? ""}
-          placeholder="nota abaixo de"
-          aria-label="Nota abaixo de (0 a 1)"
-          style={{ minWidth: 0, width: 120, padding: "0 10px" }}
-        />
-        <label className="row faint" style={{ gap: 4, fontSize: 11.5 }}>
-          <input type="checkbox" name="failed" value="true" defaultChecked={Boolean(filters.failed)} style={{ accentColor: "var(--primary-400)" }} />
-          só reprovados
-        </label>
-        <button type="submit" className="btn btn--sm">
-          Aplicar
-        </button>
-        <span className="spacer" />
-        <span className="faint mono" style={{ fontSize: 11 }}>
-          {displayRows.length} de {rows.length}
-        </span>
-      </form>
 
-      {filters.q || filters.conversation_id ? (
-        <div className="row" style={{ gap: 6, marginBottom: 8 }}>
-          {filters.conversation_id ? (
-            <span className="tag" data-testid="conversation-filter-chip">
-              conversa: {filters.conversation_id}
-              <Link href={withoutFilterHref("conversation_id")} aria-label="Remover filtro de conversa" style={{ marginLeft: 6, color: "inherit" }}>
-                <X size={11} />
-              </Link>
-            </span>
-          ) : null}
-          {filters.q ? (
-            <span className="tag">
-              busca: {filters.q}
-              <Link href={withoutFilterHref("q")} aria-label="Remover busca" style={{ marginLeft: 6, color: "inherit" }}>
-                <X size={11} />
-              </Link>
-            </span>
-          ) : null}
-        </div>
-      ) : null}
+        <form method="get" className="filters ops-traces__filters" action={tabBase}>
+          {tab !== "all" ? <input type="hidden" name="tab" value={tab} /> : null}
+          {tab === "slow" && slowKind !== "trace" ? <input type="hidden" name="slow_kind" value={slowKind} /> : null}
+          {filters.q ? <input type="hidden" name="q" value={filters.q} /> : null}
+          {filters.conversation_id ? <input type="hidden" name="conversation_id" value={filters.conversation_id} /> : null}
+          <label className="filter-group">
+            <Search size={13} />
+            <input className="filter-input" name="name" defaultValue={qp.name ?? ""} placeholder="Buscar por nome" aria-label="Buscar por nome" />
+          </label>
+          <select className="filter-select" name="verdict" defaultValue={qp.verdict ?? ""} aria-label="Situação da avaliação">
+            <option value="">Qualquer situação</option>
+            <option value="approved">Aprovado</option>
+            <option value="partial">Parcial</option>
+            <option value="rejected">Reprovado</option>
+            <option value="unknown">Sem dados</option>
+          </select>
+          <select className="filter-select" name="status" defaultValue={qp.status ?? ""} aria-label="Status de ingestão">
+            <option value="">Qualquer status de ingestão</option>
+            <option value="ok">ok</option>
+            <option value="partial">parcial</option>
+            <option value="error">erro</option>
+          </select>
+          <select className="filter-select" name="environment" defaultValue={environment ?? ""} aria-label="Ambiente">
+            <option value="">Qualquer ambiente</option>
+            <option value="prod">Produção</option>
+            <option value="staging">Staging</option>
+            <option value="dev">Desenvolvimento</option>
+          </select>
+          <Link
+            href={tabHref("rag")}
+            className={`btn${tab === "rag" ? " btn--primary" : ""}`}
+            aria-current={tab === "rag" ? "page" : undefined}
+            data-testid="trace-list-rag-tab"
+          >
+            <Layers size={14} /> RAG
+          </Link>
+          <button type="submit" className="btn">Aplicar</button>
+          <details className="ops-traces__more" open={advancedFilterCount > 0}>
+            <summary className="btn">
+              Mais filtros{advancedFilterCount > 0 ? <span className="tab__count">{advancedFilterCount}</span> : null}
+            </summary>
+            <div className="ops-traces__more-body">
+              <label className="filter-group ops-traces__date">
+                <span>De</span>
+                <input className="filter-input" type="date" name="since" defaultValue={filters.since ?? ""} aria-label="Desde (dia, UTC)" />
+              </label>
+              <label className="filter-group ops-traces__date">
+                <span>Até</span>
+                <input className="filter-input" type="date" name="until" defaultValue={filters.until ?? ""} aria-label="Até (dia, UTC)" />
+              </label>
+              <input className="filter-input" name="tag" defaultValue={filters.tag ?? ""} placeholder="Tag (canal:whatsapp)" aria-label="Tag no formato chave:valor" />
+              <input className="filter-input" name="user_ref" defaultValue={filters.user_ref ?? ""} placeholder="Usuário" aria-label="Usuário" />
+              <input className="filter-input" name="model" defaultValue={filters.model ?? ""} placeholder="Modelo (gpt-4o-mini)" aria-label="Modelo" />
+              <input
+                className="filter-input ops-traces__score"
+                type="number"
+                name="score_lt"
+                min={0}
+                max={1}
+                step={0.05}
+                defaultValue={filters.score_lt ?? ""}
+                placeholder="Nota abaixo de"
+                aria-label="Nota abaixo de (0 a 1)"
+              />
+              <label className="ops-traces__check">
+                <input type="checkbox" name="failed" value="true" defaultChecked={Boolean(filters.failed)} />
+                Só reprovados
+              </label>
+            </div>
+          </details>
+        </form>
 
-      {displayRows.length === 0 ? (
-        <TracesEmpty project={project} />
-      ) : (
-        <TracesTable org={org} project={project} rows={displayRows} />
-      )}
+        {filters.q || filters.conversation_id ? (
+          <div className="ops-traces__chips">
+            {filters.conversation_id ? (
+              <span className="tag" data-testid="conversation-filter-chip">
+                conversa: {filters.conversation_id}
+                <Link href={withoutFilterHref("conversation_id")} aria-label="Remover filtro de conversa">
+                  <X size={12} aria-hidden="true" />
+                </Link>
+              </span>
+            ) : null}
+            {filters.q ? (
+              <span className="tag">
+                busca: {filters.q}
+                <Link href={withoutFilterHref("q")} aria-label="Remover busca">
+                  <X size={12} aria-hidden="true" />
+                </Link>
+              </span>
+            ) : null}
+          </div>
+        ) : null}
+
+        {rows.length === 0 && hasFilters ? (
+          <div className="empty ops-traces__empty">
+            <div className="empty__title">Nenhum trace com esses filtros</div>
+            <p className="empty__desc">Tente outro filtro ou limpe todos.</p>
+            <Link href={clearFiltersHref} className="btn">Limpar filtros</Link>
+          </div>
+        ) : rows.length === 0 ? (
+          <TracesEmpty project={project} />
+        ) : (
+          <TracesTable org={org} project={project} rows={rows} verdicts={verdicts} />
+        )}
+      </section>
 
       <div
         style={{
           display: "flex",
           justifyContent: "space-between",
           marginTop: 12,
-          fontSize: 11.5,
+          fontSize: 12,
           color: "var(--fg-3)",
         }}
       >
         <span>
-          Mostrando {displayRows.length.toLocaleString("pt-BR")} trace{displayRows.length === 1 ? "" : "s"}
+          Mostrando {rows.length.toLocaleString("pt-BR")} trace{rows.length === 1 ? "" : "s"}
           {hasCursor ? " (próxima página)" : ""}
         </span>
         <div className="row" style={{ gap: 6 }}>
           {firstPageHref ? (
-            <Link href={firstPageHref} className="btn btn--sm btn--ghost" title="Voltar à primeira página">
+            <a href={firstPageHref} className="btn btn--sm btn--ghost" title="Voltar à primeira página">
               ‹
-            </Link>
+            </a>
           ) : (
             <button type="button" className="btn btn--sm btn--ghost" disabled>
               ‹
             </button>
           )}
           {nextPageHref ? (
-            <Link href={nextPageHref} className="btn btn--sm btn--ghost">
+            <a href={nextPageHref} className="btn btn--sm btn--ghost">
               ›
-            </Link>
+            </a>
           ) : (
             <button type="button" className="btn btn--sm btn--ghost" disabled>
               ›

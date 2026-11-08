@@ -1,509 +1,269 @@
 import Link from "next/link";
-import { Download, Plus, RefreshCw } from "lucide-react";
+import { CheckCircle2, CircleMinus, TriangleAlert } from "lucide-react";
 
 import { AuthRequiredPanel } from "@/components/AuthRequiredPanel";
-import { PlanUsage } from "@/components/PlanUsage";
 import { createExportAction } from "@/lib/actions";
 import {
   getExport,
   getExportDownloadPath,
-  getOrganizationSubscription,
-  getOrganizationUsage,
   hasAuthToken,
   listExports,
   resolveProject,
 } from "@/lib/api";
-import { formatBytes, formatCount, formatDateTime } from "@/lib/format";
+import { formatBytes, formatCount } from "@/lib/format";
 import { safeErrorMessage } from "@/lib/safe-error";
 import type { ExportJob } from "@/lib/types";
 
 type Props = {
   params: Promise<{ org: string; project: string }>;
-  searchParams: Promise<{ tab?: string; created?: string; export_id?: string; ids?: string; error?: string }>;
+  searchParams: Promise<{ export_id?: string; ids?: string; cursor?: string; created?: string; error?: string }>;
 };
 
-type ExportRow = {
-  id: string;
-  job: ExportJob | null;
-  error: string | null;
-};
+type ExportRow = { id: string; job: ExportJob | null; error: string | null };
 
-const INPUT_STYLE: React.CSSProperties = {
-  width: "100%",
-  background: "var(--bg-2)",
-  border: "1px solid var(--border)",
-  borderRadius: 6,
-  padding: "7px 10px",
-  color: "var(--text)",
-  fontSize: 13,
+const fieldLabels: Record<string, string> = {
+  prod: "Produção",
+  staging: "Staging",
+  dev: "Dev",
+  ok: "Aprovado",
+  partial: "Parcial",
+  error: "Reprovado",
 };
-
-const LABEL_STYLE: React.CSSProperties = {
-  display: "flex",
-  flexDirection: "column",
-  gap: 4,
-  fontSize: 13,
-};
-
-function alertStyle(kind: "ok" | "err"): React.CSSProperties {
-  if (kind === "ok") {
-    return {
-      padding: "10px 14px",
-      background: "var(--ok-bg)",
-      border: "1px solid var(--ok-border)",
-      borderRadius: 6,
-      color: "var(--ok)",
-      fontSize: 13,
-      marginBottom: 12,
-    };
-  }
-  return {
-    padding: "10px 14px",
-    background: "var(--err-bg)",
-    border: "1px solid var(--err-border)",
-    borderRadius: 6,
-    color: "var(--err)",
-    fontSize: 13,
-    marginBottom: 12,
-  };
-}
 
 function queryString(values: Record<string, string | undefined>): string {
   const query = new URLSearchParams();
-  for (const [key, value] of Object.entries(values)) {
-    if (value) query.set(key, value);
-  }
-  const asString = query.toString();
-  return asString ? `?${asString}` : "";
+  for (const [key, value] of Object.entries(values)) if (value) query.set(key, value);
+  return query.toString() ? `?${query.toString()}` : "";
 }
 
 function parseExportIds(singleId?: string, idsCsv?: string): string[] {
-  const all = [singleId ?? "", ...(idsCsv ?? "").split(",")]
+  return Array.from(new Set([singleId ?? "", ...(idsCsv ?? "").split(",")]
     .map((value) => value.trim())
-    .filter(Boolean);
-  return Array.from(new Set(all)).slice(0, 20);
-}
-
-function jobStatusBadge(status: string) {
-  const normalized = status.toLowerCase();
-  if (normalized === "completed" || normalized === "ready") {
-    return (
-      <span className="badge badge--ok">
-        <span className="badge__dot" />
-        concluido
-      </span>
-    );
-  }
-  if (normalized === "running" || normalized === "queued") {
-    return (
-      <span className="badge badge--info">
-        <span className="badge__dot" />
-        em andamento
-      </span>
-    );
-  }
-  return (
-    <span className="badge badge--err">
-      <span className="badge__dot" />
-      erro
-    </span>
-  );
-}
-
-function exportName(job: ExportJob): string {
-  const env = typeof job.filters.environment === "string" ? `env:${job.filters.environment}` : "env:any";
-  const status = typeof job.filters.status === "string" ? `status:${job.filters.status}` : "status:any";
-  const nameContains = typeof job.filters.name_contains === "string" ? `name:${job.filters.name_contains}` : null;
-  return [env, status, nameContains].filter(Boolean).join(" | ");
-}
-
-function exportSource(job: ExportJob): string {
-  const env = typeof job.filters.environment === "string" ? job.filters.environment : "all-env";
-  return `traces/${env}`;
+    .filter(Boolean))).slice(0, 20);
 }
 
 function relTime(iso: string): string {
-  const diff = Date.now() - Date.parse(iso);
-  const mins = Math.floor(diff / 60_000);
-  if (mins < 1) return "agora";
-  if (mins < 60) return `${mins}m atrás`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h atrás`;
-  return `${Math.floor(hrs / 24)}d atrás`;
+  const minutes = Math.floor((Date.now() - Date.parse(iso)) / 60_000);
+  if (minutes < 1) return "agora";
+  if (minutes < 60) return `${minutes} min atrás`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} h atrás`;
+  return `${Math.floor(hours / 24)} d atrás`;
+}
+
+function statusOf(job: ExportJob): "ready" | "running" | "failed" | "expired" | "unknown" {
+  if (job.expires_at && Date.parse(job.expires_at) <= Date.now()) return "expired";
+  const status = job.status.toLowerCase();
+  if (status === "completed" || status === "ready") return "ready";
+  if (status === "running" || status === "queued") return "running";
+  if (status === "failed" || status === "error") return "failed";
+  return "unknown";
+}
+
+function statusLabel(status: ReturnType<typeof statusOf>): string {
+  if (status === "ready") return "Pronto";
+  if (status === "running") return "Gerando";
+  if (status === "failed") return "Falhou";
+  if (status === "expired") return "Expirado";
+  return "Sem dados";
+}
+
+function ExportStatus({ status }: { status: ReturnType<typeof statusOf> }) {
+  if (status === "ready") {
+    return <span className="badge badge--ok"><CheckCircle2 size={13} aria-hidden="true" /> Pronto</span>;
+  }
+  if (status === "running") {
+    return <span className="badge"><CircleMinus size={13} aria-hidden="true" /> Gerando</span>;
+  }
+  if (status === "failed") {
+    return <span className="badge badge--err"><TriangleAlert size={13} aria-hidden="true" /> Falhou</span>;
+  }
+  if (status === "expired") {
+    return <span className="badge"><CircleMinus size={13} aria-hidden="true" /> Expirado</span>;
+  }
+  return <span className="badge">Sem dados</span>;
+}
+
+function filterLabel(filters: Record<string, unknown>): string {
+  const values: string[] = [];
+  const environment = filters.environment;
+  const status = filters.status;
+  const name = filters.name_contains;
+  if (typeof environment === "string") values.push(fieldLabels[environment] ?? environment);
+  else values.push("Todos os ambientes");
+  if (typeof status === "string") values.push(`situação ${fieldLabels[status] ?? status}`);
+  if (typeof name === "string" && name) values.push(`nome contém ${name}`);
+  return values.join(" · ");
 }
 
 export default async function ExportsPage({ params, searchParams }: Props) {
   const { org, project } = await params;
   const qp = await searchParams;
 
-  if (!(await hasAuthToken())) {
-    return <AuthRequiredPanel layout="main" />;
-  }
+  if (!(await hasAuthToken())) return <AuthRequiredPanel layout="main" />;
 
   const basePath = `/o/${org}/p/${project}/exports`;
-  const tab = qp.tab ?? "all";
-  const knownIds = parseExportIds(qp.export_id, qp.ids);
-
+  const ids = parseExportIds(qp.export_id, qp.ids);
+  const idsValue = ids.join(",");
   let resolvedProject: Awaited<ReturnType<typeof resolveProject>>;
   try {
     resolvedProject = await resolveProject(org, project);
   } catch (error) {
-    const message = safeErrorMessage(error, "Falha ao resolver projeto.");
     return (
       <div className="page">
-        <div className="page-header">
+        <header className="page-header">
           <div>
-            <p className="page-header__eyebrow">Dados · Exports</p>
             <h1 className="page-header__title">Exports</h1>
-            <p className="page-header__subtitle">Jobs de exportacao para JSONL e auditoria.</p>
+            <p className="page-header__subtitle">Baixe traces em JSONL para analisar fora do EvalOps.</p>
           </div>
-          <div className="page-header__actions">
-            <Link href={basePath} className="btn btn--sm">
-              <RefreshCw size={13} />
-              Tentar novamente
-            </Link>
-          </div>
-        </div>
-        <div style={alertStyle("err")}>Nao foi possivel carregar o projeto. Detalhe: {message}</div>
+        </header>
+        <section className="card ops-empty" role="alert">
+          <div><h2>Projeto indisponível</h2><p>{safeErrorMessage(error, "Falha ao resolver projeto.")}</p></div>
+        </section>
       </div>
     );
   }
 
-  const [usageResult, subResult, serverExports, knownRows] = await Promise.all([
-    getOrganizationUsage(resolvedProject.org_id)
-      .then((usage) => ({ usage, error: null as string | null }))
-      .catch((error) => ({ usage: null, error: safeErrorMessage(error, "Falha ao carregar uso.") })),
-    getOrganizationSubscription(resolvedProject.org_id)
-      .then((subscription) => ({ subscription, error: null as string | null }))
-      .catch((error) => ({ subscription: null, error: safeErrorMessage(error, "Falha ao carregar plano.") })),
-    listExports(resolvedProject.project_id)
-      .then((res) => res.data)
-      .catch((): ExportJob[] => []),
-    Promise.all(
-      knownIds.map(async (id): Promise<ExportRow> => {
-        try {
-          const job = await getExport(id);
-          return { id, job, error: null };
-        } catch (error) {
-          return { id, job: null, error: safeErrorMessage(error, "Falha ao consultar export.") };
-        }
-      }),
-    ),
+  const [listResult, knownRows] = await Promise.all([
+    listExports(resolvedProject.project_id, 50, qp.cursor)
+      .then((result) => ({ data: result.data, nextCursor: result.next_cursor, error: null as string | null }))
+      .catch((error) => ({ data: [] as ExportJob[], nextCursor: null, error: safeErrorMessage(error, "Falha ao carregar exports.") })),
+    Promise.all(ids.map(async (id): Promise<ExportRow> => {
+      try {
+        return { id, job: await getExport(id), error: null };
+      } catch (error) {
+        return { id, job: null, error: safeErrorMessage(error, "Falha ao consultar export.") };
+      }
+    })),
   ]);
 
-  // Mesclar: server é fonte primária; knownIds complementa com IDs não listados (ex.: recém-criado)
-  const serverIds = new Set(serverExports.map((j) => j.id));
-  const exportRows: ExportRow[] = [
-    ...serverExports.map((job) => ({ id: job.id, job, error: null })),
+  const serverIds = new Set(listResult.data.map((job) => job.id));
+  const rows: ExportRow[] = [
+    ...listResult.data.map((job) => ({ id: job.id, job, error: null })),
     ...knownRows.filter((row) => !serverIds.has(row.id)),
   ];
-
-  const runningCount = exportRows.filter((row) => row.job && ["running", "queued"].includes(row.job.status.toLowerCase())).length;
-  const completedCount = exportRows.filter((row) => row.job?.status.toLowerCase() === "completed").length;
-  const failedCount = exportRows.filter((row) => row.error || (row.job && ["error", "failed"].includes(row.job.status.toLowerCase()))).length;
-  const latestActivity = (() => {
-    let mostRecent: string | null = null;
-    for (const row of exportRows) {
-      const value = row.job?.created_at;
-      if (!value) continue;
-      if (!mostRecent || Date.parse(value) > Date.parse(mostRecent)) {
-        mostRecent = value;
-      }
-    }
-    return mostRecent;
-  })();
-
-  const filteredRows = exportRows.filter((row) => {
-    const status = row.job?.status.toLowerCase();
-    if (tab === "running") return status === "running" || status === "queued";
-    if (tab === "completed") return status === "completed";
-    if (tab === "failed") return Boolean(row.error) || status === "error" || status === "failed";
-    return true;
-  });
-
-  const idsValue = knownIds.join(",");
-  const sanitizedQueryError = qp.error ? safeErrorMessage(qp.error, "Falha ao carregar exports.") : null;
-  const currentViewHref = `${basePath}${queryString({
-    tab: tab === "all" ? undefined : tab,
-    ids: idsValue || undefined,
-  })}`;
-  const tabHref = (nextTab: string) =>
-    `${basePath}${queryString({
-      tab: nextTab === "all" ? undefined : nextTab,
-      ids: idsValue || undefined,
-    })}`;
+  const returnPath = `${basePath}${queryString({ ids: idsValue || undefined, cursor: qp.cursor })}`;
 
   return (
     <div className="page">
-      <div className="page-header">
+      <header className="page-header">
         <div>
-          <p className="page-header__eyebrow">Dados · Exports</p>
           <h1 className="page-header__title">Exports</h1>
           <p className="page-header__subtitle">
-            Exports para JSONL, auditoria e analise offline com dados reais de traces.
+            Baixe traces em JSONL para analisar fora do EvalOps. O arquivo expira depois de 7 dias.
           </p>
         </div>
-        <div className="page-header__actions">
-          <Link href={tabHref(tab)} className="btn btn--sm">
-            <RefreshCw size={13} />
-            Atualizar
-          </Link>
-          <Link href="#create-export" className="btn btn--sm btn--primary">
-            <Plus size={13} />
-            Novo export
-          </Link>
-        </div>
-      </div>
+      </header>
 
-      {qp.created === "1" && <div style={alertStyle("ok")}>Export criado com sucesso.</div>}
-      {sanitizedQueryError && <div style={alertStyle("err")}>{sanitizedQueryError}</div>}
+      {qp.error ? <p className="ops-note" role="alert">{safeErrorMessage(qp.error, "Falha ao criar export.")}</p> : null}
+      {qp.created ? <p className="ops-note" role="status">Export criado.</p> : null}
+      {listResult.error ? <p className="ops-note" role="alert">{listResult.error}</p> : null}
 
-      <section className="module-summary" aria-label="Resumo de exports">
-        <div className="summary-card">
-          <p className="summary-card__label">Jobs do projeto</p>
-          <div className="summary-card__value">{exportRows.length.toLocaleString("pt-BR")}</div>
-          <div className="summary-card__hint">listados do servidor</div>
-        </div>
-        <div className="summary-card">
-          <p className="summary-card__label">Em andamento</p>
-          <div className="summary-card__value">{runningCount.toLocaleString("pt-BR")}</div>
-          <div className="summary-card__hint">running/queued</div>
-        </div>
-        <div className="summary-card">
-          <p className="summary-card__label">Concluídos</p>
-          <div className="summary-card__value">{completedCount.toLocaleString("pt-BR")}</div>
-          <div className="summary-card__hint">prontos para download</div>
-        </div>
-        <div className="summary-card">
-          <p className="summary-card__label">Última atividade</p>
-          <div className="summary-card__value">
-            {latestActivity ? relTime(latestActivity) : "—"}
-          </div>
-          <div className="summary-card__hint">job mais recente consultado</div>
-        </div>
+      <section className="card">
+        <div className="card__header"><h2 className="card__title">Criar export</h2></div>
+        <form action={createExportAction} className="ops-form ops-form__grid">
+          <input type="hidden" name="org" value={org} />
+          <input type="hidden" name="project" value={project} />
+          <input type="hidden" name="project_id" value={resolvedProject.project_id} />
+          <input type="hidden" name="known_export_ids" value={idsValue} />
+          <label className="ops-form__field">
+            <span>Ambiente</span>
+            <select name="environment" defaultValue="">
+              <option value="">Todos</option>
+              <option value="prod">Produção</option>
+              <option value="staging">Staging</option>
+              <option value="dev">Dev</option>
+            </select>
+          </label>
+          <label className="ops-form__field">
+            <span>Situação</span>
+            <select name="status" defaultValue="">
+              <option value="">Todas</option>
+              <option value="ok">Aprovado</option>
+              <option value="partial">Parcial</option>
+              <option value="error">Reprovado</option>
+            </select>
+          </label>
+          <label className="ops-form__field">
+            <span>Nome contém</span>
+            <input name="name_contains" placeholder="checkout" />
+          </label>
+          <button type="submit" className="btn btn--primary">Criar export</button>
+        </form>
       </section>
 
-      <nav className="tabs">
-        <Link href={tabHref("all")} className={`tab${tab === "all" ? " is-active" : ""}`}>
-          Todos
-          <span className="tab__count">{exportRows.length}</span>
-        </Link>
-        <Link href={tabHref("running")} className={`tab${tab === "running" ? " is-active" : ""}`}>
-          Em andamento
-          <span className="tab__count">{runningCount}</span>
-        </Link>
-        <Link href={tabHref("completed")} className={`tab${tab === "completed" ? " is-active" : ""}`}>
-          Concluidos
-          <span className="tab__count">{completedCount}</span>
-        </Link>
-        <Link href={tabHref("failed")} className={`tab${tab === "failed" ? " is-active" : ""}`}>
-          Falhas
-          <span className="tab__count">{failedCount}</span>
-        </Link>
-      </nav>
-
-      <div className="grid-detail">
-        <section className="card" style={{ minWidth: 0 }}>
-          <div className="card__header">
-            <h3 className="card__title">Jobs de export</h3>
-            <span className="t__faint" style={{ fontSize: 11 }}>
-              {filteredRows.length} visivel(is)
-            </span>
-          </div>
-          <div className="card__body card__body--flush">
-            <div style={{ overflowX: "auto" }}>
-              <table className="t">
-                <thead>
-                  <tr>
-                    <th>Job</th>
-                    <th>Formato</th>
-                    <th>Linhas</th>
-                    <th>Fonte</th>
-                    <th>Status</th>
-                    <th>Criado em</th>
-                    <th>Tamanho</th>
-                    <th style={{ width: 190 }} />
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredRows.length === 0 ? (
-                    <tr>
-                      <td className="empty-row" colSpan={8}>Nenhum export para esse filtro.</td>
+      <section className="card">
+        <div className="card__header"><h2 className="card__title">Exports recentes</h2></div>
+        <div className="table-wrap">
+          <table className="t">
+            <thead>
+              <tr>
+                <th>Situação</th>
+                <th>Filtro</th>
+                <th className="t__num">Linhas</th>
+                <th className="t__num">Tamanho</th>
+                <th className="t__num">Criado</th>
+                <th>Ações</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.length === 0 ? (
+                <tr><td className="empty-row" colSpan={6}>Sem dados. Crie um export para baixar traces.</td></tr>
+              ) : rows.map((row) => {
+                if (!row.job) {
+                  return (
+                  <tr key={row.id}>
+                      <td><span className="badge">Sem dados</span></td>
+                      <td title={row.error ?? undefined}>Sem dados</td>
+                      <td className="t__num">Sem dados</td>
+                      <td className="t__num">Sem dados</td>
+                      <td className="t__num">Sem dados</td>
+                      <td>Sem dados</td>
                     </tr>
-                  ) : (
-                    filteredRows.map((row) => {
-                      if (row.error || !row.job) {
-                        return (
-                          <tr key={row.id}>
-                            <td>
-                              <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                                <span className="t__name">{row.id}</span>
-                                <span style={{ fontSize: 11, color: "var(--err)" }}>Falha ao consultar job</span>
-                              </div>
-                            </td>
-                            <td className="t__faint">-</td>
-                            <td className="t__faint">-</td>
-                            <td className="t__faint">-</td>
-                            <td>
-                              <span className="badge badge--err">
-                                <span className="badge__dot" />
-                                erro
-                              </span>
-                            </td>
-                            <td className="t__faint">-</td>
-                            <td className="t__faint">-</td>
-                            <td>
-                              <Link href={basePath + queryString({ export_id: row.id, ids: idsValue || undefined })} className="btn btn--sm">
-                                <RefreshCw size={13} />
-                                Retry
-                              </Link>
-                            </td>
-                          </tr>
-                        );
-                      }
-
-                      const status = row.job.status.toLowerCase();
-                      const isComplete = status === "completed" || status === "ready";
-                      const isRunning = status === "running" || status === "queued";
-                      const isFailed = status === "failed" || status === "error";
-                      const isDownloadReady = isComplete && Boolean(row.job.file_path);
-
-                      return (
-                        <tr key={row.id}>
-                          <td>
-                            <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                              <span className="t__name">{exportName(row.job)}</span>
-                              <span style={{ fontSize: 11, color: "var(--text-faint)", fontFamily: "var(--font-mono)" }}>
-                                {row.job.id}
-                              </span>
-                            </div>
-                          </td>
-                          <td>
-                            <span className="mono t__muted" style={{ fontSize: 12 }}>{row.job.format}</span>
-                          </td>
-                          <td className="t__num">{formatCount(row.job.row_count)}</td>
-                          <td>
-                            <span className="tag">{exportSource(row.job)}</span>
-                          </td>
-                          <td>{jobStatusBadge(row.job.status)}</td>
-                          <td className="t__muted" style={{ fontSize: 12 }}>{formatDateTime(row.job.created_at)}</td>
-                          <td className="mono t__muted" style={{ fontSize: 12 }}>
-                            {formatBytes(row.job.file_size_bytes)}
-                          </td>
-                          <td>
-                            <div className="row" style={{ justifyContent: "flex-end" }}>
-                              {isDownloadReady ? (
-                                <Link
-                                  href={getExportDownloadPath(row.job.id, currentViewHref)}
-                                  className="btn btn--sm"
-                                  download
-                                >
-                                  <Download size={13} />
-                                  Download
-                                </Link>
-                              ) : (
-                                <button
-                                  type="button"
-                                  className="btn btn--sm"
-                                  disabled
-                                  style={{ opacity: 0.6 }}
-                                  title={
-                                    isRunning
-                                      ? "Export ainda em andamento"
-                                      : isFailed
-                                      ? "Export com falha"
-                                      : isComplete
-                                      ? "Arquivo indisponível"
-                                      : "Export indisponível"
-                                  }
-                                >
-                                  <Download size={13} />
-                                  {isRunning ? "Processando" : isFailed ? "Falhou" : "Download"}
-                                </button>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          {exportRows.length === 0 && (
-            <div className="card__body" style={{ borderTop: "1px solid var(--border-subtle)" }}>
-              <p style={{ marginTop: 0, marginBottom: 8, color: "var(--text)", fontWeight: 600 }}>
-                Exports ajudam em JSONL/CSV, auditoria e pipelines externos.
-              </p>
-              <p style={{ marginTop: 0, marginBottom: 14, color: "var(--text-muted)", fontSize: 13 }}>
-                Nenhum export criado ainda para este projeto.
-              </p>
-              <ol style={{ margin: 0, paddingLeft: 18, color: "var(--text-muted)", fontSize: 13, lineHeight: 1.8 }}>
-                <li>Crie um export com filtros reais.</li>
-                <li>O job aparece automaticamente nesta lista.</li>
-                <li>Quando o status ficar concluido, use o botao Download para baixar o JSONL.</li>
-              </ol>
-            </div>
-          )}
-        </section>
-
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          <section id="create-export" className="card">
-            <div className="card__header">
-              <h3 className="card__title">Criar export</h3>
-              <span className="t__faint" style={{ fontSize: 11 }}>acao real</span>
-            </div>
-            <div className="card__body">
-              <form action={createExportAction} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                <input type="hidden" name="org" value={org} />
-                <input type="hidden" name="project" value={project} />
-                <input type="hidden" name="project_id" value={resolvedProject.project_id} />
-                <input type="hidden" name="known_export_ids" value={idsValue} />
-
-                <label style={LABEL_STYLE}>
-                  <span style={{ color: "var(--text-muted)" }}>Ambiente</span>
-                  <select name="environment" defaultValue="" style={INPUT_STYLE}>
-                    <option value="">todos</option>
-                    <option value="dev">dev</option>
-                    <option value="staging">staging</option>
-                    <option value="prod">prod</option>
-                  </select>
-                </label>
-
-                <label style={LABEL_STYLE}>
-                  <span style={{ color: "var(--text-muted)" }}>Status</span>
-                  <select name="status" defaultValue="" style={INPUT_STYLE}>
-                    <option value="">todos</option>
-                    <option value="ok">ok</option>
-                    <option value="partial">partial</option>
-                    <option value="error">error</option>
-                  </select>
-                </label>
-
-                <label style={LABEL_STYLE}>
-                  <span style={{ color: "var(--text-muted)" }}>Nome contem (opcional)</span>
-                  <input name="name_contains" placeholder="checkout" style={INPUT_STYLE} />
-                </label>
-
-                <button type="submit" className="btn btn--primary" style={{ alignSelf: "flex-start" }}>
-                  <Plus size={13} />
-                  Gerar export
-                </button>
-              </form>
-            </div>
-          </section>
-
-          <PlanUsage
-            usage={usageResult.usage}
-            usageError={usageResult.error}
-            subscription={subResult.subscription}
-            subscriptionError={subResult.error}
-          />
-
+                  );
+                }
+                const status = statusOf(row.job);
+                const canDownload = status === "ready" && Boolean(row.job.file_path);
+                const canRetry = status === "failed" || status === "expired";
+                return (
+                  <tr key={row.id}>
+                    <td><ExportStatus status={status} /></td>
+                    <td>{filterLabel(row.job.filters)}</td>
+                    <td className="t__num">{formatCount(row.job.row_count)}</td>
+                    <td className="t__num">{row.job.file_size_bytes === null ? "Sem dados" : formatBytes(row.job.file_size_bytes)}</td>
+                    <td className="t__num">{relTime(row.job.created_at)}</td>
+                    <td>
+                      {canDownload ? (
+                        <Link className="btn btn--sm" href={getExportDownloadPath(row.job.id, returnPath)} download>Baixar</Link>
+                      ) : canRetry ? (
+                        <form action={createExportAction}>
+                          <input type="hidden" name="org" value={org} />
+                          <input type="hidden" name="project" value={project} />
+                          <input type="hidden" name="project_id" value={resolvedProject.project_id} />
+                          <input type="hidden" name="known_export_ids" value={idsValue} />
+                          <input type="hidden" name="environment" value={typeof row.job.filters.environment === "string" ? row.job.filters.environment : ""} />
+                          <input type="hidden" name="status" value={typeof row.job.filters.status === "string" ? row.job.filters.status : ""} />
+                          <input type="hidden" name="name_contains" value={typeof row.job.filters.name_contains === "string" ? row.job.filters.name_contains : ""} />
+                          <button type="submit" className="btn btn--sm">Refazer</button>
+                        </form>
+                      ) : (
+                        <button type="button" className="btn btn--sm" disabled>{statusLabel(status)}</button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
-      </div>
+        {listResult.nextCursor ? (
+          <div className="card__body">
+            <Link className="btn" href={`${basePath}${queryString({ ids: idsValue || undefined, cursor: listResult.nextCursor })}`}>
+              Mais exports
+            </Link>
+          </div>
+        ) : null}
+      </section>
     </div>
   );
 }

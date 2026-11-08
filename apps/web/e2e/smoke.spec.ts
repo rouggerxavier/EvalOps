@@ -11,17 +11,17 @@ const SEED_EMAIL = process.env.E2E_SEED_EMAIL ?? "dev@evalops.local";
 const PROJECT_BASE = `/o/${ORG_SLUG}/p/${PROJECT_SLUG}`;
 
 const ROUTES: { path: string; heading: RegExp; label: string }[] = [
-  { path: PROJECT_BASE, heading: /Workspace · /, label: "overview" },
+  { path: PROJECT_BASE, heading: /^Visão geral$/, label: "overview" },
   { path: `${PROJECT_BASE}/traces`, heading: /^Traces$/, label: "traces list" },
   { path: `${PROJECT_BASE}/traces/compare`, heading: /Comparar traces/, label: "traces compare" },
   { path: `${PROJECT_BASE}/evaluations`, heading: /Avaliações/, label: "evaluations" },
   { path: `${PROJECT_BASE}/prompts`, heading: /^Prompts$/, label: "prompts" },
-  { path: `${PROJECT_BASE}/rubrics`, heading: /(Rubrics|^[a-z0-9-]+$)/, label: "rubrics" },
+  { path: `${PROJECT_BASE}/rubrics`, heading: /^Rubricas$/, label: "rubrics" },
   { path: `${PROJECT_BASE}/datasets`, heading: /^Datasets$/, label: "datasets" },
   { path: `${PROJECT_BASE}/experiments`, heading: /Experimentos/, label: "experiments" },
-  { path: `${PROJECT_BASE}/keys`, heading: /Chaves API/, label: "keys" },
+  { path: `${PROJECT_BASE}/keys`, heading: /^Chaves de API$/, label: "keys" },
   { path: `${PROJECT_BASE}/exports`, heading: /^Exports$/, label: "exports" },
-  { path: `${PROJECT_BASE}/settings`, heading: /Settings/, label: "settings" },
+  { path: `${PROJECT_BASE}/settings`, heading: /^Ajustes$/, label: "settings" },
 ];
 
 async function obtainToken(): Promise<string> {
@@ -57,9 +57,9 @@ async function obtainToken(): Promise<string> {
   throw new Error(`failed to obtain auth token: ${lastError}`);
 }
 
-async function seedSession(context: BrowserContext): Promise<void> {
+async function seedSession(context: BrowserContext, baseURL: string | undefined): Promise<void> {
   const token = await obtainToken();
-  const url = new URL(context.pages()[0]?.url() ?? "http://localhost:3000");
+  const url = new URL(baseURL ?? "http://localhost:3000");
   await context.addCookies([
     {
       name: "evalops_session",
@@ -79,16 +79,20 @@ async function expectNoErrorBoundary(page: Page) {
 }
 
 test.describe("Phase 8 cockpit smoke", () => {
-  test.beforeEach(async ({ context }) => {
-    await seedSession(context);
+  test.beforeEach(async ({ context, baseURL }) => {
+    await seedSession(context, baseURL);
   });
 
   for (const route of ROUTES) {
     test(`renders ${route.label} at ${route.path}`, async ({ page }) => {
-      const response = await page.goto(route.path);
-      expect(response?.ok(), `navigation to ${route.path} returned ${response?.status()}`).toBeTruthy();
-      await expect(page.locator(".page-header__title").first()).toHaveText(route.heading);
-      await expectNoErrorBoundary(page);
+      for (const width of [1280, 375]) {
+        await page.setViewportSize({ width, height: 900 });
+        const response = await page.goto(route.path);
+        expect(response?.ok(), `navigation to ${route.path} returned ${response?.status()}`).toBeTruthy();
+        await expect(page.getByRole("heading", { level: 1 })).toHaveText(route.heading);
+        await expectNoErrorBoundary(page);
+        expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+      }
     });
   }
 
@@ -97,6 +101,35 @@ test.describe("Phase 8 cockpit smoke", () => {
     await page.keyboard.press("g");
     await page.keyboard.press("t");
     await page.waitForURL(new RegExp(`${PROJECT_BASE}/traces(\\?|$)`));
-    await expect(page.locator(".page-header__title").first()).toHaveText(/^Traces$/);
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText(/^Traces$/);
+  });
+
+  test("mobile menu keeps keyboard focus and closes on escape, navigation and resize", async ({ page }) => {
+    await page.setViewportSize({ width: 375, height: 900 });
+    await page.goto(PROJECT_BASE);
+    const toggle = page.locator('button[aria-controls="ops-sidebar"]');
+    const menu = page.getByRole("dialog", { name: "Navegação principal" });
+    await toggle.focus();
+    await page.keyboard.press("Enter");
+    await expect(menu).toBeVisible();
+    await expect(toggle).toHaveAttribute("aria-expanded", "true");
+    const first = menu.getByRole("link", { name: "EvalOps Studio" });
+    const last = menu.getByRole("link", { name: "Documentação" });
+    await expect(first).toBeFocused();
+    await page.keyboard.press("Shift+Tab");
+    await expect(last).toBeFocused();
+    await page.keyboard.press("Tab");
+    await expect(first).toBeFocused();
+    await page.keyboard.press("Escape");
+    await expect(toggle).toHaveAttribute("aria-expanded", "false");
+    await expect(toggle).toBeFocused();
+    await page.keyboard.press("Enter");
+    await menu.getByRole("link", { name: /^Traces/ }).click();
+    await page.waitForURL(new RegExp(`${PROJECT_BASE}/traces$`));
+    await expect(toggle).toHaveAttribute("aria-expanded", "false");
+    await toggle.press("Enter");
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await expect(menu).toHaveCount(0);
+    await expect(page.locator("body")).not.toHaveCSS("overflow", "hidden");
   });
 });

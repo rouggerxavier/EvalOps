@@ -22,6 +22,7 @@ export function WorkspaceSwitcher({ current, projects }: WorkspaceSwitcherProps)
   return (
     <select
       className="filter-select"
+      aria-label="Projeto"
       value={current}
       onChange={(event) => {
         const value = event.target.value;
