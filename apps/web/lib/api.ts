@@ -151,6 +151,7 @@ export async function getTraces(opts: {
   model?: string;
   failed?: boolean;
   score_lt?: number;
+  verdict?: "approved" | "partial" | "rejected" | "unknown";
   q?: string;
 }): Promise<TraceListResponse> {
   const params = new URLSearchParams({
@@ -171,6 +172,7 @@ export async function getTraces(opts: {
   }
   if (opts.failed !== undefined) params.set("failed", String(opts.failed));
   if (opts.score_lt !== undefined) params.set("score_lt", String(opts.score_lt));
+  if (opts.verdict) params.set("verdict", opts.verdict);
   return fetchJson<TraceListResponse>(`/traces?${params.toString()}`);
 }
 

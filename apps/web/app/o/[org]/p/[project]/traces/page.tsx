@@ -3,12 +3,11 @@ import { Clock, Download, GitCompareArrows, Layers, Search, X } from "lucide-rea
 
 import { AuthRequiredPanel } from "@/components/AuthRequiredPanel";
 import { getActiveEnvironment } from "@/lib/active-env";
-import { getProjectEvaluations, getTraces, hasAuthToken, resolveProject } from "@/lib/api";
-import type { EvaluationRun } from "@/lib/types";
+import { getTraces, hasAuthToken, resolveProject } from "@/lib/api";
 
 import { TracesAutoRefresh } from "./traces-auto-refresh";
 import { TracesEmpty, TracesTable } from "./traces-table";
-import { evaluationVerdict } from "./trace-status";
+import type { EvaluationVerdict } from "./trace-status";
 
 type Tab = "all" | "errors" | "partial" | "slow" | "rag" | "flagged";
 type SlowKind = "trace" | "llm" | "retrieval";
@@ -82,51 +81,38 @@ export default async function TracesListPage({ params, searchParams }: Props) {
   const slowKind: SlowKind = tab === "slow" ? parseSlowKind(qp.slow_kind) : "trace";
   const environment = await getActiveEnvironment(qp.environment);
   const filters = validFilters(qp);
-  const [traces, evaluations] = await Promise.all([
-    getTraces({
-      projectId: resolved.project_id,
-      status: tabStatus,
-      environment,
-      name: tab !== "rag" ? qp.name : undefined,
-      limit: 50,
-      cursor: qp.cursor,
-      duration_gt: tab === "slow" ? 2000 : undefined,
-      slow_kind: tab === "slow" ? slowKind : undefined,
-      rag: tab === "rag" ? true : undefined,
-      flagged: tab === "flagged" ? true : undefined,
-      q: filters.q,
-      conversation_id: filters.conversation_id,
-      // shortcut: dates are whole days in UTC, not the viewer's timezone; upgrade when the UI knows the user's timezone
-      since: filters.since ? `${filters.since}T00:00:00` : undefined,
-      until: filters.until ? `${filters.until}T23:59:59.999` : undefined,
-      tag: filters.tag,
-      user_ref: filters.user_ref,
-      model: filters.model,
-      failed: filters.failed ? true : undefined,
-      score_lt: filters.score_lt ? Number(filters.score_lt) : undefined,
-    }),
-    getProjectEvaluations(resolved.project_id, 100, environment).catch(() => ({ data: [] })),
-  ]);
-
   const verdictFilter = ["approved", "partial", "rejected", "unknown"].includes(qp.verdict ?? "")
-    ? qp.verdict
+    ? qp.verdict as EvaluationVerdict
     : undefined;
+  const traces = await getTraces({
+    projectId: resolved.project_id,
+    status: tabStatus,
+    environment,
+    name: tab !== "rag" ? qp.name : undefined,
+    limit: 50,
+    cursor: qp.cursor,
+    duration_gt: tab === "slow" ? 2000 : undefined,
+    slow_kind: tab === "slow" ? slowKind : undefined,
+    rag: tab === "rag" ? true : undefined,
+    flagged: tab === "flagged" ? true : undefined,
+    q: filters.q,
+    conversation_id: filters.conversation_id,
+    // shortcut: dates are whole days in UTC, not the viewer's timezone; upgrade when the UI knows the user's timezone
+    since: filters.since ? `${filters.since}T00:00:00` : undefined,
+    until: filters.until ? `${filters.until}T23:59:59.999` : undefined,
+    tag: filters.tag,
+    user_ref: filters.user_ref,
+    model: filters.model,
+    failed: filters.failed ? true : undefined,
+    score_lt: filters.score_lt ? Number(filters.score_lt) : undefined,
+    verdict: verdictFilter,
+  });
+
   const rows = traces.data;
-  const latestEvaluationByTrace = new Map<string, EvaluationRun>();
-  for (const run of evaluations.data) {
-    if (!latestEvaluationByTrace.has(run.trace_id)) latestEvaluationByTrace.set(run.trace_id, run);
-  }
   const verdicts = Object.fromEntries(rows.map((trace) => [
     trace.id,
-    evaluationVerdict(latestEvaluationByTrace.get(trace.id)),
+    trace.last_verdict ?? "unknown",
   ]));
-  const displayRows = rows.filter((trace) => {
-    if (!verdictFilter) return true;
-    const verdict = verdicts[trace.id];
-    return verdictFilter === "unknown"
-      ? verdict === null || verdict === "unknown"
-      : verdict === verdictFilter;
-  });
 
   const tabBase = `/o/${org}/p/${project}/traces`;
   const baseParams = new URLSearchParams();
@@ -341,16 +327,16 @@ export default async function TracesListPage({ params, searchParams }: Props) {
           </div>
         ) : null}
 
-        {displayRows.length === 0 && hasFilters ? (
+        {rows.length === 0 && hasFilters ? (
           <div className="empty ops-traces__empty">
             <div className="empty__title">Nenhum trace com esses filtros</div>
             <p className="empty__desc">Tente outro filtro ou limpe todos.</p>
             <Link href={clearFiltersHref} className="btn">Limpar filtros</Link>
           </div>
-        ) : displayRows.length === 0 ? (
+        ) : rows.length === 0 ? (
           <TracesEmpty project={project} />
         ) : (
-          <TracesTable org={org} project={project} rows={displayRows} verdicts={verdicts} />
+          <TracesTable org={org} project={project} rows={rows} verdicts={verdicts} />
         )}
       </section>
 
@@ -364,23 +350,23 @@ export default async function TracesListPage({ params, searchParams }: Props) {
         }}
       >
         <span>
-          Mostrando {displayRows.length.toLocaleString("pt-BR")} trace{displayRows.length === 1 ? "" : "s"}
+          Mostrando {rows.length.toLocaleString("pt-BR")} trace{rows.length === 1 ? "" : "s"}
           {hasCursor ? " (próxima página)" : ""}
         </span>
         <div className="row" style={{ gap: 6 }}>
           {firstPageHref ? (
-            <Link href={firstPageHref} className="btn btn--sm btn--ghost" title="Voltar à primeira página">
+            <a href={firstPageHref} className="btn btn--sm btn--ghost" title="Voltar à primeira página">
               ‹
-            </Link>
+            </a>
           ) : (
             <button type="button" className="btn btn--sm btn--ghost" disabled>
               ‹
             </button>
           )}
           {nextPageHref ? (
-            <Link href={nextPageHref} className="btn btn--sm btn--ghost">
+            <a href={nextPageHref} className="btn btn--sm btn--ghost">
               ›
-            </Link>
+            </a>
           ) : (
             <button type="button" className="btn btn--sm btn--ghost" disabled>
               ›
