@@ -81,6 +81,7 @@ export default async function TracesListPage({ params, searchParams }: Props) {
   const slowKind: SlowKind = tab === "slow" ? parseSlowKind(qp.slow_kind) : "trace";
   const environment = await getActiveEnvironment(qp.environment);
   const filters = validFilters(qp);
+  const invalidTag = Boolean(qp.tag?.trim() && !filters.tag);
   const verdictFilter = ["approved", "partial", "rejected", "unknown"].includes(qp.verdict ?? "")
     ? qp.verdict as EvaluationVerdict
     : undefined;
@@ -271,7 +272,7 @@ export default async function TracesListPage({ params, searchParams }: Props) {
             <Layers size={14} /> RAG
           </Link>
           <button type="submit" className="btn">Aplicar</button>
-          <details className="ops-traces__more" open={advancedFilterCount > 0}>
+          <details className="ops-traces__more" open={advancedFilterCount > 0 || invalidTag}>
             <summary className="btn">
               Mais filtros{advancedFilterCount > 0 ? <span className="tab__count">{advancedFilterCount}</span> : null}
             </summary>
@@ -284,7 +285,16 @@ export default async function TracesListPage({ params, searchParams }: Props) {
                 <span>Até</span>
                 <input className="filter-input" type="date" name="until" defaultValue={filters.until ?? ""} aria-label="Até (dia, UTC)" />
               </label>
-              <input className="filter-input" name="tag" defaultValue={filters.tag ?? ""} placeholder="Tag (canal:whatsapp)" aria-label="Tag no formato chave:valor" />
+              <input
+                className="filter-input"
+                name="tag"
+                defaultValue={qp.tag?.trim() ? qp.tag : ""}
+                title="Use o formato chave:valor, como canal:whatsapp"
+                placeholder="Tag (canal:whatsapp)"
+                aria-label="Tag no formato chave:valor"
+                aria-invalid={invalidTag || undefined}
+                aria-describedby={invalidTag ? "tag-error" : undefined}
+              />
               <input className="filter-input" name="user_ref" defaultValue={filters.user_ref ?? ""} placeholder="Usuário" aria-label="Usuário" />
               <input className="filter-input" name="model" defaultValue={filters.model ?? ""} placeholder="Modelo (gpt-4o-mini)" aria-label="Modelo" />
               <input
@@ -305,6 +315,10 @@ export default async function TracesListPage({ params, searchParams }: Props) {
             </div>
           </details>
         </form>
+
+        {invalidTag ? (
+          <p id="tag-error" className="ops-note" role="alert">Tag não aplicada. Use o formato chave:valor, como canal:whatsapp.</p>
+        ) : null}
 
         {filters.q || filters.conversation_id ? (
           <div className="ops-traces__chips">

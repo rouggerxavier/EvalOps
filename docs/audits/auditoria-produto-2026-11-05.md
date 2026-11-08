@@ -55,10 +55,8 @@ Dois defeitos novos apareceram e foram corrigidos:
 Limites atuais:
 
 - Com "qualquer env" em Traces e o chip em `dev`, o chip continua mostrando `dev` nessa visão.
-- Tags sem `:` são descartadas no filtro sem aviso.
-- A navegação por conversa mostra os 50 turnos mais recentes, sem paginação no detalhe. O título Conversa aparece no agrupamento e na aba.
+- A navegação por conversa mostra os 50 turnos mais recentes, sem paginação no detalhe.
 - O painel de run mostra nota parcial ao lado de "sem veredito", avisando que ela cobre apenas os avaliadores que mediram.
-- A interface do lote não explica o reenvio de traces parciais ou com erro.
 - Há horários sem fuso nas respostas da API, afetando a apresentação relativa.
 - O stepper da landing fala em checklist antes de promover para produção; o produto apoia essa decisão, sem promover variantes automaticamente.
 - O feedback ainda não é agregado às métricas, e os avisos não cobrem orçamento do juiz por fonte incompleta de gasto.
@@ -132,6 +130,25 @@ verde precederam o merge.
 Operação, migração e limites estão em
 [avaliacao-amostragem.md](../ops/avaliacao-amostragem.md). Comandos, cenários e
 capturas estão em [amostragem-qa-2026-11-08.md](amostragem-qa-2026-11-08.md).
+
+### Atualização em 2026-11-08: avisos e contexto dos traces
+
+Uma tag inválida mantém o texto digitado, abre os filtros avançados e mostra que
+o filtro não foi aplicado, com orientação `chave:valor`. A validação ocorre após
+o GET, inclusive quando os filtros estavam recolhidos; uma URL já inválida recebe
+o mesmo aviso acessível. Tags válidas, vazias e paginação preservam o comportamento
+anterior. A entrada contendo apenas espaços é normalizada para vazio.
+
+O agrupamento do detalhe chama-se Turnos da conversa, enquanto a aba continua
+Conversa. O formulário de lote informa que avaliações concluídas com veredito na
+mesma rubrica/versão são ignoradas e que erros/parciais sem veredito podem voltar
+à fila e gerar novo custo. Nenhuma regra de reenvio da API foi alterada.
+
+Validação local final: 26 testes web direcionados, typecheck, detector sem
+achados e Chromium sem JavaScript sobre SSR real em 1280/390 px. O fluxo com
+filtros fechados envia o GET e recebe campo revelado com aviso. O backend foi
+inspecionado; não houve E2E autenticado nem API/Redis compartilhado. O build
+permanece no gate da CI.
 
 ### Atualização em 2026-11-08: ambiente na Atenção e na API de Cobertura
 

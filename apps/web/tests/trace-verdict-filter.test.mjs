@@ -62,6 +62,54 @@ test("invalid verdicts are dropped and missing verdicts render as Sem dados", as
   assert.match(html, /Sem dados/);
 });
 
+test("invalid tag stays editable with an explicit warning and is not applied", async () => {
+  const { html, requested } = await render([trace("one", "unknown")], { tag: "whatsapp" }, "next");
+  assert.equal(requested.tag, undefined);
+  assert.match(html, /<details[^>]*open=""/);
+  assert.match(html, /name="tag"[^>]*aria-invalid="true"[^>]*value="whatsapp"/);
+  assert.match(html, /name="tag"[^>]*aria-describedby="tag-error"/);
+  assert.doesNotMatch(html.match(/<input[^>]*name="tag"[^>]*>/)[0], /pattern=/);
+  assert.match(html, /role="alert"[^>]*>Tag não aplicada\. Use o formato chave:valor, como canal:whatsapp\./);
+  assert.doesNotMatch(html, /tag=whatsapp/);
+  assert.doesNotMatch(html, /Mais filtros<span class="tab__count">1/);
+});
+
+test("invalid tag from the URL is escaped in the editable field", async () => {
+  const tag = '\"><script>alert("tag")</script>';
+  const { html, requested } = await render([], { tag });
+  assert.equal(requested.tag, undefined);
+  assert.match(html, /value="&quot;&gt;&lt;script&gt;alert\(&quot;tag&quot;\)&lt;\/script&gt;"/);
+  assert.doesNotMatch(html, /<script>/);
+});
+
+test("empty and whitespace-only tags stay optional and do not apply a filter", async () => {
+  for (const tag of ["", "   "]) {
+    const { html, requested } = await render([], { tag });
+    assert.equal(requested.tag, undefined);
+    assert.match(html, /name="tag"[^>]*value=""/);
+    assert.doesNotMatch(html, /Tag não aplicada|aria-invalid="true"/);
+  }
+});
+
+test("valid tag keeps the format hint and existing filters through pagination", async () => {
+  const { html, requested } = await render([trace("one", "approved")], {
+    tag: "canal:whatsapp", verdict: "approved", cursor: "first", tab: "slow", slow_kind: "llm",
+    environment: "dev", name: "support", q: "answer", conversation_id: "conversation",
+    since: "2026-11-01", until: "2026-11-08", user_ref: "user", model: "model", failed: "true", score_lt: "0.5",
+  }, "second");
+  assert.equal(requested.tag, "canal:whatsapp");
+  assert.equal(requested.since, "2026-11-01T00:00:00");
+  assert.equal(requested.until, "2026-11-08T23:59:59.999");
+  assert.match(html, /name="tag"[^>]*title="Use o formato chave:valor, como canal:whatsapp"/);
+  assert.doesNotMatch(html, /Tag não aplicada/);
+  const href = [...html.matchAll(/href="([^"]+)"/g)].map((match) => match[1].replaceAll("&amp;", "&"))
+    .find((value) => value.includes("cursor=second"));
+  const params = new URL(href, "http://web.test").searchParams;
+  for (const [key, value] of Object.entries({ tag: "canal:whatsapp", verdict: "approved", cursor: "second", tab: "slow", slow_kind: "llm", environment: "dev", name: "support", q: "answer", conversation_id: "conversation", since: "2026-11-01", until: "2026-11-08", user_ref: "user", model: "model", failed: "true", score_lt: "0.5" })) {
+    assert.equal(params.get(key), value, key);
+  }
+});
+
 test("getTraces serializes verdict alongside the existing filters", async () => {
   const previousFetch = globalThis.fetch;
   let url;

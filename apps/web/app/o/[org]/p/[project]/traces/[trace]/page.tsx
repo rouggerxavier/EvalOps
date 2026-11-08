@@ -290,7 +290,7 @@ export default async function TraceDetailPage({ params, searchParams }: Props) {
 
       {conversationId ? (
         <Card
-          title="Conversa"
+          title="Turnos da conversa"
           subtitle={
             conversation
               ? `${conversationTurns.length} turno${conversationTurns.length === 1 ? "" : "s"}${conversation.next_cursor ? " (mostrando os 50 mais recentes)" : ""}`
