@@ -54,6 +54,26 @@ Limites:
 - O painel de run mostra a nota parcial ao lado de "sem veredito", avisando que ela cobre só parte dos avaliadores.
 - O pacote `evalops-python` segue sem publicação, e o nome está livre no PyPI. Publicar é decisão pendente.
 
+### Atualização em 2026-11-08: feedback e prompts no SDK
+
+O [PR #32](https://github.com/rouggerxavier/EvalOps/pull/32) foi integrado após
+revisão independente de autorização e CI verde. O SDK agora oferece
+`Client.feedback(client_trace_id, ...)`, `Client.get_prompt(prompt_id, version=...)`
+e `current_client_trace_id()`. Chaves somente `read` não escrevem feedback;
+chaves `ingest` alcançam apenas o próprio projeto. O caminho JWT anterior foi
+preservado. IDs iguais em projetos distintos não misturam feedback.
+
+O feedback deve ser enviado após a ingestão do trace. `flush()` aguarda a fila,
+mas não garante que a API aceitou o trace; o cliente pode receber 404. O POST não
+é repetido automaticamente após uma falha ambígua, evitando duplicação. A
+auditoria identifica o tipo de ator e o projeto da chave, sem identificar a
+chave individual. As métricas ainda não agregam esse feedback.
+
+Validação local: 50 testes API; 80 testes SDK em Python 3.12. A CI passou nas
+quatro versões suportadas do Python, além de API, web e migração em PostgreSQL 16.
+A revisão independente verificou também credenciais expiradas/revogadas,
+precedência de headers, isolamento e propagação assíncrona do contexto do SDK.
+
 ## Segurança
 
 | # | Achado | Onde | Evidência |
@@ -86,8 +106,8 @@ Limites:
 | 15 | **Celular sem navegação.** Em 375 px a sidebar fica `display: none`, não há menu, e breadcrumb, busca e chip se sobrepõem. | `AppShell`, `EvoTopbar` | Provado |
 | 16 | **Fechado.** **`prompt_version_ref` não é validado:** referência inexistente entra com 202 e distorce o uso do prompt. | `trace_ingest_service.py:170` | Provado |
 | 17 | **Fechado.** **Chave com `read` quase não lê.** Com a chave, dão 401: traces, prompts, rubricas, avaliações e feedback. Só relatório e lote aceitam. | `ownership.py:114` | Provado |
-| 18 | **Feedback do usuário final não entra.** Exige login no painel e o SDK não tem método. Um "joinha" do WhatsApp não chega, e o feedback não entra em nenhuma métrica. | `routes_phase6.py` | Provado |
-| 19 | **Prompts desligados da execução.** O SDK não busca prompt e a chave não lê. O agente continua com prompt no próprio código, então não há "promover variante". | `routes_phase6.py`, SDK | Provado |
+| 18 | **Parcial.** Feedback por chave `ingest` e pelo SDK foi integrado no #32, com resolução de `client_trace_id` dentro do projeto e auditoria. O envio não exige login no painel. A incorporação do feedback às métricas permanece pendente. | `routes_phase6.py`, SDK | Corrigido e testado; métricas pendentes |
+| 19 | **Fechado no escopo de busca.** A chave `read` lê prompts após #30; `Client.get_prompt(prompt_id, version=...)`, integrado no #32, retorna a versão atual ou fixa com seu template. Não foi adicionada promoção automática de variantes. | `routes_phase5.py`, SDK | Corrigido e testado |
 | 20 | **Notificações só de avaliação.** Cota esgotada responde 402 sem aviso prévio nem sino, e a ingestão para em silêncio. | `eval_service.py:425` | Leitura |
 
 ## Promessas falsas
