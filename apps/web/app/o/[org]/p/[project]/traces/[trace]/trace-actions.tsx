@@ -19,6 +19,7 @@ type Props = {
   traceId: string;
   rubrics: Pick<Rubric, "id" | "slug" | "current_version">[];
   compareCandidates: Pick<Trace, "id" | "name">[];
+  flagged: boolean;
 };
 
 const actionsStyle: CSSProperties = {
@@ -37,7 +38,7 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-export function TraceHeaderActions({ org, project, traceId, rubrics, compareCandidates }: Props) {
+export function TraceHeaderActions({ org, project, traceId, rubrics, compareCandidates, flagged }: Props) {
   const [open, setOpen] = useState<null | "flag" | "rerun" | "compare" | "evaluate">(null);
   const close = () => setOpen(null);
 
@@ -46,16 +47,20 @@ export function TraceHeaderActions({ org, project, traceId, rubrics, compareCand
 
   return (
     <>
-      <button type="button" className="btn btn--sm" onClick={() => setOpen("flag")}>
-        <Flag size={12} /> Flagear
+      <button type="button" className="btn" onClick={() => setOpen("compare")}>
+        <GitCompare size={14} /> Comparar
       </button>
-      <button type="button" className="btn btn--sm" onClick={() => setOpen("rerun")}>
+      {flagged ? (
+        <span className="ops-status ops-status--partial"><Flag size={13} aria-hidden="true" /> Marcado para revisão</span>
+      ) : (
+        <button type="button" className="btn" onClick={() => setOpen("flag")}>
+          <Flag size={14} /> Marcar para revisão
+        </button>
+      )}
+      <button type="button" className="btn" onClick={() => setOpen("rerun")}>
         <Play size={12} /> Reexecutar
       </button>
-      <button type="button" className="btn btn--sm" onClick={() => setOpen("compare")}>
-        <GitCompare size={12} /> Comparar
-      </button>
-      <button type="button" className="btn btn--sm btn--primary" onClick={() => setOpen("evaluate")}>
+      <button type="button" className="btn btn--primary" onClick={() => setOpen("evaluate")}>
         <Target size={12} /> Avaliar
       </button>
 

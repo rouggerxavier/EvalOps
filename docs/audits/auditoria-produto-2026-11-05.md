@@ -21,7 +21,7 @@ não ligada, não contrato quebrado.
 ## Status
 
 As etapas 1 a 3 da ordem sugerida foram corrigidas, e as promessas falsas da etapa 7 saíram da tela. Itens fechados:
-S1, 1, 2, 3, 4, 5, 6, 8, 12, 13 e 21 a 28.
+S1, 1, 2, 3, 4, 5, 6, 8, 12, 13, 15 e 21 a 28.
 
 - **Instalação:** a documentação e a landing mandam instalar a partir do repositório e avisam sobre o pacote de
   terceiro. O quickstart usa `set_llm` e `set_trace`, e foi executado contra o SDK real com cliente simulado.
@@ -34,6 +34,13 @@ S1, 1, 2, 3, 4, 5, 6, 8, 12, 13 e 21 a 28.
   plano inventados. A landing mostra só o SDK Python, com `set_llm` e `set_trace`, e "Como funciona" descreve
   avaliação sob demanda, quality gate e export JSONL. A aba Pausadas saiu de Avaliações. O quickstart usa
   `evk_prod_` com `environment="prod"`, que é o prefixo gerado para chave de `prod`, o padrão da tela de chaves.
+
+- **Celular (item 15):** fechado no shell novo do redesign (`OpsShellFrame`, `Sidebar`, `EvoTopbar`). Até 760 px
+  a navegação abre como gaveta pelo botão de menu (`aria-expanded`), com botão de fechar dentro do painel, foco
+  preso, Esc, fechamento ao trocar de rota ou ao alargar a janela e foco de volta no botão. A barra superior empilha
+  marca e menu, caminho (só no detalhe), busca, e ambiente, avisos e conta, sem sobreposição. Todas as telas do
+  projeto foram abertas em 375 px e 1280 px sem rolagem lateral da página. Antes e depois em
+  [`img/`](img/redesign-antes-visao-geral-375.jpg).
 
 Validação: 411 testes API, 36 SDK, 156 web, typecheck e build. As regressões de produto e de P1 passaram em Postgres
 16, e as telas foram conferidas no navegador, inclusive em 375 px.
@@ -83,7 +90,7 @@ Limites:
 | 12 | **Billing dá 404.** "Abrir Usage" aponta para `/o/{org}/usage`, que não existe. Uso e plano só aparecem escondidos em Exports. | `settings/page.tsx:44` | Provado |
 | 13 | **Flag é só escrita.** Não há `GET` (405), a flag não aparece no trace e não há como ver o que foi marcado. | `routes_trace_actions.py`, `traces/[trace]/page.tsx:148` | Provado |
 | 14 | **Resultado de experimento some.** Só aparece logo após rodar, via URL. Não há rota que liste runs nem tela de histórico. | `experiments/page.tsx:199` | Provado |
-| 15 | **Celular sem navegação.** Em 375 px a sidebar fica `display: none`, não há menu, e breadcrumb, busca e chip se sobrepõem. | `AppShell`, `EvoTopbar` | Provado |
+| 15 | **Fechado.** **Celular sem navegação.** Em 375 px a sidebar fica `display: none`, não há menu, e breadcrumb, busca e chip se sobrepõem. | `AppShell`, `EvoTopbar` | Provado |
 | 16 | **Fechado.** **`prompt_version_ref` não é validado:** referência inexistente entra com 202 e distorce o uso do prompt. | `trace_ingest_service.py:170` | Provado |
 | 17 | **Fechado.** **Chave com `read` quase não lê.** Com a chave, dão 401: traces, prompts, rubricas, avaliações e feedback. Só relatório e lote aceitam. | `ownership.py:114` | Provado |
 | 18 | **Feedback do usuário final não entra.** Exige login no painel e o SDK não tem método. Um "joinha" do WhatsApp não chega, e o feedback não entra em nenhuma métrica. | `routes_phase6.py` | Provado |

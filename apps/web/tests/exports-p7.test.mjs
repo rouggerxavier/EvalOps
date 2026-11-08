@@ -9,9 +9,8 @@ const page = readFileSync(
 
 test("exports: page wires real server actions and API calls", () => {
   assert.match(page, /createExportAction/);
-  assert.match(page, /listExports\(resolvedProject\.project_id\)/);
-  assert.match(page, /getOrganizationUsage\(resolvedProject\.org_id\)/);
-  assert.match(page, /getOrganizationSubscription\(resolvedProject\.org_id\)/);
+  assert.match(page, /listExports\(resolvedProject\.project_id, 50, qp\.cursor\)/);
+  assert.match(page, /getExport\(id\)/);
 });
 
 test("exports: create form preserves required hidden fields", () => {
@@ -28,7 +27,7 @@ test("exports: file size column reads from job.file_size_bytes via formatBytes",
 });
 
 test("exports: download path + sanitised error path preserved", () => {
-  assert.match(page, /getExportDownloadPath\(row\.job\.id, currentViewHref\)/);
+  assert.match(page, /getExportDownloadPath\(row\.job\.id, returnPath\)/);
   assert.match(page, /safeErrorMessage\(/);
 });
 

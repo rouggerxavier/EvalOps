@@ -28,6 +28,7 @@ export type Trace = {
   redacted: boolean;
   created_at: string;
   last_score?: number | null;
+  last_verdict?: "approved" | "partial" | "rejected" | "unknown";
   slow_reason?: "trace" | "llm" | "retrieval" | null;
   cost_source?: "priced" | "provided" | "unpriced" | "unknown" | null;
   model?: string | null;

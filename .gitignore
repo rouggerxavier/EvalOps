@@ -53,3 +53,9 @@ apps/api/**/*.py[cod]
 /*.zip
 /evaluations-*.png
 .vercel
+
+# Impeccable: só o surface brief é durável
+.impeccable/hook.cache.json
+.impeccable/mocks/
+.impeccable/questions/
+.impeccable/config.local.json

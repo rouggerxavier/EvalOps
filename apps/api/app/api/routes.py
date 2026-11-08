@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import String, and_, case, cast, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
@@ -580,12 +580,45 @@ def list_traces(
     model: str | None = Query(None, max_length=255),
     failed: bool | None = Query(None),
     score_lt: float | None = Query(None, ge=0, le=1),
+    verdict: str | None = Query(None, pattern="^(approved|rejected|partial|unknown)$"),
     q: str | None = Query(None, max_length=255),
     project: Project = Depends(project_access("read")),
     db: Session = Depends(get_db),
 ) -> dict:
     project_id = project.id
-    query = db.query(Trace).filter(Trace.project_id == project_id, Trace.deleted_at.is_(None))
+    ranked = (
+        select(
+            EvaluationRun.trace_id,
+            EvaluationRun.aggregate_score,
+            EvaluationRun.passed,
+            EvaluationRun.run_metadata,
+            func.row_number().over(
+                partition_by=EvaluationRun.trace_id,
+                order_by=(EvaluationRun.created_at.desc(), EvaluationRun.id.desc()),
+            ).label("rn"),
+        )
+        .where(EvaluationRun.project_id == project_id)
+        .subquery()
+    )
+    # Compare the JSON boolean itself; text/number lookalikes must stay unknown.
+    partial_failure = (
+        cast(ranked.c.run_metadata["partial_failure"], String) == "true"
+        if db.get_bind().dialect.name == "postgresql"
+        else func.json_type(ranked.c.run_metadata, "$.partial_failure") == "true"
+    )
+    latest_verdict = case(
+        (ranked.c.passed.is_(True), "approved"),
+        (ranked.c.passed.is_(False), "rejected"),
+        (partial_failure, "partial"),
+        else_="unknown",
+    )
+    query = (
+        db.query(Trace)
+        .outerjoin(ranked, and_(ranked.c.trace_id == Trace.id, ranked.c.rn == 1))
+        .filter(Trace.project_id == project_id, Trace.deleted_at.is_(None))
+    )
+    if verdict:
+        query = query.filter(latest_verdict == verdict)
     if trace_status:
         status_values = [s.strip() for s in trace_status.split(",") if s.strip()]
         if len(status_values) == 1:
@@ -655,29 +688,16 @@ def list_traces(
             )
         )
     page_limit = min(max(limit, 1), 200)
-    rows = query.order_by(Trace.created_at.desc(), Trace.id.desc()).limit(page_limit + 1).all()
-    has_more = len(rows) > page_limit
-    rows = rows[:page_limit]
+    page = (
+        query.add_columns(ranked.c.aggregate_score, latest_verdict)
+        .order_by(Trace.created_at.desc(), Trace.id.desc())
+        .limit(page_limit + 1)
+        .all()
+    )
+    has_more = len(page) > page_limit
+    page = page[:page_limit]
+    rows = [row for row, _, _ in page]
     trace_ids = [row.id for row in rows]
-    last_scores: dict[str, float | None] = {}
-    if trace_ids:
-        ranked = (
-            select(
-                EvaluationRun.trace_id.label("trace_id"),
-                EvaluationRun.aggregate_score.label("aggregate_score"),
-                func.row_number()
-                .over(
-                    partition_by=EvaluationRun.trace_id,
-                    order_by=EvaluationRun.created_at.desc(),
-                )
-                .label("rn"),
-            )
-            .where(EvaluationRun.trace_id.in_(trace_ids))
-            .subquery()
-        )
-        latest_q = select(ranked.c.trace_id, ranked.c.aggregate_score).where(ranked.c.rn == 1)
-        for row in db.execute(latest_q):
-            last_scores[row.trace_id] = float(row.aggregate_score) if row.aggregate_score is not None else None
     cost_sources = _bulk_cost_source_for_traces(db, trace_ids)
     models = _bulk_model_for_traces(db, trace_ids)
     flag_counts = dict(
@@ -687,9 +707,10 @@ def list_traces(
         .all()
     )
     data = []
-    for row in rows:
+    for row, last_score, last_verdict in page:
         item = TraceOut.model_validate(row).model_dump()
-        item["last_score"] = last_scores.get(row.id)
+        item["last_score"] = float(last_score) if last_score is not None else None
+        item["last_verdict"] = last_verdict
         item["slow_reason"] = effective_slow_kind
         item["cost_source"] = _classify_cost_source(row, span_label=cost_sources.get(row.id))
         item["model"] = models.get(row.id)
