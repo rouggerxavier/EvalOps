@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, JSON, Numeric, String, Text, UniqueConstraint, text
+from sqlalchemy import Boolean, CheckConstraint, DateTime, Float, ForeignKey, ForeignKeyConstraint, Index, Integer, JSON, Numeric, String, Text, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
@@ -499,3 +499,40 @@ class RevokedToken(Base):
     jti: Mapped[str] = mapped_column(String(64), primary_key=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     revoked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class EvaluationSamplingConfig(Base):
+    __tablename__ = "evaluation_sampling_configs"
+    __table_args__ = (
+        CheckConstraint("percentage >= 0 AND percentage <= 100", name="ck_sampling_percentage"),
+        ForeignKeyConstraint(["rubric_id", "rubric_version"], ["rubric_versions.rubric_id", "rubric_versions.version"], ondelete="RESTRICT"),
+    )
+
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), primary_key=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    percentage: Mapped[float] = mapped_column(Float, default=0, server_default="0")
+    rubric_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    rubric_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
+class EvaluationSamplingJob(Base):
+    """Durable selection/outbox: one automatic evaluation per newly accepted trace."""
+    __tablename__ = "evaluation_sampling_jobs"
+    __table_args__ = (
+        ForeignKeyConstraint(["rubric_id", "rubric_version"], ["rubric_versions.rubric_id", "rubric_versions.version"], ondelete="RESTRICT"),
+        Index("ix_sampling_jobs_dispatch", "status", "next_attempt_at"),
+    )
+
+    trace_id: Mapped[str] = mapped_column(ForeignKey("traces.id", ondelete="CASCADE"), primary_key=True)
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
+    rubric_id: Mapped[str] = mapped_column(String(64))
+    rubric_version: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(16), default="pending")
+    reason: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    run_id: Mapped[str | None] = mapped_column(ForeignKey("evaluation_runs.id", ondelete="SET NULL"), nullable=True)
+    dispatch_attempts: Mapped[int] = mapped_column(Integer, default=0)
+    execution_attempts: Mapped[int] = mapped_column(Integer, default=0)
+    next_attempt_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)

@@ -1,11 +1,15 @@
 import { AlertCircle, CheckCircle2 } from "lucide-react";
 
+import { SamplingSettings } from "@/components/SamplingSettings";
 import { QualityGateForm } from "@/components/QualityGateForm";
 import { AuthRequiredPanel } from "@/components/AuthRequiredPanel";
 import { Copyable } from "@/components/ui/Copyable";
 import { createProjectAction, patchProjectAction } from "@/lib/actions";
 import {
   getQualityGateConfig,
+  getSamplingConfig,
+  getSamplingJobs,
+  getRubrics,
   getMembers,
   getOrganizationSubscription,
   getOrganizationUsage,
@@ -18,7 +22,7 @@ import type { Member, OrgSubscription, OrgUsage, Project } from "@/lib/types";
 
 type Props = {
   params: Promise<{ org: string; project: string }>;
-  searchParams: Promise<{ updated?: string; created?: string; error?: string; gate_saved?: string }>;
+  searchParams: Promise<{ updated?: string; created?: string; error?: string; gate_saved?: string; sampling_saved?: string; sampling_retried?: string }>;
 };
 
 function usd(value: number): string {
@@ -134,7 +138,7 @@ export default async function SettingsPage({ params, searchParams }: Props) {
   if (!(await hasAuthToken())) return <AuthRequiredPanel layout="main" />;
 
   const resolved = await resolveProject(org, project);
-  const [projectsResult, membersResult, usageResult, subscriptionResult, gateConfig] = await Promise.all([
+  const [projectsResult, membersResult, usageResult, subscriptionResult, gateConfig, samplingData] = await Promise.all([
     getProjects(resolved.org_id)
       .then((result) => ({ data: result.data, error: null as string | null }))
       .catch((error) => ({ data: [] as Project[], error: safeErrorMessage(error, "Falha ao carregar projetos.") })),
@@ -151,6 +155,9 @@ export default async function SettingsPage({ params, searchParams }: Props) {
       .then((subscription) => ({ subscription, error: null as string | null }))
       .catch((error) => ({ subscription: null, error: safeErrorMessage(error, "Falha ao carregar plano.") })),
     getQualityGateConfig(resolved.project_id).catch(() => null),
+    Promise.all([getSamplingConfig(resolved.project_id), getSamplingJobs(resolved.project_id), getRubrics(resolved.project_id)])
+      .then(([config, jobs, rubrics]) => ({ config, jobs: jobs.data, rubrics: rubrics.data }))
+      .catch(() => null),
   ]);
 
   const projectRecord = projectsResult.data.find((item) => item.id === resolved.project_id) ?? null;
@@ -161,7 +168,7 @@ export default async function SettingsPage({ params, searchParams }: Props) {
       <header className="page-header">
         <div>
           <h1 className="page-header__title">Ajustes</h1>
-          <p className="page-header__subtitle">Quality Gate, projeto, plano, membros e novos projetos da organização.</p>
+          <p className="page-header__subtitle">Avaliação automática, Quality Gate, projeto, plano e membros da organização.</p>
         </div>
       </header>
 
@@ -172,6 +179,9 @@ export default async function SettingsPage({ params, searchParams }: Props) {
 
       {qp.gate_saved === "1" ? <p className="ops-note" role="status"><CheckCircle2 size={14} aria-hidden="true" /> Quality Gate salvo. Confira o resultado na visão geral.</p> : null}
       <QualityGateForm config={gateConfig} org={org} project={project} />
+      {qp.sampling_saved === "1" ? <p className="ops-note" role="status">Avaliação automática salva. A regra vale para novos traces.</p> : null}
+      {qp.sampling_retried === "1" ? <p className="ops-note" role="status">Nova tentativa solicitada. Acompanhe o estado abaixo.</p> : null}
+      <SamplingSettings data={samplingData} org={org} project={project} />
 
       <div className="grid-2-eq ops-settings-grid">
         <div className="ops-stack">
