@@ -135,18 +135,21 @@ capturas estão em [amostragem-qa-2026-11-08.md](amostragem-qa-2026-11-08.md).
 ### Atualização em 2026-11-08: avisos e contexto dos traces
 
 Uma tag inválida mantém o texto digitado, abre os filtros avançados e mostra que
-o filtro não foi aplicado, com orientação `chave:valor`. A validação nativa impede
-novo envio inválido; uma URL já inválida recebe aviso acessível. Tags válidas e
-paginação preservam o comportamento anterior.
+o filtro não foi aplicado, com orientação `chave:valor`. A validação ocorre após
+o GET, inclusive quando os filtros estavam recolhidos; uma URL já inválida recebe
+o mesmo aviso acessível. Tags válidas, vazias e paginação preservam o comportamento
+anterior. A entrada contendo apenas espaços é normalizada para vazio.
 
 O agrupamento do detalhe chama-se Turnos da conversa, enquanto a aba continua
 Conversa. O formulário de lote informa que avaliações concluídas com veredito na
 mesma rubrica/versão são ignoradas e que erros/parciais sem veredito podem voltar
 à fila e gerar novo custo. Nenhuma regra de reenvio da API foi alterada.
 
-Validação local: 207 testes web, typecheck, detector sem achados e Chromium
-isolado sobre SSR real em 1280/390 px. O backend foi inspecionado; não houve E2E
-autenticado nem API/Redis compartilhado. O build permanece no gate da CI.
+Validação local final: 26 testes web direcionados, typecheck, detector sem
+achados e Chromium sem JavaScript sobre SSR real em 1280/390 px. O fluxo com
+filtros fechados envia o GET e recebe campo revelado com aviso. O backend foi
+inspecionado; não houve E2E autenticado nem API/Redis compartilhado. O build
+permanece no gate da CI.
 
 ## Segurança
 
