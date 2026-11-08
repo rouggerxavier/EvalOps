@@ -9,7 +9,7 @@ const page = readFileSync(
 
 test("overview: server contract uses overview, attention, traces and rubric reports", () => {
   assert.match(page, /getOverview\(projectId, environment, window_\)/);
-  assert.match(page, /getAttention\(projectId\)/);
+  assert.match(page, /getAttention\(projectId, environment\)/);
   assert.match(page, /getRubrics\(projectId\)/);
   assert.match(page, /getRubricReport\(projectId, rubric\.id, window_, environment\)/);
   assert.match(page, /getTraces\(\{[^}]*projectId/);
