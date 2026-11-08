@@ -54,7 +54,6 @@ Dois defeitos novos apareceram e foram corrigidos:
 
 Limites atuais:
 
-- Na visão geral, Atenção e Cobertura ainda ignoram o ambiente.
 - Com "qualquer env" em Traces e o chip em `dev`, o chip continua mostrando `dev` nessa visão.
 - A navegação por conversa mostra os 50 turnos mais recentes, sem paginação no detalhe.
 - O painel de run mostra nota parcial ao lado de "sem veredito", avisando que ela cobre apenas os avaliadores que mediram.
@@ -150,6 +149,23 @@ achados e Chromium sem JavaScript sobre SSR real em 1280/390 px. O fluxo com
 filtros fechados envia o GET e recebe campo revelado com aviso. O backend foi
 inspecionado; não houve E2E autenticado nem API/Redis compartilhado. O build
 permanece no gate da CI.
+
+### Atualização em 2026-11-08: ambiente na Atenção e na API de Cobertura
+
+A lista e as contagens de Atenção respeitam o ambiente escolhido na visão geral.
+A API de Cobertura também aceita o filtro, incluindo denominadores, traces
+avaliados e execuções dos últimos sete dias. O cliente mantém os argumentos
+anteriores compatíveis; a visão geral atual não consome esse endpoint nem ganhou
+um card novo de cobertura.
+
+Os links preservam o ambiente ou explicitam sua limpeza para todos, evitando que
+o cookie anterior reapareça como filtro ao navegar. A janela de `runs_7d` e sua
+contagem histórica de traces excluídos foram preservadas. O isolamento também
+confere o projeto da execução.
+
+Validação local: 15 testes API, 13 testes web direcionados e typecheck. A regressão
+foi reproduzida antes do fix. Não houve alteração de JSON, índices ou migrations;
+Postgres e browser não foram repetidos. O build permanece no gate da CI.
 
 ## Segurança
 

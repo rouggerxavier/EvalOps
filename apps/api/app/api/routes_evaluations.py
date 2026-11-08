@@ -257,15 +257,19 @@ def _window_days(window: str) -> int:
 def get_project_coverage(
     project_id: str,
     window: str = Query("7d", pattern=r"^(24h|7d|30d)$"),
+    environment: str | None = Query(None, pattern=r"^(dev|staging|prod)$"),
     actor: Actor = Depends(actor_access("read")),
     db: Session = Depends(get_db),
 ) -> dict:
     project = load_project(db, actor, project_id)
     cutoff = datetime.now(timezone.utc) - timedelta(days=_window_days(window))
     seven_days_ago = datetime.now(timezone.utc) - timedelta(days=7)
+    trace_filters = [Trace.project_id == project.id]
+    if environment:
+        trace_filters.append(Trace.environment == environment)
     total_traces = (
         db.query(func.count(Trace.id))
-        .filter(Trace.project_id == project.id, Trace.deleted_at.is_(None), Trace.created_at >= cutoff)
+        .filter(*trace_filters, Trace.deleted_at.is_(None), Trace.created_at >= cutoff)
         .scalar()
         or 0
     )
@@ -276,9 +280,10 @@ def get_project_coverage(
             db.query(func.count(func.distinct(EvaluationRun.trace_id)))
             .join(Trace, EvaluationRun.trace_id == Trace.id)
             .filter(
-                Trace.project_id == project.id,
+                *trace_filters,
                 Trace.deleted_at.is_(None),
                 Trace.created_at >= cutoff,
+                EvaluationRun.project_id == project.id,
                 EvaluationRun.rubric_id == rubric.id,
                 EvaluationRun.status == "completed",
             )
@@ -287,7 +292,9 @@ def get_project_coverage(
         )
         runs_7d = (
             db.query(func.count(EvaluationRun.id))
+            .join(Trace, EvaluationRun.trace_id == Trace.id)
             .filter(
+                *trace_filters,
                 EvaluationRun.project_id == project.id,
                 EvaluationRun.rubric_id == rubric.id,
                 EvaluationRun.created_at >= seven_days_ago,

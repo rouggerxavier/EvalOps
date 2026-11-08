@@ -101,16 +101,19 @@ export async function getOverview(
   return fetchJson<OverviewResponse>(`/analytics/overview?${params.toString()}`);
 }
 
-export async function getAttention(projectId: string): Promise<AttentionResponse> {
-  return fetchJson<AttentionResponse>(`/projects/${projectId}/attention`);
+export async function getAttention(projectId: string, environment?: string): Promise<AttentionResponse> {
+  const suffix = environment ? `?environment=${encodeURIComponent(environment)}` : "";
+  return fetchJson<AttentionResponse>(`/projects/${projectId}/attention${suffix}`);
 }
 
 export async function getCoverage(
   projectId: string,
   window?: "24h" | "7d" | "30d",
+  environment?: string,
 ): Promise<CoverageResponse> {
   const params = new URLSearchParams();
   if (window) params.set("window", window);
+  if (environment) params.set("environment", environment);
   const suffix = params.toString() ? `?${params.toString()}` : "";
   return fetchJson<CoverageResponse>(`/projects/${projectId}/coverage${suffix}`);
 }
