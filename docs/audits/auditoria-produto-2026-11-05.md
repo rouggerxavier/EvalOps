@@ -54,7 +54,6 @@ Dois defeitos novos apareceram e foram corrigidos:
 
 Limites atuais:
 
-- Na visão geral, Atenção e Cobertura ainda ignoram o ambiente.
 - Com "qualquer env" em Traces e o chip em `dev`, o chip continua mostrando `dev` nessa visão.
 - Tags sem `:` são descartadas no filtro sem aviso.
 - A navegação por conversa mostra os 50 turnos mais recentes, sem paginação no detalhe. O título Conversa aparece no agrupamento e na aba.
@@ -133,6 +132,23 @@ verde precederam o merge.
 Operação, migração e limites estão em
 [avaliacao-amostragem.md](../ops/avaliacao-amostragem.md). Comandos, cenários e
 capturas estão em [amostragem-qa-2026-11-08.md](amostragem-qa-2026-11-08.md).
+
+### Atualização em 2026-11-08: ambiente na Atenção e na API de Cobertura
+
+A lista e as contagens de Atenção respeitam o ambiente escolhido na visão geral.
+A API de Cobertura também aceita o filtro, incluindo denominadores, traces
+avaliados e execuções dos últimos sete dias. O cliente mantém os argumentos
+anteriores compatíveis; a visão geral atual não consome esse endpoint nem ganhou
+um card novo de cobertura.
+
+Os links preservam o ambiente ou explicitam sua limpeza para todos, evitando que
+o cookie anterior reapareça como filtro ao navegar. A janela de `runs_7d` e sua
+contagem histórica de traces excluídos foram preservadas. O isolamento também
+confere o projeto da execução.
+
+Validação local: 15 testes API, 13 testes web direcionados e typecheck. A regressão
+foi reproduzida antes do fix. Não houve alteração de JSON, índices ou migrations;
+Postgres e browser não foram repetidos. O build permanece no gate da CI.
 
 ## Segurança
 
