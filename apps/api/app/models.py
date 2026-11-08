@@ -532,6 +532,7 @@ class EvaluationSamplingJob(Base):
     reason: Mapped[str | None] = mapped_column(String(64), nullable=True)
     run_id: Mapped[str | None] = mapped_column(ForeignKey("evaluation_runs.id", ondelete="SET NULL"), nullable=True)
     dispatch_attempts: Mapped[int] = mapped_column(Integer, default=0)
+    execution_attempts: Mapped[int] = mapped_column(Integer, default=0)
     next_attempt_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)

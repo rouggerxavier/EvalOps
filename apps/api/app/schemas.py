@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator
 
 
 class OrganizationCreate(BaseModel):
@@ -713,6 +713,18 @@ class EvaluationSamplingJobOut(BaseModel):
     reason: str | None
     run_id: str | None
     dispatch_attempts: int
+    execution_attempts: int
     next_attempt_at: datetime
     created_at: datetime
     updated_at: datetime
+
+    @computed_field
+    @property
+    def retry_warning(self) -> str | None:
+        if self.status == "uncertain":
+            return "A tentativa pode ter sido cobrada pelo provider sem resultado salvo. Tentar novamente pode gerar nova cobrança."
+        return None
+
+
+class EvaluationSamplingRetryIn(BaseModel):
+    confirm_possible_charge: bool = False

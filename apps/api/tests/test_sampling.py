@@ -9,7 +9,7 @@ from threading import Event
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
 from app.db import Base, SessionLocal, get_db
@@ -275,13 +275,17 @@ def test_evaluation_and_marker_rollback_together_on_failure(env, monkeypatch):
         original(*args, **kwargs)
         raise RuntimeError("failure before final commit")
     monkeypatch.setattr(sampling_service, "evaluate_trace", fail_after_evaluation)
-    assert process_sample(env["factory"], trace_id)["status"] == "error"
+    assert process_sample(env["factory"], trace_id)["status"] == "uncertain"
     with env["factory"]() as db:
         assert db.query(EvaluationRun).count() == 0
         assert db.query(UsageCounter).one().evaluations_run == 0
         assert db.get(EvaluationSamplingJob, trace_id).run_id is None
     monkeypatch.setattr(sampling_service, "evaluate_trace", original)
     response = env["client"].post(env["url"] + f"/jobs/{trace_id}/retry", headers=env["headers"])
+    assert response.status_code == 409
+    assert response.json()["detail"]["error"] == "sampling_retry_requires_cost_confirmation"
+    response = env["client"].post(env["url"] + f"/jobs/{trace_id}/retry", headers=env["headers"],
+                                  json={"confirm_possible_charge": True})
     assert response.status_code == 200
     assert process_sample(env["factory"], trace_id)["status"] == "completed"
 
@@ -299,16 +303,99 @@ def test_postgres_concurrent_delivery_spends_once(env, monkeypatch):
         assert release.wait(10)
         return original(*args, **kwargs)
     monkeypatch.setattr(sampling_service, "evaluate_trace", hold_evaluation)
-    with ThreadPoolExecutor(max_workers=2) as executor:
-        first = executor.submit(process_sample, env["factory"], trace_id)
-        assert entered.wait(5)
-        second = executor.submit(process_sample, env["factory"], trace_id)
-        try:
-            assert second.result(5) == {"status": "busy"}
-        finally:
-            release.set()
-        assert first.result(10)["status"] == "completed"
+    other_engine = create_engine(os.environ["SAMPLING_TEST_DATABASE_URL"], pool_size=1, max_overflow=0)
+    other_factory = sessionmaker(bind=other_engine, expire_on_commit=False, autoflush=False)
+    try:
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            first = executor.submit(process_sample, env["factory"], trace_id)
+            assert entered.wait(5)
+            # Independent connection pools emulate workers that share no Python lock.
+            second = executor.submit(process_sample, other_factory, trace_id)
+            try:
+                assert second.result(5) == {"status": "busy"}
+            finally:
+                release.set()
+            assert first.result(10)["status"] == "completed"
+    finally:
+        other_engine.dispose()
     assert process_sample(env["factory"], trace_id)["status"] == "completed"
     with env["factory"]() as db:
         assert db.query(EvaluationRun).count() == 1
         assert db.query(UsageCounter).one().evaluations_run == 1
+
+
+@pytest.mark.parametrize("failure", [Exception, BaseException])
+def test_provider_failure_blocks_automatic_redelivery_and_warns_before_manual_retry(env, monkeypatch, failure):
+    configure(env)
+    trace_id = ingest(env)
+    factory = env["factory"]
+    engine = None
+    if os.getenv("SAMPLING_TEST_DATABASE_URL"):
+        # A pinned lock and all evaluation commits must work in a single pool slot.
+        engine = create_engine(os.environ["SAMPLING_TEST_DATABASE_URL"], pool_size=1, max_overflow=0, pool_timeout=1)
+        factory = sessionmaker(bind=engine, expire_on_commit=False, autoflush=False)
+    original = sampling_service.evaluate_trace
+    provider_calls = 0
+    provider_spend = 0.0
+    class WorkerCrash(failure):
+        pass
+    def charged_then_crashed(*args, **kwargs):
+        nonlocal provider_calls, provider_spend
+        provider_calls += 1
+        provider_spend += 0.30
+        original(*args, **kwargs)
+        raise WorkerCrash("provider billed before final commit")
+    monkeypatch.setattr(sampling_service, "evaluate_trace", charged_then_crashed)
+    queue = Queue()
+    ctx = {"db_session_factory": factory, "redis": queue}
+    try:
+        assert asyncio.run(dispatch_sampling_job(ctx))["enqueued"] == 1
+        if failure is BaseException:
+            with pytest.raises(WorkerCrash):
+                process_sample(factory, trace_id)
+        else:
+            assert process_sample(factory, trace_id)["status"] == "uncertain"
+        with factory() as db:
+            job = db.get(EvaluationSamplingJob, trace_id)
+            assert job.status == ("started" if failure is BaseException else "uncertain")
+            assert job.execution_attempts == 1
+            assert db.query(EvaluationRun).count() == 0
+            assert db.query(UsageCounter).one().evaluations_run == 0
+            assert float(db.query(UsageCounter).one().cost_usd) == 0
+            if engine:
+                assert db.execute(text("SELECT count(*) FROM pg_locks WHERE locktype='advisory' AND pid=pg_backend_pid()")).scalar() == 0
+            job.next_attempt_at = utcnow() - timedelta(seconds=1)
+            db.commit()
+        if failure is BaseException:
+            # A failed recovery enqueue must preserve the durable execution marker.
+            queue.fail = True
+            assert asyncio.run(dispatch_sampling_job(ctx))["failed"] == 1
+            with factory() as db:
+                job = db.get(EvaluationSamplingJob, trace_id)
+                assert job.status == "started"
+                job.next_attempt_at = utcnow() - timedelta(seconds=1)
+                db.commit()
+            queue.fail = False
+            assert asyncio.run(dispatch_sampling_job(ctx))["enqueued"] == 1
+        assert process_sample(factory, trace_id)["status"] == "uncertain"
+        assert asyncio.run(dispatch_sampling_job(ctx))["enqueued"] == 0
+        assert process_sample(factory, trace_id)["status"] == "uncertain"
+        assert provider_calls == 1 and provider_spend == 0.30
+        job_out = env["client"].get(env["url"] + "/jobs", headers=env["headers"]).json()["data"][0]
+        assert job_out["status"] == "uncertain" and "nova cobrança" in job_out["retry_warning"]
+        retry_url = env["url"] + f"/jobs/{trace_id}/retry"
+        assert env["client"].post(retry_url, headers=env["headers"]).status_code == 409
+        assert env["client"].post(retry_url, headers=env["headers"], json={"confirm_possible_charge": False}).status_code == 409
+        assert env["client"].post(retry_url, headers={"X-EvalOps-Key": env["key"]},
+                                    json={"confirm_possible_charge": True}).status_code == 200
+        monkeypatch.setattr(sampling_service, "evaluate_trace", original)
+        assert process_sample(factory, trace_id)["status"] == "completed"
+        with factory() as db:
+            assert db.get(EvaluationSamplingJob, trace_id).execution_attempts == 2
+            assert db.query(EvaluationRun).count() == 1
+            assert db.query(UsageCounter).one().evaluations_run == 1
+            if engine:
+                assert db.execute(text("SELECT count(*) FROM pg_locks WHERE locktype='advisory' AND pid=pg_backend_pid()")).scalar() == 0
+    finally:
+        if engine:
+            engine.dispose()

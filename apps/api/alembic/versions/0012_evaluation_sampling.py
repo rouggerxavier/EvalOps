@@ -36,6 +36,7 @@ def upgrade() -> None:
         sa.Column("reason", sa.String(64), nullable=True),
         sa.Column("run_id", sa.String(64), sa.ForeignKey("evaluation_runs.id", ondelete="SET NULL"), nullable=True),
         sa.Column("dispatch_attempts", sa.Integer(), nullable=False),
+        sa.Column("execution_attempts", sa.Integer(), nullable=False),
         sa.Column("next_attempt_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),

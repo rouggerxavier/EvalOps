@@ -16,7 +16,7 @@ async def dispatch_sampling_job(ctx: dict) -> dict:
     enqueued = failed = 0
     with ctx["db_session_factory"]() as db:
         jobs = db.query(EvaluationSamplingJob).filter(
-            EvaluationSamplingJob.status.in_(["pending", "queue_error", "queued"]),
+            EvaluationSamplingJob.status.in_(["pending", "queue_error", "queued", "started"]),
             EvaluationSamplingJob.next_attempt_at <= now,
         ).order_by(EvaluationSamplingJob.next_attempt_at).limit(100).with_for_update(skip_locked=True).all()
         for job in jobs:
@@ -25,13 +25,15 @@ async def dispatch_sampling_job(ctx: dict) -> dict:
                     "evaluate_sample_job", trace_id=job.trace_id,
                     _job_id=f"sample:{job.trace_id}:{job.dispatch_attempts + 1}",
                 )
-                job.status, job.reason = "queued", None
+                if job.status != "started":
+                    job.status, job.reason = "queued", None
                 job.dispatch_attempts += 1
-                # Recovery for a queue lost after enqueue acknowledgement; execution is idempotent.
+                # Recover lost deliveries; a started attempt is inspected without repeating the evaluation.
                 job.next_attempt_at = now + timedelta(minutes=5)
                 enqueued += int(result is not None)
             except Exception:
-                job.status, job.reason = "queue_error", "evaluation_queue_unavailable"
+                if job.status != "started":
+                    job.status, job.reason = "queue_error", "evaluation_queue_unavailable"
                 job.next_attempt_at = now + timedelta(minutes=1)
                 failed += 1
             job.updated_at = now

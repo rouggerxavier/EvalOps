@@ -10,12 +10,16 @@ from fastapi import HTTPException
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from app.domain.services.eval_service import DuplicateEvaluation, JudgeBudgetExhausted, evaluate_trace, existing_run
+from app.domain.services.eval_service import (
+    DuplicateEvaluation, JudgeBudgetExhausted, evaluate_trace, existing_run,
+    judge_budget_status, rubric_uses_llm_judge,
+)
+from app.domain.services.usage_service import enforce_quota
 from app.models import EvaluationSamplingConfig, EvaluationSamplingJob, Project, Rubric, RubricVersion, Trace, utcnow
 
 _sqlite_lock = Lock()
 logger = logging.getLogger("evalops.sampling")
-TERMINAL_STATUSES = {"completed", "skipped", "blocked", "error"}
+TERMINAL_STATUSES = {"completed", "skipped", "blocked", "error", "uncertain"}
 
 
 def configure_sampling(db: Session, project: Project, settings: dict) -> EvaluationSamplingConfig:
@@ -57,10 +61,27 @@ def select_trace(db: Session, project: Project, trace_id: str, client_trace_id: 
 @contextmanager
 def _execution_lock(db: Session, trace_id: str):
     if db.get_bind().dialect.name == "postgresql":
-        # Separate transaction: evaluate_trace releases its preflight transaction.
+        # Session lock survives preflight commits on the same connection: one pool slot per job.
         key = int.from_bytes(hashlib.sha256(f"sampling:{trace_id}".encode()).digest()[:8], "big", signed=True)
-        with db.get_bind().connect() as connection, connection.begin():
-            yield bool(connection.execute(text("SELECT pg_try_advisory_xact_lock(:key)"), {"key": key}).scalar())
+        engine = db.get_bind()
+        with engine.connect() as connection:
+            db.bind = connection
+            acquired = False
+            try:
+                acquired = bool(connection.execute(text("SELECT pg_try_advisory_lock(:key)"), {"key": key}).scalar())
+                connection.commit()
+                yield acquired
+            finally:
+                try:
+                    db.rollback()
+                    if acquired:
+                        connection.execute(text("SELECT pg_advisory_unlock(:key)"), {"key": key})
+                        connection.commit()
+                except BaseException:
+                    connection.invalidate()
+                    raise
+                finally:
+                    db.bind = engine
     else:
         # shortcut: SQLite workers serialize within one process; use Postgres for multiple workers.
         acquired = _sqlite_lock.acquire(blocking=False)
@@ -80,6 +101,11 @@ def process_sample(db_factory, trace_id: str) -> dict:
             return {"status": "skipped", "reason": "not_found"}
         if job.status in TERMINAL_STATUSES:
             return {"status": job.status, "run_id": job.run_id, "reason": job.reason}
+        if job.status == "started":
+            job.status, job.reason = "uncertain", "possible_provider_charge"
+            job.updated_at = utcnow()
+            db.commit()
+            return {"status": job.status, "run_id": job.run_id, "reason": job.reason}
         trace = db.get(Trace, trace_id)
         project = db.get(Project, job.project_id)
         rubric = db.get(Rubric, job.rubric_id)
@@ -94,7 +120,19 @@ def process_sample(db_factory, trace_id: str) -> dict:
                 job.run_id = previous.id
                 job.status, job.reason = "skipped", "already_evaluated"
             else:
+                attempt_started = False
                 try:
+                    # These checks do not reserve provider spend; any later failure may have spent money.
+                    if rubric_uses_llm_judge(version.id, db):
+                        has_budget, spent, budget = judge_budget_status(project.id, db)
+                        if not has_budget:
+                            raise JudgeBudgetExhausted(spent, budget)
+                    enforce_quota(db, project, "evaluations_run", 1)
+                    job.status, job.reason = "started", "execution_in_progress"
+                    job.execution_attempts += 1
+                    job.updated_at = utcnow()
+                    db.commit()
+                    attempt_started = True
                     run = evaluate_trace(db, trace, rubric, version.version, version.id, project,
                                          triggered_by="sampling", user_id=None)
                     job.run_id = run.id
@@ -111,15 +149,20 @@ def process_sample(db_factory, trace_id: str) -> dict:
                 except HTTPException as exc:
                     db.rollback()
                     job = db.get(EvaluationSamplingJob, trace_id)
-                    job.status = "blocked" if exc.status_code == 402 else "error"
-                    job.reason = "quota_exceeded" if exc.status_code == 402 else "evaluation_failed"
+                    if attempt_started:
+                        job.status, job.reason = "uncertain", "possible_provider_charge"
+                    elif exc.status_code == 402:
+                        job.status, job.reason = "blocked", "quota_exceeded"
+                    else:
+                        job.status, job.reason = "error", "evaluation_failed"
                 except Exception as exc:
                     logger.error("sampling.evaluation_failed trace_id=%s", trace_id,
                                  extra={"event": "sampling.evaluation_failed", "error": type(exc).__name__})
                     db.rollback()
                     job = db.get(EvaluationSamplingJob, trace_id)
-                    job.status, job.reason = "error", "evaluation_failed"
+                    job.status = "uncertain" if attempt_started else "error"
+                    job.reason = "possible_provider_charge" if attempt_started else "evaluation_failed"
         job.updated_at = utcnow()
-        # The run, usage and link become durable together; delivery retry cannot spend twice.
+        # Run, usage and link commit together; the earlier started marker protects uncertain provider spend.
         db.commit()
         return {"status": job.status, "run_id": job.run_id, "reason": job.reason}
