@@ -399,3 +399,24 @@ def test_provider_failure_blocks_automatic_redelivery_and_warns_before_manual_re
     finally:
         if engine:
             engine.dispose()
+
+
+def test_job_list_keeps_older_uncertain_attempts_visible(env):
+    assert configure(env).status_code == 200
+    older = ingest(env, "older-uncertain")
+    with env["factory"]() as db:
+        job = db.get(EvaluationSamplingJob, older)
+        job.status, job.reason = "uncertain", "possible_provider_charge"
+        job.created_at = utcnow() - timedelta(days=1)
+        db.commit()
+    for number in range(21):
+        trace_id = ingest(env, f"recent-completed-{number}")
+        with env["factory"]() as db:
+            db.get(EvaluationSamplingJob, trace_id).status = "completed"
+            db.commit()
+    response = env["client"].get(env["url"] + "/jobs?limit=20", headers=env["headers"])
+    assert response.status_code == 200
+    rows = response.json()["data"]
+    assert len(rows) == 20
+    assert rows[0]["trace_id"] == older
+    assert rows[0]["retry_warning"] is not None

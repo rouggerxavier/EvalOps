@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import case
 from sqlalchemy.orm import Session
 
 from app.db import get_db
@@ -30,6 +31,8 @@ def put_sampling(payload: EvaluationSamplingSettings, project: Project = Depends
 def list_sampling_jobs(limit: int = Query(100, ge=1, le=100),
                        project: Project = Depends(project_access("read")), db: Session = Depends(get_db)):
     jobs = db.query(EvaluationSamplingJob).filter_by(project_id=project.id).order_by(
+        case((EvaluationSamplingJob.status == "uncertain", 0),
+             (EvaluationSamplingJob.status.in_(["blocked", "error"]), 1), else_=2),
         EvaluationSamplingJob.created_at.desc(), EvaluationSamplingJob.trace_id).limit(limit).all()
     return {"data": [EvaluationSamplingJobOut.model_validate(job).model_dump() for job in jobs]}
 

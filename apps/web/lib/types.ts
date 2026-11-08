@@ -550,3 +550,22 @@ export type RubricReport = {
     avg_judge_stddev: number | null;
   }[];
 };
+
+export type SamplingConfig = {
+  enabled: boolean;
+  percentage: number;
+  rubric_id: string | null;
+  rubric_version: number | null;
+  updated_at?: string | null;
+};
+
+export type SamplingJob = {
+  trace_id: string;
+  rubric_id: string;
+  rubric_version: number;
+  status: string;
+  reason: string | null;
+  run_id: string | null;
+  execution_attempts: number;
+  retry_warning: string | null;
+};
