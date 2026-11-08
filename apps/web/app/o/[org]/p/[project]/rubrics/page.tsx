@@ -359,7 +359,7 @@ export default async function RubricsPage({ params, searchParams }: Props) {
                 </>
               )}
 
-              <Card title="Avaliar em lote" subtitle="Avalia os traces mais recentes que ainda não têm resultado nesta versão">
+              <Card title="Avaliar em lote" subtitle="Avaliações concluídas com veredito nesta rubrica e versão são ignoradas. Avaliações com erro ou parciais sem veredito podem voltar à fila e gerar novo custo.">
                 <form action={triggerEvaluationBatchAction} className="ops-batch-form">
                   <input type="hidden" name="org" value={org} />
                   <input type="hidden" name="project" value={project} />

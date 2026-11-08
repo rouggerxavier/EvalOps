@@ -96,7 +96,7 @@ test("trace list filters by period, tag, user, model, score and failures, and th
 test("conversation turns are listed on the trace and filterable in the list", () => {
   const detail = read(`${PROJECT}/traces/[trace]/page.tsx`);
   assert.match(detail, /getTraces\(\{ projectId: t\.project_id, conversation_id: conversationId, limit: 50 \}\)/);
-  assert.match(detail, /title="Conversa"/);
+  assert.match(detail, /title="Turnos da conversa"/);
   assert.match(detail, /\[\.\.\.conversation\.data\]\.reverse\(\)/);
   assert.match(detail, /este turno/);
   assert.match(detail, /turn\.redacted \? <span className="tag">redigido<\/span>/);
