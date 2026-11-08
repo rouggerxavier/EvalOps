@@ -28,6 +28,8 @@ import {
   markNotificationsRead,
   patchProject,
   putQualityGateConfig,
+  putSamplingConfig,
+  retrySamplingJob,
   resolveProject,
   rerunTrace,
   revokeApiKey,
@@ -723,4 +725,49 @@ export async function saveQualityGateAction(formData: FormData): Promise<void> {
     errorMsg = messageFromActionError(error, "Não foi possível salvar o Quality Gate.");
   }
   redirectWithMessage(path, errorMsg ? { error: errorMsg } : { gate_saved: "1" });
+}
+
+export async function saveSamplingAction(formData: FormData): Promise<void> {
+  const org = String(formData.get("org") ?? "");
+  const project = String(formData.get("project") ?? "");
+  const path = projectPath(org, project, "settings");
+  const enabled = formData.get("enabled") === "on";
+  const rawPercentage = String(formData.get("percentage") ?? "").trim();
+  const percentage = Number(rawPercentage);
+  const rubricId = String(formData.get("rubric_id") ?? "").trim();
+  const rawVersion = String(formData.get("rubric_version") ?? "").trim();
+  const rubricVersion = rawVersion ? Number(rawVersion) : null;
+  if (!rawPercentage || !Number.isFinite(percentage) || percentage < 0 || percentage > 100
+    || (rubricVersion !== null && (!Number.isInteger(rubricVersion) || rubricVersion < 1))
+    || Boolean(rubricId) !== (rubricVersion !== null) || (enabled && !rubricId)) {
+    redirectWithMessage(path, { error: "Confira percentual, rubrica e versão da avaliação automática." });
+  }
+  let errorMsg: string | null = null;
+  try {
+    const resolved = await resolveProject(org, project);
+    await putSamplingConfig(resolved.project_id, {
+      enabled, percentage, rubric_id: rubricId || null, rubric_version: rubricVersion,
+    });
+    revalidatePath(path);
+  } catch (error) {
+    errorMsg = messageFromActionError(error, "Não foi possível salvar a avaliação automática.");
+  }
+  redirectWithMessage(path, errorMsg ? { error: errorMsg } : { sampling_saved: "1" });
+}
+
+export async function retrySamplingAction(formData: FormData): Promise<void> {
+  const org = String(formData.get("org") ?? "");
+  const project = String(formData.get("project") ?? "");
+  const path = projectPath(org, project, "settings");
+  const traceId = String(formData.get("trace_id") ?? "").trim();
+  if (!traceId || traceId.length > 64) redirectWithMessage(path, { error: "Trace inválido." });
+  let errorMsg: string | null = null;
+  try {
+    const resolved = await resolveProject(org, project);
+    await retrySamplingJob(resolved.project_id, traceId, formData.get("confirm_possible_charge") === "on");
+    revalidatePath(path);
+  } catch (error) {
+    errorMsg = messageFromActionError(error, "Não foi possível solicitar outra tentativa.");
+  }
+  redirectWithMessage(path, errorMsg ? { error: errorMsg } : { sampling_retried: "1" });
 }

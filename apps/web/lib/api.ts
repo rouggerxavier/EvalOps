@@ -1,4 +1,6 @@
 import type {
+  SamplingConfig,
+  SamplingJob,
   QualityGateConfig,
   QualityGateSettings,
   QualityGateStatus,
@@ -585,4 +587,22 @@ export async function getQualityGateStatus(projectId: string, environment?: stri
   const params = new URLSearchParams({ window });
   if (environment) params.set("environment", environment);
   return fetchJson<QualityGateStatus>(`/projects/${projectId}/quality-gate/status?${params.toString()}`);
+}
+
+export async function getSamplingConfig(projectId: string): Promise<SamplingConfig> {
+  return fetchJson<SamplingConfig>(`/projects/${projectId}/evaluation-sampling`);
+}
+
+export async function putSamplingConfig(projectId: string, config: SamplingConfig): Promise<SamplingConfig> {
+  return requestJson<SamplingConfig>(`/projects/${projectId}/evaluation-sampling`, { method: "PUT", body: JSON.stringify(config) });
+}
+
+export async function getSamplingJobs(projectId: string): Promise<{ data: SamplingJob[] }> {
+  return fetchJson<{ data: SamplingJob[] }>(`/projects/${projectId}/evaluation-sampling/jobs?limit=20`);
+}
+
+export async function retrySamplingJob(projectId: string, traceId: string, confirmPossibleCharge: boolean): Promise<SamplingJob> {
+  return requestJson<SamplingJob>(`/projects/${projectId}/evaluation-sampling/jobs/${encodeURIComponent(traceId)}/retry`, {
+    method: "POST", body: JSON.stringify({ confirm_possible_charge: confirmPossibleCharge }),
+  });
 }

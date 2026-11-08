@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator
 
 
 class OrganizationCreate(BaseModel):
@@ -690,3 +690,41 @@ class QualityGateStatusOut(BaseModel):
     config: QualityGateConfigOut
     metrics: QualityGateMetrics
     reasons: list[QualityGateReason]
+
+
+class EvaluationSamplingSettings(BaseModel):
+    enabled: bool = False
+    percentage: float = Field(default=0, ge=0, le=100, allow_inf_nan=False)
+    rubric_id: str | None = Field(default=None, min_length=1, max_length=64)
+    rubric_version: int | None = Field(default=None, ge=1)
+
+
+class EvaluationSamplingConfigOut(EvaluationSamplingSettings):
+    model_config = ConfigDict(from_attributes=True)
+    updated_at: datetime | None = None
+
+
+class EvaluationSamplingJobOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    trace_id: str
+    rubric_id: str
+    rubric_version: int
+    status: str
+    reason: str | None
+    run_id: str | None
+    dispatch_attempts: int
+    execution_attempts: int
+    next_attempt_at: datetime
+    created_at: datetime
+    updated_at: datetime
+
+    @computed_field
+    @property
+    def retry_warning(self) -> str | None:
+        if self.status == "uncertain":
+            return "A tentativa pode ter sido cobrada pelo provider sem resultado salvo. Tentar novamente pode gerar nova cobrança."
+        return None
+
+
+class EvaluationSamplingRetryIn(BaseModel):
+    confirm_possible_charge: bool = False

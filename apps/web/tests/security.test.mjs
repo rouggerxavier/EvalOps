@@ -198,6 +198,8 @@ const SAFE_DETAIL_MESSAGES = {
   organization_slug_taken: "Este slug de organização já está em uso. Escolha outro.",
   api_key_not_revoked: "Revogue a chave antes de excluí-la.",
   invalid_rubric: "Rubrica inválida. Confira o YAML e tente novamente.",
+  sampling_rubric_required: "Informe a rubrica e sua versão juntas.",
+  rubric_version_not_found: "Esta versão da rubrica não existe. Confira o número da versão.",
 };
 
 const GENERIC_ERROR = "Algo deu errado. Tente novamente.";

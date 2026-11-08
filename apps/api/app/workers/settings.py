@@ -11,6 +11,7 @@ from app.config import redis_url, worker_concurrency
 from app.workers.evaluation_worker import evaluate_trace_job
 from app.workers.maintenance_worker import maintenance_cleanup_job, maintenance_hour, maintenance_timezone
 from app.workers.replay_worker import replay_trace
+from app.workers.sampling_worker import dispatch_sampling_job, evaluate_sample_job
 
 logger = logging.getLogger("evalops.worker")
 
@@ -39,11 +40,14 @@ async def shutdown(ctx: dict) -> None:
 def _cron_jobs() -> list:
     from arq import cron
 
-    return [cron(maintenance_cleanup_job, hour=maintenance_hour(), minute=0)]
+    return [
+        cron(maintenance_cleanup_job, hour=maintenance_hour(), minute=0),
+        cron(dispatch_sampling_job, minute=set(range(60))),
+    ]
 
 
 class WorkerSettings:
-    functions: list = [replay_trace, evaluate_trace_job]
+    functions: list = [replay_trace, evaluate_trace_job, evaluate_sample_job, dispatch_sampling_job]
     cron_jobs = _cron_jobs()
     # Cron hours are read in this zone, not the process clock.
     timezone = maintenance_timezone()
