@@ -81,6 +81,29 @@ quatro versões suportadas do Python, além de API, web e migração em PostgreS
 A revisão independente verificou também credenciais expiradas/revogadas,
 precedência de headers, isolamento e propagação assíncrona do contexto do SDK.
 
+### Atualização em 2026-11-08: redesign e avisos de cota
+
+Os PRs [#31](https://github.com/rouggerxavier/EvalOps/pull/31) e
+[#33](https://github.com/rouggerxavier/EvalOps/pull/33) foram integrados depois de
+revisões independentes, CI individual e CI da árvore combinada verdes. A árvore
+final coincidiu com a composição validada.
+
+O redesign preserva a operação em 1280/375 px e navegação móvel por teclado.
+A revisão encontrou e corrigiu duas regressões: perda de vereditos/erros do
+histórico e classificação limitada às 100 avaliações mais recentes do projeto.
+Agora nota e veredito vêm da mesma execução, e o filtro é aplicado antes da
+paginação. A paginação GET preserva os filtros. Evidências e limites em
+[redesign-qa-2026-11-08.md](redesign-qa-2026-11-08.md).
+
+Os avisos de cota são transacionais, aparecem ao cruzar 80% e não se repetem ao
+marcar como lidos. Os projetos ativos da organização recebem cópias independentes;
+projetos criados depois aguardam o próximo cruzamento. A correção também impede
+perda de incrementos concorrentes em PostgreSQL: a regressão `70 + 4 × 5` passou
+a registrar 90. Com quatro incrementos de 10, três são aceitos, um recebe 402 e o
+contador termina em 100. O orçamento do juiz segue fora dos avisos por falta de
+uma fonte completa de gasto. O flush seletivo utilizado é suportado na versão
+instalada do SQLAlchemy, com aviso de depreciação para manutenção futura.
+
 ## Segurança
 
 | # | Achado | Onde | Evidência |
@@ -115,7 +138,7 @@ precedência de headers, isolamento e propagação assíncrona do contexto do SD
 | 17 | **Fechado.** **Chave com `read` quase não lê.** Com a chave, dão 401: traces, prompts, rubricas, avaliações e feedback. Só relatório e lote aceitam. | `ownership.py:114` | Provado |
 | 18 | **Parcial.** Feedback por chave `ingest` e pelo SDK foi integrado no #32, com resolução de `client_trace_id` dentro do projeto e auditoria. O envio não exige login no painel. A incorporação do feedback às métricas permanece pendente. | `routes_phase6.py`, SDK | Corrigido e testado; métricas pendentes |
 | 19 | **Fechado no escopo de busca.** A chave `read` lê prompts após #30; `Client.get_prompt(prompt_id, version=...)`, integrado no #32, retorna a versão atual ou fixa com seu template. Não foi adicionada promoção automática de variantes. | `routes_phase5.py`, SDK | Corrigido e testado |
-| 20 | **Notificações só de avaliação.** Cota esgotada responde 402 sem aviso prévio nem sino, e a ingestão para em silêncio. | `eval_service.py:425` | Leitura |
+| 20 | **Fechado no escopo de cotas mensais.** O #33 avisa ao atingir 80% dos limites de traces, avaliações, exports, spans e tokens. O sino mostra uma cópia por projeto ativo, com leitura independente. O orçamento do juiz ainda não gera aviso porque a fonte de gasto é incompleta. | `usage_service.py`, sino existente | Corrigido e testado |
 
 ## Promessas falsas
 
