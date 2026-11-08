@@ -17,7 +17,7 @@ from app.domain.services.rag_service import rag_filter_predicate as _rag_filter_
 from app.domain.services.audit_service import record_audit
 from app.domain.services.trace_ingest_service import ingest_trace_batch
 from app.models import EvaluationRun, Event, HumanFeedback, Membership, Notification, Organization, Project, Span, Trace, TraceFlag, User, utcnow
-from app.ownership import get_owned_project, get_owned_trace
+from app.ownership import get_owned_project, get_owned_trace, project_access, trace_access
 from app.schemas import (
     AttentionResponse,
     ApiKeyCreate,
@@ -581,7 +581,7 @@ def list_traces(
     failed: bool | None = Query(None),
     score_lt: float | None = Query(None, ge=0, le=1),
     q: str | None = Query(None, max_length=255),
-    project: Project = Depends(get_owned_project),
+    project: Project = Depends(project_access("read")),
     db: Session = Depends(get_db),
 ) -> dict:
     project_id = project.id
@@ -701,7 +701,7 @@ def list_traces(
 
 @router.get("/traces/{trace_id}")
 def get_trace(
-    trace: Trace = Depends(get_owned_trace),
+    trace: Trace = Depends(trace_access("read")),
     db: Session = Depends(get_db),
 ) -> dict:
     trace_id = trace.id
