@@ -62,3 +62,25 @@ mudança estética adicional foi feita para silenciar esses avisos.
   operação, construídas diretamente em código. Não foi alterada nesta retomada.
 - Review independente e CI do PR são etapas posteriores; este relatório descreve
   os comandos locais efetivamente executados.
+
+## Regressão encontrada na revisão do histórico
+
+A tabela de avaliações descartava execuções sem scores e os metadados de cada
+execução. Um erro antigo deixava de aparecer quando havia scores de outra
+execução; avisos de avaliação parcial, flags críticas e dispersão das amostras
+não eram mais exibidos.
+
+O histórico agora agrupa os avaliadores por execução, preservando o desenho de
+tabela, veredito, custo e data de cada execução. Dois testes de renderização real
+falharam antes da correção e passaram depois. A asserção que exigia a ausência de
+`raised_flags` foi corrigida para preservar essa informação.
+
+Após integrar a main com #30: 186 testes web, typecheck e build passaram.
+O detector Impeccable do componente retornou zero achados. A inspeção visual
+adicional usa o componente renderizado com CSS do produto e dados sintéticos,
+em 1280 e 375 px; não substitui o QA da aplicação completa descrito acima.
+
+A reprodução adicional do clique na aba Avaliações em 375 px ainda está pendente.
+As revisões independentes de #28 e #31 foram interrompidas pelo limite de uso dos
+agentes. Nenhuma aprovação é inferida dessa interrupção; o merge aguarda revisão
+concluída e CI verde no SHA final.
