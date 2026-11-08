@@ -24,6 +24,7 @@ from app.domain.services.redaction_service import (
     should_redact,
 )
 from app.domain.services.experiment_service import resolve_prompt_version
+from app.domain.services.sampling_service import select_trace
 from app.domain.services.usage_service import apply_usage_with_quota, enforce_quota
 from app.infra.llm.pricing import compute_cost_usd
 from app.models import Event, Project, Prompt, Span, Trace
@@ -266,6 +267,7 @@ def ingest_trace_batch(
                 spans=span_count,
                 tokens=total_in + total_out,
             )
+            select_trace(db, project, trace_id, trace_in.client_trace_id)
             db.commit()
             results.append({"client_trace_id": trace_in.client_trace_id, "trace_id": trace_id})
         except HTTPException:
