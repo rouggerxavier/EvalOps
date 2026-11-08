@@ -4,6 +4,7 @@ from contextlib import AbstractContextManager
 from pathlib import Path
 from typing import Any, Callable
 
+from evalops.client import Client
 from evalops.tracer import EvalOpsTracer
 from evalops.uploader import DEFAULT_TIMEOUT_S, ReplayResult, replay_dead_letter as _replay_dead_letter
 
@@ -54,6 +55,11 @@ def set_trace(
     metadata: dict | None = None,
 ) -> None:
     _tracer.set_trace(conversation_id=conversation_id, batch=batch, user_ref=user_ref, tags=tags, metadata=metadata)
+
+
+def current_client_trace_id() -> str | None:
+    """Return the active client trace id, or None when the call is not traced."""
+    return _tracer.current_client_trace_id()
 
 
 def flush(timeout: float = DEFAULT_TIMEOUT_S) -> bool:

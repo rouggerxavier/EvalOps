@@ -192,3 +192,62 @@ before replaying them.
 ```bash
 pytest packages/sdk-python/tests -q
 ```
+
+## End-user feedback and managed prompts
+
+`Client` makes synchronous requests with a separate API key. An `ingest` key
+can create feedback only on its own project's traces. A `read` key can fetch
+prompts; it cannot create feedback. JWT dashboard feedback continues to work.
+
+Capture the stable **client trace id inside the traced function**, associate it
+with your application's opaque message id, and send feedback after ingestion:
+
+```python
+import evalops
+import httpx
+
+# Initialize the tracer normally with an ingest key first.
+@evalops.trace("support.answer")
+def answer(message):
+    return {"text": call_model(message), "client_trace_id": evalops.current_client_trace_id()}
+
+result = answer("hello")
+evalops.flush()
+feedback_client = evalops.Client(api_key="evk_prod_ingest_...", api_url="http://localhost:8000/v1")
+if result["client_trace_id"] is not None:  # None when disabled or not sampled
+    try:
+        feedback = feedback_client.feedback(result["client_trace_id"], thumbs="up", user_ref="u_91")
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code == 404:
+            # Ingestion may still be pending or have failed. Confirm it before retrying.
+            pass
+        else:
+            raise
+```
+
+`flush()` drains the uploader; it does **not** confirm acceptance. Feedback
+returns 404 until a trace exists, and for a deleted or inaccessible trace.
+The endpoint is `POST /v1/traces/by-client-id/{client_trace_id}/feedback`; it
+resolves the id only within the authenticated key's project. The returned dict
+contains the feedback's internal `trace_id` and fields. `thumbs` is `up`/`down`,
+`rating` is 1–5, and at least thumbs, rating, or a nonblank comment is required.
+Optional fields are `tags`, `user_ref`, `correction`, and `source` (default `sdk`).
+
+Fetch a prompt by the internal prompt id shown by the API, including its template:
+
+```python
+prompts = evalops.Client(api_key="evk_prod_read_...", api_url="http://localhost:8000/v1")
+prompt = prompts.get_prompt("pmt_...")  # current_version from the server
+pinned = prompts.get_prompt("pmt_...", version=1)
+# Render prompt["template"] using your application's existing template convention.
+```
+
+`get_prompt` returns the existing version dict (`template`, `variables`, version,
+metadata, etc.). It does not render, cache, create, or promote a prompt.
+Missing versions raise `LookupError`; HTTP errors raise `httpx.HTTPStatusError`.
+Transport errors, including timeouts, propagate as `httpx.TransportError`.
+Each request uses the SDK's default five-second timeout (`Client(timeout=...)`
+overrides it). GET retries transport failures, 408, 429, and 5xx twice with the
+uploader's exponential backoff. Feedback POSTs are sent once: a timeout can
+mean the server committed the feedback, so automatic retry could duplicate it.
+No feedback is queued or written to dead-letter files.

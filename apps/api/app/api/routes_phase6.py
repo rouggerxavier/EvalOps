@@ -10,15 +10,15 @@ from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.deps import ensure_org_membership, get_current_user
+from app.deps import ensure_org_membership, get_current_user, get_project_from_api_key
 from app.domain.services.export_service import create_jsonl_export
 from app.domain.services.usage_service import (
     current_period,
     ensure_subscription,
     get_or_create_counter,
 )
-from app.models import AuditLog, ExportJob, HumanFeedback, Plan, Trace, User, utcnow
-from app.ownership import get_owned_trace, load_export, load_project, trace_access
+from app.models import AuditLog, ExportJob, HumanFeedback, Plan, Project, Trace, User, utcnow
+from app.ownership import Actor, actor_access, load_export, load_project, load_trace, trace_access
 from app.schemas import ExportJobCreate, ExportJobOut, ExportListResponse, HumanFeedbackCreate, HumanFeedbackOut
 from app.security import new_id
 
@@ -42,11 +42,32 @@ def _decode_export_cursor(cursor: str) -> tuple[datetime, str]:
 
 @router.post("/traces/{trace_id}/feedback", status_code=status.HTTP_201_CREATED)
 def create_feedback(
+    trace_id: str,
     payload: HumanFeedbackCreate,
-    trace: Trace = Depends(get_owned_trace),
-    user: User = Depends(get_current_user),
+    actor: Actor = Depends(actor_access("ingest")),
     db: Session = Depends(get_db),
 ) -> dict:
+    return _create_feedback(payload, load_trace(db, actor, trace_id), actor, db)
+
+
+@router.post("/traces/by-client-id/{client_trace_id}/feedback", status_code=status.HTTP_201_CREATED)
+def create_feedback_by_client_id(
+    client_trace_id: str,
+    payload: HumanFeedbackCreate,
+    project: Project = Depends(get_project_from_api_key),
+    db: Session = Depends(get_db),
+) -> dict:
+    trace = db.query(Trace).filter(
+        Trace.project_id == project.id,
+        Trace.client_trace_id == client_trace_id,
+        Trace.deleted_at.is_(None),
+    ).one_or_none()
+    if trace is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="not_found")
+    return _create_feedback(payload, trace, project, db)
+
+
+def _create_feedback(payload: HumanFeedbackCreate, trace: Trace, actor: Actor, db: Session) -> dict:
     if payload.thumbs is None and payload.rating is None and (payload.comment or "").strip() == "":
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="feedback_empty")
     row = HumanFeedback(
@@ -65,11 +86,13 @@ def create_feedback(
         AuditLog(
             id=new_id("adt"),
             organization_id=trace.organization_id,
-            actor_user_id=user.id,
+            actor_user_id=actor if isinstance(actor, str) else None,
             action="feedback.created",
             target_type="trace",
             target_id=trace.id,
-            payload={"feedback_id": row.id},
+            payload={"feedback_id": row.id, **(
+                {"actor_type": "api_key", "project_id": actor.id} if isinstance(actor, Project) else {}
+            )},
         )
     )
     db.commit()
