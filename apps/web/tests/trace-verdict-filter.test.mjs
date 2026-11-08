@@ -67,6 +67,8 @@ test("invalid tag stays editable with an explicit warning and is not applied", a
   assert.equal(requested.tag, undefined);
   assert.match(html, /<details[^>]*open=""/);
   assert.match(html, /name="tag"[^>]*aria-invalid="true"[^>]*value="whatsapp"/);
+  assert.match(html, /name="tag"[^>]*aria-describedby="tag-error"/);
+  assert.doesNotMatch(html.match(/<input[^>]*name="tag"[^>]*>/)[0], /pattern=/);
   assert.match(html, /role="alert"[^>]*>Tag não aplicada\. Use o formato chave:valor, como canal:whatsapp\./);
   assert.doesNotMatch(html, /tag=whatsapp/);
   assert.doesNotMatch(html, /Mais filtros<span class="tab__count">1/);
@@ -80,7 +82,16 @@ test("invalid tag from the URL is escaped in the editable field", async () => {
   assert.doesNotMatch(html, /<script>/);
 });
 
-test("valid tag keeps the native format constraint and existing filters through pagination", async () => {
+test("empty and whitespace-only tags stay optional and do not apply a filter", async () => {
+  for (const tag of ["", "   "]) {
+    const { html, requested } = await render([], { tag });
+    assert.equal(requested.tag, undefined);
+    assert.match(html, /name="tag"[^>]*value=""/);
+    assert.doesNotMatch(html, /Tag não aplicada|aria-invalid="true"/);
+  }
+});
+
+test("valid tag keeps the format hint and existing filters through pagination", async () => {
   const { html, requested } = await render([trace("one", "approved")], {
     tag: "canal:whatsapp", verdict: "approved", cursor: "first", tab: "slow", slow_kind: "llm",
     environment: "dev", name: "support", q: "answer", conversation_id: "conversation",
@@ -89,7 +100,7 @@ test("valid tag keeps the native format constraint and existing filters through 
   assert.equal(requested.tag, "canal:whatsapp");
   assert.equal(requested.since, "2026-11-01T00:00:00");
   assert.equal(requested.until, "2026-11-08T23:59:59.999");
-  assert.match(html, /name="tag"[^>]*pattern="\[\^:\]\+:\.\+"/);
+  assert.match(html, /name="tag"[^>]*title="Use o formato chave:valor, como canal:whatsapp"/);
   assert.doesNotMatch(html, /Tag não aplicada/);
   const href = [...html.matchAll(/href="([^"]+)"/g)].map((match) => match[1].replaceAll("&amp;", "&"))
     .find((value) => value.includes("cursor=second"));

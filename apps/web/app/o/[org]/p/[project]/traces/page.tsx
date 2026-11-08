@@ -288,8 +288,7 @@ export default async function TracesListPage({ params, searchParams }: Props) {
               <input
                 className="filter-input"
                 name="tag"
-                defaultValue={qp.tag ?? ""}
-                pattern="[^:]+:.+"
+                defaultValue={qp.tag?.trim() ? qp.tag : ""}
                 title="Use o formato chave:valor, como canal:whatsapp"
                 placeholder="Tag (canal:whatsapp)"
                 aria-label="Tag no formato chave:valor"
