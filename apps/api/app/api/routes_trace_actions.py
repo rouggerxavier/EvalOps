@@ -120,7 +120,7 @@ def flag_trace(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> TraceFlag:
-    trace = load_trace(db, user.id, trace_id)
+    trace = load_trace(db, user.id, trace_id, "write")
     existing = _find_recent_flag(db, trace.id, user.id, payload.reason)
     if existing:
         return existing
@@ -165,8 +165,8 @@ def bulk_flag_traces(
     created_ids: list[str] = []
     skipped_ids: list[str] = []
     org_ids: set[str] = set()
-    for trace_id in payload.trace_ids:
-        trace = load_trace(db, user.id, trace_id)
+    traces = [load_trace(db, user.id, trace_id, "write") for trace_id in payload.trace_ids]
+    for trace in traces:
         existing = _find_recent_flag(db, trace.id, user.id, payload.reason)
         if existing:
             flags.append(existing)
@@ -207,7 +207,7 @@ async def rerun_trace(
     db: Session = Depends(get_db),
     arq_pool=Depends(get_arq_pool),
 ) -> dict:
-    trace = load_trace(db, user.id, trace_id)
+    trace = load_trace(db, user.id, trace_id, "write")
     now = utcnow()
     period = current_period(now)
     # Replay calls the provider with platform keys, so it spends the same judge budget.
