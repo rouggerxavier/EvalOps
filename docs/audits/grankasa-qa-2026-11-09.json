@@ -1,0 +1,364 @@
+{
+  "recorded_at_utc": "2026-11-09T06:30:16.248898+00:00",
+  "evalops_commit": "1abbeb5c6f8de0e264e19277d59b5d80eff94d68",
+  "grankasa_tested_commit": "900fbeed4cf136daf35a8460712bf2402fadf440",
+  "grankasa_merge_commit": "aa004e9f62d20906e674f1db4e68bc82245494f3",
+  "sdk_commit": "1abbeb5c6f8de0e264e19277d59b5d80eff94d68",
+  "schema_revision": "0012_evaluation_sampling",
+  "runtime": {
+    "postgres": "16",
+    "redis": "7",
+    "python": "3.12.15",
+    "api": "HTTP FastAPI",
+    "worker": "arq real"
+  },
+  "external_network": "blocked_in_harness_and_negative_check_passed",
+  "real_provider_calls": 0,
+  "model_usage_measured": false,
+  "batches": [
+    {
+      "batch": "grankasa-scripted-f5468ca8bb53421cb1287e2676aab561",
+      "rubric_id": "rub_1c0991de115b542e60908f2b",
+      "rubric_version": 1,
+      "traces": 12,
+      "runs": 12,
+      "passed": 6,
+      "failed": 6,
+      "errors": 0,
+      "unknown": 0,
+      "spans": {
+        "chain": 12,
+        "llm_call": 24,
+        "tool": 12
+      },
+      "cost_sources": {
+        "unknown": 12
+      },
+      "matrix": [
+        {
+          "scenario": "preco_por_codigo",
+          "variant": "correct",
+          "round": 1,
+          "data_origin": "synthetic",
+          "scenario_sha256": "9490157879974a72b6792ed56c6a7b4a05b905c5e6236f55a9017c155782d36e",
+          "rubric_sha256": "5e5628b47419c30393ea4f277f4e557699002e1b782b6fcc64be55ceca144f0e",
+          "conversation_id": "synthetic-54130ea5876d4d3081dfaaac264392ae",
+          "client_trace_id": "ct_6b154c91ea864cf1925c0217e3cbf0fb"
+        },
+        {
+          "scenario": "preco_por_codigo",
+          "variant": "invented",
+          "round": 1,
+          "data_origin": "synthetic",
+          "scenario_sha256": "9490157879974a72b6792ed56c6a7b4a05b905c5e6236f55a9017c155782d36e",
+          "rubric_sha256": "5e5628b47419c30393ea4f277f4e557699002e1b782b6fcc64be55ceca144f0e",
+          "conversation_id": "synthetic-3dea13576bc54ed9b5563632723d069a",
+          "client_trace_id": "ct_daaa44924c1047beb5208f634ef2d445"
+        },
+        {
+          "scenario": "aluguel_com_condominio",
+          "variant": "correct",
+          "round": 1,
+          "data_origin": "synthetic",
+          "scenario_sha256": "bba8df56c8c14c8a75d94bf91195d8a53dbbecb6a797b5abac671ca434c784d6",
+          "rubric_sha256": "5e5628b47419c30393ea4f277f4e557699002e1b782b6fcc64be55ceca144f0e",
+          "conversation_id": "synthetic-e65ea3bb5836483996d88fc0d4131e78",
+          "client_trace_id": "ct_9ab2299b16764ed695a7b27726b5725a"
+        },
+        {
+          "scenario": "aluguel_com_condominio",
+          "variant": "invented",
+          "round": 1,
+          "data_origin": "synthetic",
+          "scenario_sha256": "bba8df56c8c14c8a75d94bf91195d8a53dbbecb6a797b5abac671ca434c784d6",
+          "rubric_sha256": "5e5628b47419c30393ea4f277f4e557699002e1b782b6fcc64be55ceca144f0e",
+          "conversation_id": "synthetic-b61a0fa128cd48688f62b8013af7cc76",
+          "client_trace_id": "ct_7866fefb6df34a79bb303c92e0d57839"
+        },
+        {
+          "scenario": "codigo_inexistente",
+          "variant": "correct",
+          "round": 1,
+          "data_origin": "synthetic",
+          "scenario_sha256": "82cf4dd3151a8033927741cc5cf1738872146dfbd7cbd215c956ba5b9a440bfc",
+          "rubric_sha256": "5e5628b47419c30393ea4f277f4e557699002e1b782b6fcc64be55ceca144f0e",
+          "conversation_id": "synthetic-ebe520445ba44356a7e82e4760b2d435",
+          "client_trace_id": "ct_75f555fca38a4cc2b99e99117ff0333e"
+        },
+        {
+          "scenario": "codigo_inexistente",
+          "variant": "invented",
+          "round": 1,
+          "data_origin": "synthetic",
+          "scenario_sha256": "82cf4dd3151a8033927741cc5cf1738872146dfbd7cbd215c956ba5b9a440bfc",
+          "rubric_sha256": "5e5628b47419c30393ea4f277f4e557699002e1b782b6fcc64be55ceca144f0e",
+          "conversation_id": "synthetic-25995efdd970483a9d0ad419c8c647e3",
+          "client_trace_id": "ct_54b530cde0524873a2ad4df5188eb393"
+        },
+        {
+          "scenario": "preco_por_codigo",
+          "variant": "correct",
+          "round": 2,
+          "data_origin": "synthetic",
+          "scenario_sha256": "9490157879974a72b6792ed56c6a7b4a05b905c5e6236f55a9017c155782d36e",
+          "rubric_sha256": "5e5628b47419c30393ea4f277f4e557699002e1b782b6fcc64be55ceca144f0e",
+          "conversation_id": "synthetic-eb6a4872e1414e4aa770f12e3137a231",
+          "client_trace_id": "ct_3fec446a099249f9a14df4bb5f0d11c4"
+        },
+        {
+          "scenario": "preco_por_codigo",
+          "variant": "invented",
+          "round": 2,
+          "data_origin": "synthetic",
+          "scenario_sha256": "9490157879974a72b6792ed56c6a7b4a05b905c5e6236f55a9017c155782d36e",
+          "rubric_sha256": "5e5628b47419c30393ea4f277f4e557699002e1b782b6fcc64be55ceca144f0e",
+          "conversation_id": "synthetic-a4a8e3aa1135421394f57e3f6d0edde0",
+          "client_trace_id": "ct_0c3f3561ba70480b95f5d3b8174711d4"
+        },
+        {
+          "scenario": "aluguel_com_condominio",
+          "variant": "correct",
+          "round": 2,
+          "data_origin": "synthetic",
+          "scenario_sha256": "bba8df56c8c14c8a75d94bf91195d8a53dbbecb6a797b5abac671ca434c784d6",
+          "rubric_sha256": "5e5628b47419c30393ea4f277f4e557699002e1b782b6fcc64be55ceca144f0e",
+          "conversation_id": "synthetic-58a4a47848ba44298f1852db156c4daa",
+          "client_trace_id": "ct_51223bb3501e4bb4a40b14d0a6278b7d"
+        },
+        {
+          "scenario": "aluguel_com_condominio",
+          "variant": "invented",
+          "round": 2,
+          "data_origin": "synthetic",
+          "scenario_sha256": "bba8df56c8c14c8a75d94bf91195d8a53dbbecb6a797b5abac671ca434c784d6",
+          "rubric_sha256": "5e5628b47419c30393ea4f277f4e557699002e1b782b6fcc64be55ceca144f0e",
+          "conversation_id": "synthetic-f4162653b02549b0b9255d8be838fc3a",
+          "client_trace_id": "ct_18c8d273a68f449290cc8190be9b5bd1"
+        },
+        {
+          "scenario": "codigo_inexistente",
+          "variant": "correct",
+          "round": 2,
+          "data_origin": "synthetic",
+          "scenario_sha256": "82cf4dd3151a8033927741cc5cf1738872146dfbd7cbd215c956ba5b9a440bfc",
+          "rubric_sha256": "5e5628b47419c30393ea4f277f4e557699002e1b782b6fcc64be55ceca144f0e",
+          "conversation_id": "synthetic-0294c9b56515450a80962b5aa6cad4fe",
+          "client_trace_id": "ct_66e874c2d06e44cf9507d7f5fa77db0c"
+        },
+        {
+          "scenario": "codigo_inexistente",
+          "variant": "invented",
+          "round": 2,
+          "data_origin": "synthetic",
+          "scenario_sha256": "82cf4dd3151a8033927741cc5cf1738872146dfbd7cbd215c956ba5b9a440bfc",
+          "rubric_sha256": "5e5628b47419c30393ea4f277f4e557699002e1b782b6fcc64be55ceca144f0e",
+          "conversation_id": "synthetic-888a3e4041134400afdfa972cff1a21d",
+          "client_trace_id": "ct_4683ea91f13949b7ba3f017e8b0b1d11"
+        }
+      ],
+      "api_report": {
+        "batch": "grankasa-scripted-f5468ca8bb53421cb1287e2676aab561",
+        "environment": "dev",
+        "window": "24h",
+        "trace_count": 12,
+        "totals": {
+          "runs": 12,
+          "passed": 6,
+          "failed": 6,
+          "unknown": 0,
+          "errors": 0,
+          "pass_rate": 0.5,
+          "avg_score": 0.5,
+          "score_stddev": 0.5,
+          "cost_usd": 0.0
+        },
+        "by_version": [
+          {
+            "rubric_version": 1,
+            "runs": 12,
+            "passed": 6,
+            "failed": 6,
+            "unknown": 0,
+            "errors": 0,
+            "pass_rate": 0.5,
+            "avg_score": 0.5,
+            "score_stddev": 0.5,
+            "cost_usd": 0.0
+          }
+        ]
+      }
+    },
+    {
+      "batch": "grankasa-scripted-64373662c4ab4309828548a43f0dd986",
+      "rubric_id": "rub_1c0991de115b542e60908f2b",
+      "rubric_version": 1,
+      "traces": 12,
+      "runs": 12,
+      "passed": 6,
+      "failed": 6,
+      "errors": 0,
+      "unknown": 0,
+      "spans": {
+        "chain": 12,
+        "llm_call": 24,
+        "tool": 12
+      },
+      "cost_sources": {
+        "unknown": 12
+      },
+      "matrix": [
+        {
+          "scenario": "preco_por_codigo",
+          "variant": "correct",
+          "round": 1,
+          "data_origin": "synthetic",
+          "scenario_sha256": "9490157879974a72b6792ed56c6a7b4a05b905c5e6236f55a9017c155782d36e",
+          "rubric_sha256": "5e5628b47419c30393ea4f277f4e557699002e1b782b6fcc64be55ceca144f0e",
+          "conversation_id": "synthetic-f3e849751f8b4d09b0ac7061b12e0ed9",
+          "client_trace_id": "ct_eb98f0c7d68f40c6a930ae3abcc74391"
+        },
+        {
+          "scenario": "preco_por_codigo",
+          "variant": "invented",
+          "round": 1,
+          "data_origin": "synthetic",
+          "scenario_sha256": "9490157879974a72b6792ed56c6a7b4a05b905c5e6236f55a9017c155782d36e",
+          "rubric_sha256": "5e5628b47419c30393ea4f277f4e557699002e1b782b6fcc64be55ceca144f0e",
+          "conversation_id": "synthetic-de49390543fe48e1847540995a87f2b1",
+          "client_trace_id": "ct_8a47f45f875c4b9ab816cfc4cfcfb0ae"
+        },
+        {
+          "scenario": "aluguel_com_condominio",
+          "variant": "correct",
+          "round": 1,
+          "data_origin": "synthetic",
+          "scenario_sha256": "bba8df56c8c14c8a75d94bf91195d8a53dbbecb6a797b5abac671ca434c784d6",
+          "rubric_sha256": "5e5628b47419c30393ea4f277f4e557699002e1b782b6fcc64be55ceca144f0e",
+          "conversation_id": "synthetic-29c5d094a66b424eb4a48ff56b0d8e4c",
+          "client_trace_id": "ct_22ac28b0a2bb4e04901d49dd2406d5a4"
+        },
+        {
+          "scenario": "aluguel_com_condominio",
+          "variant": "invented",
+          "round": 1,
+          "data_origin": "synthetic",
+          "scenario_sha256": "bba8df56c8c14c8a75d94bf91195d8a53dbbecb6a797b5abac671ca434c784d6",
+          "rubric_sha256": "5e5628b47419c30393ea4f277f4e557699002e1b782b6fcc64be55ceca144f0e",
+          "conversation_id": "synthetic-17badfa58fe3445a9de293f25fcf8463",
+          "client_trace_id": "ct_be7b03b2264a4f4a865ee749e7a2f07c"
+        },
+        {
+          "scenario": "codigo_inexistente",
+          "variant": "correct",
+          "round": 1,
+          "data_origin": "synthetic",
+          "scenario_sha256": "82cf4dd3151a8033927741cc5cf1738872146dfbd7cbd215c956ba5b9a440bfc",
+          "rubric_sha256": "5e5628b47419c30393ea4f277f4e557699002e1b782b6fcc64be55ceca144f0e",
+          "conversation_id": "synthetic-960aac26804146f09787a5a762de7e5a",
+          "client_trace_id": "ct_949ad7ea229e408a91a9e0eb6c3040f4"
+        },
+        {
+          "scenario": "codigo_inexistente",
+          "variant": "invented",
+          "round": 1,
+          "data_origin": "synthetic",
+          "scenario_sha256": "82cf4dd3151a8033927741cc5cf1738872146dfbd7cbd215c956ba5b9a440bfc",
+          "rubric_sha256": "5e5628b47419c30393ea4f277f4e557699002e1b782b6fcc64be55ceca144f0e",
+          "conversation_id": "synthetic-854c3761b4c640119ac16977a83aeba8",
+          "client_trace_id": "ct_d4b587e7a7884525a37aa7f0fb383e3c"
+        },
+        {
+          "scenario": "preco_por_codigo",
+          "variant": "correct",
+          "round": 2,
+          "data_origin": "synthetic",
+          "scenario_sha256": "9490157879974a72b6792ed56c6a7b4a05b905c5e6236f55a9017c155782d36e",
+          "rubric_sha256": "5e5628b47419c30393ea4f277f4e557699002e1b782b6fcc64be55ceca144f0e",
+          "conversation_id": "synthetic-8d30f9e8e70c4a8ea4a8bda556a3c386",
+          "client_trace_id": "ct_e9dc262b47404ef1ba5e0f5fb1fdd6a7"
+        },
+        {
+          "scenario": "preco_por_codigo",
+          "variant": "invented",
+          "round": 2,
+          "data_origin": "synthetic",
+          "scenario_sha256": "9490157879974a72b6792ed56c6a7b4a05b905c5e6236f55a9017c155782d36e",
+          "rubric_sha256": "5e5628b47419c30393ea4f277f4e557699002e1b782b6fcc64be55ceca144f0e",
+          "conversation_id": "synthetic-a47f197c40a846d3b205393f011481cb",
+          "client_trace_id": "ct_08be089b71d343d5b41d6d241e4bddc1"
+        },
+        {
+          "scenario": "aluguel_com_condominio",
+          "variant": "correct",
+          "round": 2,
+          "data_origin": "synthetic",
+          "scenario_sha256": "bba8df56c8c14c8a75d94bf91195d8a53dbbecb6a797b5abac671ca434c784d6",
+          "rubric_sha256": "5e5628b47419c30393ea4f277f4e557699002e1b782b6fcc64be55ceca144f0e",
+          "conversation_id": "synthetic-e4e9413adcad4ebfa5e3ef81a9a14982",
+          "client_trace_id": "ct_ffab02338e2440ddb11915840fd2232f"
+        },
+        {
+          "scenario": "aluguel_com_condominio",
+          "variant": "invented",
+          "round": 2,
+          "data_origin": "synthetic",
+          "scenario_sha256": "bba8df56c8c14c8a75d94bf91195d8a53dbbecb6a797b5abac671ca434c784d6",
+          "rubric_sha256": "5e5628b47419c30393ea4f277f4e557699002e1b782b6fcc64be55ceca144f0e",
+          "conversation_id": "synthetic-7a8f4c003421483a9c1d171413930a11",
+          "client_trace_id": "ct_0859e7c267554f7080e2a1cc41f7c869"
+        },
+        {
+          "scenario": "codigo_inexistente",
+          "variant": "correct",
+          "round": 2,
+          "data_origin": "synthetic",
+          "scenario_sha256": "82cf4dd3151a8033927741cc5cf1738872146dfbd7cbd215c956ba5b9a440bfc",
+          "rubric_sha256": "5e5628b47419c30393ea4f277f4e557699002e1b782b6fcc64be55ceca144f0e",
+          "conversation_id": "synthetic-4a604de0437e41a5b2789f9d640b7f28",
+          "client_trace_id": "ct_43949f5e54524609887ffe84700c4270"
+        },
+        {
+          "scenario": "codigo_inexistente",
+          "variant": "invented",
+          "round": 2,
+          "data_origin": "synthetic",
+          "scenario_sha256": "82cf4dd3151a8033927741cc5cf1738872146dfbd7cbd215c956ba5b9a440bfc",
+          "rubric_sha256": "5e5628b47419c30393ea4f277f4e557699002e1b782b6fcc64be55ceca144f0e",
+          "conversation_id": "synthetic-0234ec7b4dea484498b49f64abdd50f5",
+          "client_trace_id": "ct_b73cf4a85ef841818d716571d15527f6"
+        }
+      ],
+      "api_report": {
+        "batch": "grankasa-scripted-64373662c4ab4309828548a43f0dd986",
+        "environment": "dev",
+        "window": "24h",
+        "trace_count": 12,
+        "totals": {
+          "runs": 12,
+          "passed": 6,
+          "failed": 6,
+          "unknown": 0,
+          "errors": 0,
+          "pass_rate": 0.5,
+          "avg_score": 0.5,
+          "score_stddev": 0.5,
+          "cost_usd": 0.0
+        },
+        "by_version": [
+          {
+            "rubric_version": 1,
+            "runs": 12,
+            "passed": 6,
+            "failed": 6,
+            "unknown": 0,
+            "errors": 0,
+            "pass_rate": 0.5,
+            "avg_score": 0.5,
+            "score_stddev": 0.5,
+            "cost_usd": 0.0
+          }
+        ]
+      }
+    }
+  ]
+}
