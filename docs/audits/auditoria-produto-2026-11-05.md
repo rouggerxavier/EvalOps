@@ -54,7 +54,6 @@ Dois defeitos novos apareceram e foram corrigidos:
 
 Limites atuais:
 
-- Com "qualquer env" em Traces e o chip em `dev`, o chip continua mostrando `dev` nessa visão.
 - A navegação por conversa mostra os 50 turnos mais recentes, sem paginação no detalhe.
 - O painel de run mostra nota parcial ao lado de "sem veredito", avisando que ela cobre apenas os avaliadores que mediram.
 - Há horários sem fuso nas respostas da API, afetando a apresentação relativa.
@@ -166,6 +165,23 @@ confere o projeto da execução.
 Validação local: 15 testes API, 13 testes web direcionados e typecheck. A regressão
 foi reproduzida antes do fix. Não houve alteração de JSON, índices ou migrations;
 Postgres e browser não foram repetidos. O build permanece no gate da CI.
+
+### Atualização em 2026-11-08: chip e navegação com ambiente explícito
+
+O chip agora usa a mesma regra de precedência das páginas: a query válida vence
+o cookie, a query vazia representa todos os ambientes e a ausência mantém o
+fallback existente. Links do shell, busca, atalhos e o fluxo de Traces preservam
+a escolha explícita ao abrir detalhes, trocar abas, comparar, paginar e limpar
+filtros. Não há persistência nova ou mudança nos contratos da API.
+
+Validação local: RED em quatro dos sete casos iniciais e no link para detalhe;
+40 testes direcionados, typecheck, diffcheck e detector sem achados no final.
+Next dev com API simulada e Chromium verificou SSR/hidratação em 1280/390 px,
+query vazia/prod/ausente, detalhes e retorno, paginação, busca e atalhos G R/G T.
+O seletor foi validado por selectOption/onChange/requestSubmit: ArrowDown não
+acionou a troca na automação headless. Redirects de ações de modal/reexecução e
+paginação de exports não foram auditados nesta unidade. Sem API ou Redis reais;
+build e revisão independente permanecem gates antes do merge.
 
 ## Segurança
 
