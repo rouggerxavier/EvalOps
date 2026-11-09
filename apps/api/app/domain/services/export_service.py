@@ -20,6 +20,7 @@ from app.models import ExportJob, HumanFeedback, Project, Trace, utcnow
 from app.safe_errors import safe_message
 from app.schemas import ExportJobCreate
 from app.security import new_id
+from app.timestamps import server_timestamp
 
 
 def _filter_traces(db: Session, project_id: str, filters: dict | None) -> list[Trace]:
@@ -60,7 +61,7 @@ def _serialize_trace(db: Session, trace: Trace) -> dict:
                 "rating": fb.rating,
                 "comment": fb.comment,
                 "tags": fb.tags or [],
-                "created_at": fb.created_at.isoformat(),
+                "created_at": server_timestamp(fb.created_at).isoformat(),
             }
             for fb in feedback_rows
         ],

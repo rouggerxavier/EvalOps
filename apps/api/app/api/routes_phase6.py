@@ -21,6 +21,7 @@ from app.models import AuditLog, ExportJob, HumanFeedback, Plan, Project, Trace,
 from app.ownership import Actor, actor_access, load_export, load_project, load_trace, trace_access
 from app.schemas import ExportJobCreate, ExportJobOut, ExportListResponse, HumanFeedbackCreate, HumanFeedbackOut
 from app.security import new_id
+from app.timestamps import server_timestamp
 
 router = APIRouter(prefix="/v1")
 
@@ -217,7 +218,7 @@ def get_subscription(
         "subscription": {
             "id": sub.id,
             "status": sub.status,
-            "started_at": sub.started_at,
+            "started_at": server_timestamp(sub.started_at),
             "ends_at": sub.ends_at,
         },
         "plan": {

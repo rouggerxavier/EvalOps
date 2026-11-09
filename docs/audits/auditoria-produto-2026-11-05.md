@@ -56,7 +56,7 @@ Limites atuais:
 
 - A navegação por conversa mostra os 50 turnos mais recentes, sem paginação no detalhe.
 - O painel de run mostra nota parcial ao lado de "sem veredito", avisando que ela cobre apenas os avaliadores que mediram.
-- Há horários sem fuso nas respostas da API, afetando a apresentação relativa.
+- Horários recebidos de clientes ainda podem sair sem fuso no SQLite. Offsets já perdidos nesses históricos não podem ser reconstruídos com segurança; timestamps gerados pelo servidor são normalizados na saída.
 - O stepper da landing fala em checklist antes de promover para produção; o produto apoia essa decisão, sem promover variantes automaticamente.
 - O feedback ainda não é agregado às métricas, e os avisos não cobrem orçamento do juiz por fonte incompleta de gasto.
 - O pacote `evalops-python` segue sem publicação. A instalação pelo repositório continua válida; publicar é decisão pendente.
@@ -175,13 +175,37 @@ a escolha explícita ao abrir detalhes, trocar abas, comparar, paginar e limpar
 filtros. Não há persistência nova ou mudança nos contratos da API.
 
 Validação local: RED em quatro dos sete casos iniciais e no link para detalhe;
-40 testes direcionados, typecheck, diffcheck e detector sem achados no final.
+44 testes direcionados, typecheck, diffcheck e detector sem achados no final.
 Next dev com API simulada e Chromium verificou SSR/hidratação em 1280/390 px,
 query vazia/prod/ausente, detalhes e retorno, paginação, busca e atalhos G R/G T.
 O seletor foi validado por selectOption/onChange/requestSubmit: ArrowDown não
-acionou a troca na automação headless. Redirects de ações de modal/reexecução e
-paginação de exports não foram auditados nesta unidade. Sem API ou Redis reais;
-build e revisão independente permanecem gates antes do merge.
+acionou a troca na automação headless. Uma revisão encontrou a perda de ambiente
+no formulário Comparar; o ajuste foi validado com submit real, redirects de
+sucesso/erro e retorno, preservando cookie e payload da API. A revisão do delta
+passou em 34 testes e 12 combinações próprias. Redirects de outras ações de modal
+e reexecução, e paginação de exports, não foram auditados. Sem API ou Redis reais;
+o build permanece no gate da CI.
+
+### Atualização em 2026-11-08: fuso dos horários gerados pelo servidor
+
+O SQLite perde o offset ao carregar colunas datetime. A saída da API agora atribui
+UTC aos valores sem fuso cuja origem é comprovadamente o relógio do servidor.
+Valores já aware preservam seu instante e offset. A regra cobre schemas de saída,
+feedback e flags no detalhe, início da assinatura e o horário do feedback em
+novos exports JSONL. Não modifica banco, migrations ou arquivos já exportados.
+
+A correção é restrita: início/fim de traces, spans e eventos, último evento do
+SDK, vencimento informado de chave e fim da assinatura não recebem uma suposição
+de UTC. Timestamps de clientes com offset perdido no histórico SQLite continuam
+ambíguos. Não foi demonstrado o mesmo defeito no PostgreSQL.
+
+Validação local: 207 testes API passaram e um foi ignorado no gate do developer;
+o root repetiu os quatro testes novos, incluindo reload SQLite, model_dump,
+respostas HTTP, offsets existentes, nulos e novo JSONL. O helper real da web foi
+executado com TZ=America/Fortaleza: o valor sem fuso aparecia três horas no futuro;
+a saída UTC representa o instante correto. Não houve migration, alteração de
+JSON ou índice. PostgreSQL e E2E de navegador não foram repetidos; revisão
+independente e CI permanecem gates antes do merge.
 
 ## Segurança
 
