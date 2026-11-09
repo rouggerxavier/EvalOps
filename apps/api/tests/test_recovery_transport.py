@@ -94,7 +94,10 @@ def test_dedicated_redis_atomic_independent_private_buckets(monkeypatch):
 
 
 def test_outage_propagates_without_memory_fallback(monkeypatch):
-    monkeypatch.setenv("REDIS_URL", "redis://127.0.0.1:18684/15")
+    monkeypatch.setenv("REDIS_URL", "redis://unavailable.example.invalid/15")
+    def unavailable(*_args):
+        raise ConnectionError("synthetic outage")
+    monkeypatch.setattr(limits, "_create_redis_client", unavailable)
     monkeypatch.setattr(limits._fallback_memory, "check", lambda *_: pytest.fail("memory fallback forbidden"))
     with pytest.raises(Exception):
         limits.check_recovery_rate_limits("unknown@example.invalid", "test-peer")

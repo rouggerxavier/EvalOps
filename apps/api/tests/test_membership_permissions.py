@@ -35,9 +35,14 @@ IDS = {
     "org_id": "org", "project_id": "project", "trace_id": "trace",
     "rubric_id": "rubric", "prompt_id": "prompt", "dataset_id": "dataset",
     "experiment_id": "experiment", "export_id": "export", "key_id": "key",
+    "invitation_id": "invitation", "user_id": "viewer",
     "version_num": "1", "run_id": "run", "client_trace_id": "client",
 }
 BODIES = {
+    ("POST", "/v1/organizations/{org_id}/invitations"): {"email": "new@example.com"},
+    ("PATCH", "/v1/organizations/{org_id}/members/{user_id}"): {"role": "member"},
+    ("POST", "/v1/organizations/{org_id}/ownership/transfer"): {"user_id": "viewer"},
+    ("POST", "/v1/invitations/accept"): {"token": "a" * 43},
     ("POST", "/v1/projects"): {"organization_id": "org", "name": "New project", "slug": "new-project"},
     ("PATCH", "/v1/projects/{project_id}"): {"name": "Changed"},
     ("POST", "/v1/projects/{project_id}/api-keys"): {"name": "New key", "environment": "prod"},
@@ -153,6 +158,7 @@ def test_every_http_route_has_a_reviewed_permission_and_auth_contract():
     assert {(r["method"], r["path"]) for r in ROUTES if r["permission"] == "own-contract"} == {
         ("POST", "/v1/auth/register"), ("POST", "/v1/auth/login"),
         ("POST", "/v1/auth/forgot-password"), ("POST", "/v1/auth/reset-password"),
+        ("POST", "/v1/invitations/accept"),
         ("POST", "/v1/auth/change-password"), ("POST", "/v1/auth/logout"), ("GET", "/v1/auth/session"),
         ("GET", "/v1/me"), ("GET", "/v1/organizations"), ("POST", "/v1/organizations"),
         ("GET", "/v1/judges/cli"), ("GET", "/health/liveness"), ("GET", "/health/readiness"),

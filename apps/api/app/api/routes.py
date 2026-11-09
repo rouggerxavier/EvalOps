@@ -7,7 +7,7 @@ from sqlalchemy import String, and_, case, cast, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.deps import ensure_org_membership, get_current_user, get_project_from_api_key
+from app.deps import ROLE_PERMISSIONS, ensure_org_membership, get_current_user, get_project_from_api_key
 from app.domain.services import api_key_service
 from app.domain.services.analytics_service import (
     p95_nearest_rank as _p95_nearest_rank,
@@ -109,7 +109,7 @@ def resolve_slugs(
     org = db.query(Organization).filter(Organization.slug == org_slug).first()
     if not org:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="not_found")
-    ensure_org_membership(db, user.id, org.id)
+    membership = ensure_org_membership(db, user.id, org.id)
     project = (
         db.query(Project)
         .filter(Project.organization_id == org.id, Project.slug == project_slug, Project.archived_at.is_(None))
@@ -124,6 +124,7 @@ def resolve_slugs(
         "project_id": project.id,
         "project_slug": project.slug,
         "project_name": project.name,
+        "membership": {"role": membership.role, "permissions": sorted(ROLE_PERMISSIONS.get(membership.role, ()))},
     }
 
 

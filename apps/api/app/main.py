@@ -10,6 +10,7 @@ from sqlalchemy import text
 
 from app.api.routes import router as v1_router
 from app.api.routes_auth import router as auth_router
+from app.api.routes_memberships import router as memberships_router
 from app.api.routes_rubrics import router as rubrics_router
 from app.api.routes_evaluations import router as evaluations_router
 from app.api.routes_phase5 import router as phase5_router
@@ -70,6 +71,18 @@ app = FastAPI(title="EvalOps API", version="0.1.0", lifespan=lifespan)
 
 @app.exception_handler(RequestValidationError)
 async def _validation_error(request: Request, exc: RequestValidationError):
+    template = _route_template(request)
+    if template == "/v1/invitations/accept" and request.method == "POST":
+        return JSONResponse(status_code=400, content={"detail": "invalid_invitation"})
+    if (request.method, template) in {
+        ("POST", "/v1/organizations/{org_id}/invitations"),
+        ("GET", "/v1/organizations/{org_id}/invitations"),
+        ("POST", "/v1/organizations/{org_id}/invitations/{invitation_id}/revoke"),
+        ("PATCH", "/v1/organizations/{org_id}/members/{user_id}"),
+        ("DELETE", "/v1/organizations/{org_id}/members/{user_id}"),
+        ("POST", "/v1/organizations/{org_id}/ownership/transfer"),
+    }:
+        return JSONResponse(status_code=422, content={"detail": "invalid_request"})
     if request.method == "POST" and _route_template(request) in {
         "/v1/auth/change-password", "/v1/auth/forgot-password", "/v1/auth/reset-password",
     }:
@@ -175,6 +188,7 @@ async def _request_context_middleware(request: Request, call_next):
 
 
 app.include_router(auth_router)
+app.include_router(memberships_router)
 app.include_router(v1_router)
 app.include_router(rubrics_router)
 app.include_router(evaluations_router)

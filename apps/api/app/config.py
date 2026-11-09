@@ -107,3 +107,7 @@ def recovery_mail_config() -> RecoveryMailConfig | None:
         return None
     return RecoveryMailConfig(host, port, sender, username, password, tls,
                               _positive_int("EVALOPS_SMTP_TIMEOUT_SECONDS", 10), origin.rstrip("/"))
+
+
+def invitations_enabled() -> bool:
+    return os.environ.get("EVALOPS_INVITATIONS_ENABLED", "false").strip().lower() in {"1", "true", "yes"}

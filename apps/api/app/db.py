@@ -73,6 +73,12 @@ def ensure_schema_compatibility() -> None:
     inspector = inspect(engine)
     tables = set(inspector.get_table_names())
 
+    if "organizations" in tables:
+        org_cols = {col["name"] for col in inspector.get_columns("organizations")}
+        if "membership_version" not in org_cols:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE organizations ADD COLUMN membership_version INTEGER NOT NULL DEFAULT 0"))
+
     if "users" in tables:
         user_cols = {col["name"] for col in inspector.get_columns("users")}
         if "password_hash" not in user_cols:

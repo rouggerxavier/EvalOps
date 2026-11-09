@@ -105,3 +105,11 @@ def test_maintenance_cleanup_job_applies_run_all_in_batches(monkeypatch) -> None
     assert totals["deleted_rows"] == 5
     with SessionLocal() as db:
         assert [row.jti for row in db.query(RevokedToken).all()] == ["jti_live"]
+
+
+def test_worker_settings_registers_invitation_and_recovery():
+    from app.workers.settings import WorkerSettings
+    from app.workers.invitation_worker import send_invitation_job
+    from app.workers.password_recovery_worker import send_password_reset_job
+    assert send_invitation_job in WorkerSettings.functions
+    assert send_password_reset_job in WorkerSettings.functions
