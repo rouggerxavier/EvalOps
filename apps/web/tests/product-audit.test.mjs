@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
+import { loadTs } from "./helpers/load-ts.mjs";
 
 const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 const PROJECT = "app/o/[org]/p/[project]";
@@ -48,10 +49,16 @@ test("trace model comes from the API before metadata", () => {
   assert.match(read("lib/trace-display.ts"), /return trace\.model \?\? metadataString/);
 });
 
-test("empty environment filter beats the cookie, and the chip can clear it", () => {
+test("empty environment filter beats the cookie, and the chip can clear it", async () => {
   assert.match(read("lib/active-env.ts"), /if \(qpEnv === ""\) return undefined/);
   assert.match(read("components/EvoTopbar.tsx"), /\["all", "prod", "staging", "dev"\]/);
-  assert.match(read("components/AppShell.tsx"), /: "all";/);
+  const { AppShell } = loadTs("components/AppShell.tsx", {
+    "next/headers": { cookies: async () => ({ get: () => undefined }) },
+    "@/lib/api": { resolveProject: async () => null },
+    "@/components/OpsShellFrame": { OpsShellFrame: () => null },
+  });
+  const shell = await AppShell({ org: "org", project: "project", initials: "OR" });
+  assert.equal(shell.props.environment, "all");
   assert.match(read("lib/actions.ts"), /environment === "all"[\s\S]{0,60}store\.delete\(ENV_COOKIE\)/);
   assert.match(read(`${PROJECT}/traces/page.tsx`), /baseParams\.set\("environment", ""\)/);
   assert.match(read(`${PROJECT}/evaluations/page.tsx`), /getProjectEvaluations\(resolved\.project_id, EVALUATION_RUNS_LIMIT, environment\)/);

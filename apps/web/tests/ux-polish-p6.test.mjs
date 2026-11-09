@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { loadTs } from "./helpers/load-ts.mjs";
 
 const nav = readFileSync(new URL("../components/app-shell-nav.ts", import.meta.url), "utf8");
 const shortcuts = readFileSync(
@@ -41,7 +42,11 @@ test("UX polish: every shell route exposes a unique G + letter shortcut", () => 
 
 test("UX polish: global shortcuts ignore editable focus", () => {
   assert.match(shortcuts, /APP_SHELL_NAV_ITEMS/);
-  assert.match(shortcuts, /projectHref\(base, target\)/);
+  const { projectHref } = loadTs("components/app-shell-nav.ts");
+  const base = "/o/org/p/project";
+  assert.equal(projectHref(base, "/traces"), `${base}/traces`);
+  assert.equal(projectHref(base, "/traces", ""), `${base}/traces?environment=`);
+  assert.equal(projectHref(base, "/traces", "prod"), `${base}/traces?environment=prod`);
   assert.match(shortcuts, /isTypingTarget\(event\.target\)/);
 });
 
