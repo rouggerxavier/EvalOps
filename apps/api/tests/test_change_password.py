@@ -288,3 +288,32 @@ def test_dev_seed_issues_current_version_to_temporary_env_file(account_env, tmp_
     token = next(line.split("=", 1)[1] for line in env_file.read_text().splitlines() if line.startswith("EVALOPS_DASHBOARD_BEARER_TOKEN="))
     assert decode_access_token(token)["credential_version"] == 4
     assert client.get("/v1/auth/session", headers=headers(token)).status_code == 200
+
+
+def test_validation_never_echoes_passwords_behind_proxy_root_path(account_env, caplog):
+    _, _, account = account_env
+    caplog.set_level("INFO")
+    client = TestClient(app, root_path="/proxy")
+    marker = "synthetic-secret-marker"
+    response = client.post("/proxy/v1/auth/change-password", headers=headers(account["token"]), json={
+        "current_password": OLD_PASSWORD, "new_password": {"secret": marker},
+    })
+    assert response.status_code == 422
+    assert response.json() == {"detail": "invalid_password"}
+    assert marker not in response.text and marker not in caplog.text
+    client.close()
+
+
+def test_other_route_keeps_normal_validation_behind_proxy_root_path(account_env):
+    _, _, account = account_env
+    client = TestClient(app, root_path="/proxy")
+    invalid_name = {"ordinary": "non-secret-input"}
+    response = client.post("/proxy/v1/organizations", headers=headers(account["token"]), json={
+        "name": invalid_name, "slug": "validation-control",
+    })
+    assert response.status_code == 422
+    errors = response.json()["detail"]
+    assert isinstance(errors, list)
+    name_error = next(error for error in errors if error["loc"] == ["body", "name"])
+    assert name_error["input"] == invalid_name
+    client.close()
