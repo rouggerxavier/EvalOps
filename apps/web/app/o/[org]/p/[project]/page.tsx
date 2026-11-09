@@ -158,6 +158,8 @@ export default async function ProjectOverviewPage({ params, searchParams }: Prop
   };
   const modelBreakdown = overview.model_breakdown;
   const totalCalls = modelBreakdown.reduce((sum, model) => sum + model.calls, 0);
+  const feedback = overview.human_feedback;
+  const thumbCount = feedback.thumbs_up + feedback.thumbs_down;
   const traceSpark = overview.cost_by_day.slice(-14).map((point) => point.traces);
   const costSpark = overview.cost_by_day.slice(-14).map((point) => point.cost_usd);
   const windowLabel = window_ === "24h" ? "últimas 24 horas" : window_ === "7d" ? "últimos 7 dias" : "últimos 30 dias";
@@ -208,6 +210,17 @@ export default async function ProjectOverviewPage({ params, searchParams }: Prop
         <Metric label="Custo" icon={<Coins size={13} aria-hidden="true" />} value={fmtCost(overview.kpis.cost_usd)} spark={costSpark.length > 1 ? costSpark : undefined} />
         <Metric label="Taxa de erro" icon={<AlertCircle size={13} aria-hidden="true" />} value={fmtPercent(overview.kpis.error_rate)} />
       </section>
+
+      <Card title="Feedback humano" subtitle={`Feedback dos traces na janela · ${windowLabel} · ${environmentLabel}`}>
+        <div className="ops-overview__rubrics">
+          <div className="ops-overview__rubric-head"><span>Envios</span><strong>{fmtInteger(feedback.feedback_count)}</strong></div>
+          <div className="ops-overview__rubric-head"><span>Traces com feedback</span><strong>{fmtInteger(feedback.trace_count)} de {fmtInteger(overview.kpis.traces)}</strong></div>
+          <div className="ops-overview__rubric-head"><span>Positivos</span><strong>{thumbCount > 0 ? fmtPercent(feedback.thumbs_up / thumbCount) : "Sem dados"} · n={fmtInteger(thumbCount)}</strong></div>
+          <div className="ops-overview__rubric-head"><span>Negativos</span><strong>{fmtInteger(feedback.thumbs_down)}</strong></div>
+          <div className="ops-overview__rubric-head"><span>Nota média</span><strong>{feedback.avg_rating === null ? "Sem dados" : `${new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 2 }).format(feedback.avg_rating)} / 5`} · n={fmtInteger(feedback.rating_count)}</strong></div>
+        </div>
+        <p className="ops-overview__table-note">Cada envio conta. Feedback posterior atualiza os resultados.</p>
+      </Card>
 
       <section className="ops-overview__grid ops-overview__grid--top">
         <Card

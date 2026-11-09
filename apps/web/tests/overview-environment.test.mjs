@@ -4,7 +4,9 @@ import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { loadTs } from "./helpers/load-ts.mjs";
 
-async function render(query = {}, { cookie = "prod", attentionError = false, empty = false } = {}) {
+const emptyFeedback = { feedback_count: 0, trace_count: 0, thumbs_up: 0, thumbs_down: 0, rating_count: 0, avg_rating: null };
+
+async function render(query = {}, { cookie = "prod", attentionError = false, empty = false, feedback = emptyFeedback, traces = 0 } = {}) {
   const calls = {};
   const record = (name, result) => async (...args) => { calls[name] = args; return result; };
   const { default: Page } = loadTs("app/o/[org]/p/[project]/page.tsx", {
@@ -15,7 +17,7 @@ async function render(query = {}, { cookie = "prod", attentionError = false, emp
     "@/lib/api": {
       hasAuthToken: async () => true,
       resolveProject: async () => ({ project_id: "owned-project", project_name: "Project" }),
-      getOverview: record("overview", { kpis: { traces: 0, latency_p95_ms: 0, cost_usd: 0, error_rate: 0 }, cost_by_day: [], model_breakdown: [] }),
+      getOverview: record("overview", { kpis: { traces, latency_p95_ms: 0, cost_usd: 0, error_rate: 0 }, human_feedback: feedback, cost_by_day: [], model_breakdown: [] }),
       getAttention: async (...args) => {
         calls.attention = args;
         if (attentionError) throw new Error("unavailable");
@@ -30,6 +32,38 @@ async function render(query = {}, { cookie = "prod", attentionError = false, emp
   const page = await Page({ params: Promise.resolve({ org: "org", project: "project" }), searchParams: Promise.resolve(query) });
   return { html: renderToStaticMarkup(page), calls };
 }
+
+function feedbackCard(html) {
+  return html.slice(html.lastIndexOf("<section", html.indexOf("Feedback humano")), html.indexOf("</section>", html.indexOf("Feedback humano")));
+}
+
+test("human feedback shows submissions, trace coverage and independent signal denominators in the selected cohort", async () => {
+  const { html } = await render({ environment: "dev", window: "7d" }, { traces: 10, feedback: { feedback_count: 8, trace_count: 3, thumbs_up: 2, thumbs_down: 1, rating_count: 4, avg_rating: 4.25 } });
+  const card = feedbackCard(html);
+  assert.match(card, /Feedback dos traces na janela · últimos 7 dias · Dev/);
+  assert.match(card, /Envios<\/span><strong>8<\/strong>/);
+  assert.match(card, /Traces com feedback<\/span><strong>3 de 10<\/strong>/);
+  assert.match(card, /Positivos<\/span><strong>66,7% · n=3<\/strong>/);
+  assert.match(card, /Negativos<\/span><strong>1<\/strong>/);
+  assert.match(card, /Nota média<\/span><strong>4,25 \/ 5 · n=4<\/strong>/);
+  assert.match(card, /Cada envio conta. Feedback posterior atualiza os resultados./);
+  assert.doesNotMatch(card, /pessoas|juiz|amostragem|aprovação/i);
+  assert.ok(html.indexOf('aria-label="Indicadores do período"') < html.indexOf("Feedback humano"));
+  assert.ok(html.indexOf("Feedback humano") < html.indexOf("Precisa de atenção"));
+});
+
+test("human feedback distinguishes no signals, zero approval, thumb-only and rating-only", async () => {
+  const empty = feedbackCard((await render({ environment: "", window: "30d" })).html);
+  assert.match(empty, /Feedback dos traces na janela · últimos 30 dias · Todos os ambientes/);
+  assert.match(empty, /Positivos<\/span><strong>Sem dados · n=0<\/strong>/);
+  assert.match(empty, /Nota média<\/span><strong>Sem dados · n=0<\/strong>/);
+  const thumbs = feedbackCard((await render({}, { feedback: { ...emptyFeedback, feedback_count: 1, trace_count: 1, thumbs_down: 1 } })).html);
+  assert.match(thumbs, /Positivos<\/span><strong>0% · n=1<\/strong>/);
+  assert.match(thumbs, /Nota média<\/span><strong>Sem dados · n=0<\/strong>/);
+  const rating = feedbackCard((await render({}, { feedback: { ...emptyFeedback, feedback_count: 1, trace_count: 1, rating_count: 1, avg_rating: 5 } })).html);
+  assert.match(rating, /Positivos<\/span><strong>Sem dados · n=0<\/strong>/);
+  assert.match(rating, /Nota média<\/span><strong>5 \/ 5 · n=1<\/strong>/);
+});
 
 test("overview sends the cookie environment to attention and the other environment-scoped requests", async () => {
   const { html, calls } = await render({}, { cookie: "dev" });
