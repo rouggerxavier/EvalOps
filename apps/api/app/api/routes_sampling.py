@@ -18,7 +18,7 @@ def get_sampling(project: Project = Depends(project_access("read")), db: Session
 
 
 @router.put("", response_model=EvaluationSamplingConfigOut)
-def put_sampling(payload: EvaluationSamplingSettings, project: Project = Depends(project_access("evaluate")),
+def put_sampling(payload: EvaluationSamplingSettings, project: Project = Depends(project_access("evaluate", "admin")),
                  db: Session = Depends(get_db)):
     config = configure_sampling(db, project, payload.model_dump())
     record_audit(db, "evaluation.sampling_configured", organization_id=project.organization_id,
@@ -39,7 +39,7 @@ def list_sampling_jobs(limit: int = Query(100, ge=1, le=100),
 
 @router.post("/jobs/{trace_id}/retry", response_model=EvaluationSamplingJobOut)
 def retry_sampling_job(trace_id: str, payload: EvaluationSamplingRetryIn | None = None,
-                       project: Project = Depends(project_access("evaluate")),
+                       project: Project = Depends(project_access("evaluate", "write")),
                        db: Session = Depends(get_db)):
     job = db.query(EvaluationSamplingJob).filter_by(project_id=project.id, trace_id=trace_id).with_for_update().one_or_none()
     if job is None:

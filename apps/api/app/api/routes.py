@@ -17,7 +17,7 @@ from app.domain.services.rag_service import rag_filter_predicate as _rag_filter_
 from app.domain.services.audit_service import record_audit
 from app.domain.services.trace_ingest_service import ingest_trace_batch
 from app.models import EvaluationRun, Event, HumanFeedback, Membership, Notification, Organization, Project, Span, Trace, TraceFlag, User, utcnow
-from app.ownership import get_owned_project, get_owned_trace, project_access, trace_access
+from app.ownership import get_owned_project, project_access, trace_access
 from app.schemas import (
     AttentionResponse,
     ApiKeyCreate,
@@ -149,7 +149,7 @@ def create_project(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> Project:
-    ensure_org_membership(db, user.id, payload.organization_id)
+    ensure_org_membership(db, user.id, payload.organization_id, "admin")
     if (
         db.query(Project)
         .filter(Project.organization_id == payload.organization_id, Project.slug == payload.slug)
@@ -173,7 +173,7 @@ def create_project(
 @router.patch("/projects/{project_id}", response_model=ProjectOut)
 def update_project(
     payload: ProjectUpdateIn,
-    project: Project = Depends(get_owned_project),
+    project: Project = Depends(project_access(None, "admin")),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> Project:
@@ -273,7 +273,7 @@ def list_organization_members(
 
 @router.get("/projects/{project_id}/api-keys")
 def list_api_keys(
-    project: Project = Depends(get_owned_project),
+    project: Project = Depends(project_access(None, "admin")),
     db: Session = Depends(get_db),
 ) -> dict:
     return {"data": api_key_service.list_keys(db, project)}
@@ -282,7 +282,7 @@ def list_api_keys(
 @router.post("/projects/{project_id}/api-keys", status_code=status.HTTP_201_CREATED, response_model=ApiKeyCreateOut)
 def create_api_key(
     payload: ApiKeyCreate,
-    project: Project = Depends(get_owned_project),
+    project: Project = Depends(project_access(None, "admin")),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> ApiKeyCreateOut:
@@ -292,7 +292,7 @@ def create_api_key(
 @router.post("/projects/{project_id}/api-keys/{key_id}/revoke", status_code=status.HTTP_204_NO_CONTENT)
 def revoke_api_key(
     key_id: str,
-    project: Project = Depends(get_owned_project),
+    project: Project = Depends(project_access(None, "admin")),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> None:
@@ -304,7 +304,7 @@ def revoke_api_key(
 @router.delete("/projects/{project_id}/api-keys/{key_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_api_key(
     key_id: str,
-    project: Project = Depends(get_owned_project),
+    project: Project = Depends(project_access(None, "destructive")),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> None:
@@ -444,7 +444,7 @@ def list_project_notifications(
 @router.post("/projects/{project_id}/notifications/mark-read")
 def mark_project_notifications_read(
     payload: NotificationMarkReadIn,
-    project: Project = Depends(get_owned_project),
+    project: Project = Depends(project_access(None, "write")),
     db: Session = Depends(get_db),
 ) -> dict:
     now = utcnow()
@@ -812,7 +812,7 @@ def get_trace(
 
 @router.delete("/traces/{trace_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_trace(
-    trace: Trace = Depends(get_owned_trace),
+    trace: Trace = Depends(trace_access(None, "destructive")),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> None:

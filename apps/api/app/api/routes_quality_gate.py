@@ -7,7 +7,7 @@ from app.deps import get_current_user
 from app.domain.services.audit_service import record_audit
 from app.domain.services.quality_gate_service import calculate_status, get_config
 from app.models import Project, QualityGateConfig, User, utcnow
-from app.ownership import get_owned_project
+from app.ownership import get_owned_project, project_access
 from app.schemas import QualityGateConfigOut, QualityGateSettings, QualityGateStatusOut
 
 router = APIRouter(prefix="/v1/projects/{project_id}/quality-gate")
@@ -21,7 +21,7 @@ def get_quality_gate(project: Project = Depends(get_owned_project), db: Session 
 @router.put("", response_model=QualityGateConfigOut)
 def put_quality_gate(
     payload: QualityGateSettings,
-    project: Project = Depends(get_owned_project),
+    project: Project = Depends(project_access(None, "admin")),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):

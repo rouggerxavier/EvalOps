@@ -51,7 +51,7 @@ Actor = str | Project
 
 # ── Plain loaders ─────────────────────────────────────────────────────────────
 
-def load_project(db: Session, actor: Actor, project_id: str) -> Project:
+def load_project(db: Session, actor: Actor, project_id: str, permission: str = "read") -> Project:
     if isinstance(actor, Project):
         if actor.id != project_id:
             raise _not_found()
@@ -59,11 +59,11 @@ def load_project(db: Session, actor: Actor, project_id: str) -> Project:
     project = db.get(Project, project_id)
     if not project or project.archived_at is not None:
         raise _not_found()
-    ensure_org_membership(db, actor, project.organization_id)
+    ensure_org_membership(db, actor, project.organization_id, permission)
     return project
 
 
-def load_trace(db: Session, actor: Actor, trace_id: str) -> Trace:
+def load_trace(db: Session, actor: Actor, trace_id: str, permission: str = "read") -> Trace:
     trace = db.get(Trace, trace_id)
     if not trace or trace.deleted_at is not None:
         raise _not_found()
@@ -71,47 +71,47 @@ def load_trace(db: Session, actor: Actor, trace_id: str) -> Trace:
         if trace.project_id != actor.id:
             raise _not_found()
     else:
-        ensure_org_membership(db, actor, trace.organization_id)
+        ensure_org_membership(db, actor, trace.organization_id, permission)
     return trace
 
 
-def load_prompt(db: Session, actor: Actor, prompt_id: str) -> Prompt:
+def load_prompt(db: Session, actor: Actor, prompt_id: str, permission: str = "read") -> Prompt:
     prompt = db.get(Prompt, prompt_id)
     if not prompt:
         raise _not_found()
-    load_project(db, actor, prompt.project_id)
+    load_project(db, actor, prompt.project_id, permission)
     return prompt
 
 
-def load_dataset(db: Session, user_id: str, dataset_id: str) -> Dataset:
+def load_dataset(db: Session, user_id: str, dataset_id: str, permission: str = "read") -> Dataset:
     dataset = db.get(Dataset, dataset_id)
     if not dataset:
         raise _not_found()
-    load_project(db, user_id, dataset.project_id)
+    load_project(db, user_id, dataset.project_id, permission)
     return dataset
 
 
-def load_experiment(db: Session, user_id: str, experiment_id: str) -> Experiment:
+def load_experiment(db: Session, user_id: str, experiment_id: str, permission: str = "read") -> Experiment:
     experiment = db.get(Experiment, experiment_id)
     if not experiment:
         raise _not_found()
-    load_project(db, user_id, experiment.project_id)
+    load_project(db, user_id, experiment.project_id, permission)
     return experiment
 
 
-def load_rubric(db: Session, actor: Actor, rubric_id: str) -> Rubric:
+def load_rubric(db: Session, actor: Actor, rubric_id: str, permission: str = "read") -> Rubric:
     rubric = db.get(Rubric, rubric_id)
     if not rubric:
         raise _not_found()
-    load_project(db, actor, rubric.project_id)
+    load_project(db, actor, rubric.project_id, permission)
     return rubric
 
 
-def load_export(db: Session, user_id: str, export_id: str) -> tuple[ExportJob, Project]:
+def load_export(db: Session, user_id: str, export_id: str, permission: str = "read") -> tuple[ExportJob, Project]:
     job = db.get(ExportJob, export_id)
     if not job:
         raise _not_found()
-    project = load_project(db, user_id, job.project_id)
+    project = load_project(db, user_id, job.project_id, permission)
     return job, project
 
 
@@ -125,8 +125,11 @@ def get_owned_project(
     return load_project(db, user.id, project_id)
 
 
-def actor_access(scope: str) -> Callable[..., Actor]:
-    """A member (JWT), or an API key with ``scope`` (its project); pass it to the ``load_*`` helpers."""
+def actor_access(scope: str | None) -> Callable[..., Actor]:
+    """JWT identity, or a scoped API key; ``None`` keeps an endpoint JWT-only.
+
+    A scope is never a role: loaders check JWT permissions against Membership.
+    """
 
     def dependency(
         request: Request,
@@ -134,14 +137,14 @@ def actor_access(scope: str) -> Callable[..., Actor]:
         authorization: str | None = Header(default=None),
         db: Session = Depends(get_db),
     ) -> Actor:
-        if x_evalops_key:
+        if scope is not None and x_evalops_key:
             return authenticate_api_key(request, x_evalops_key, db, scope)
         return get_current_user(request, authorization, db).id
 
     return dependency
 
 
-def project_access(scope: str) -> Callable[..., Project]:
+def project_access(scope: str | None, permission: str = "read") -> Callable[..., Project]:
     """Project from the URL, for a member or for an API key of that project with ``scope``."""
 
     def dependency(
@@ -149,12 +152,12 @@ def project_access(scope: str) -> Callable[..., Project]:
         actor: Actor = Depends(actor_access(scope)),
         db: Session = Depends(get_db),
     ) -> Project:
-        return load_project(db, actor, project_id)
+        return load_project(db, actor, project_id, permission)
 
     return dependency
 
 
-def trace_access(scope: str) -> Callable[..., Trace]:
+def trace_access(scope: str | None, permission: str = "read") -> Callable[..., Trace]:
     """Trace from the URL, for a member or for an API key of its project with ``scope``."""
 
     def dependency(
@@ -162,12 +165,12 @@ def trace_access(scope: str) -> Callable[..., Trace]:
         actor: Actor = Depends(actor_access(scope)),
         db: Session = Depends(get_db),
     ) -> Trace:
-        return load_trace(db, actor, trace_id)
+        return load_trace(db, actor, trace_id, permission)
 
     return dependency
 
 
-def rubric_access(scope: str) -> Callable[..., Rubric]:
+def rubric_access(scope: str | None, permission: str = "read") -> Callable[..., Rubric]:
     """Rubric from the URL, for a member or for an API key of its project with ``scope``."""
 
     def dependency(
@@ -175,7 +178,7 @@ def rubric_access(scope: str) -> Callable[..., Rubric]:
         actor: Actor = Depends(actor_access(scope)),
         db: Session = Depends(get_db),
     ) -> Rubric:
-        return load_rubric(db, actor, rubric_id)
+        return load_rubric(db, actor, rubric_id, permission)
 
     return dependency
 

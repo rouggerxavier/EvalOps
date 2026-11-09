@@ -48,7 +48,7 @@ def create_feedback(
     actor: Actor = Depends(actor_access("ingest")),
     db: Session = Depends(get_db),
 ) -> dict:
-    return _create_feedback(payload, load_trace(db, actor, trace_id), actor, db)
+    return _create_feedback(payload, load_trace(db, actor, trace_id, "write"), actor, db)
 
 
 @router.post("/traces/by-client-id/{client_trace_id}/feedback", status_code=status.HTTP_201_CREATED)
@@ -121,7 +121,7 @@ def create_export(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
-    project = load_project(db, user.id, payload.project_id)
+    project = load_project(db, user.id, payload.project_id, "write")
     job = create_jsonl_export(db, project, user.id, payload)
     return {"export_id": job.id, "status": job.status}
 
@@ -209,7 +209,7 @@ def get_subscription(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
-    ensure_org_membership(db, user.id, org_id)
+    ensure_org_membership(db, user.id, org_id, "admin")
     sub = ensure_subscription(db, org_id)
     plan = db.get(Plan, sub.plan_id)
     db.commit()
@@ -242,7 +242,7 @@ def get_usage(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
-    ensure_org_membership(db, user.id, org_id)
+    ensure_org_membership(db, user.id, org_id, "admin")
     if period is None:
         period = current_period()
     row = get_or_create_counter(db, org_id, period)

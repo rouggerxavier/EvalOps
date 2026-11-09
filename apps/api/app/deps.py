@@ -45,7 +45,17 @@ def get_current_user(
     return user
 
 
-def ensure_org_membership(db: Session, user_id: str, org_id: str) -> Membership:
+# Literal roles only: legacy/unknown values remain stored, with no capabilities.
+ROLE_PERMISSIONS = {
+    "owner": frozenset({"read", "write", "admin", "destructive"}),
+    "member": frozenset({"read", "write"}),
+    "viewer": frozenset({"read"}),
+}
+
+
+def ensure_org_membership(
+    db: Session, user_id: str, org_id: str, permission: str = "read",
+) -> Membership:
     membership = (
         db.query(Membership)
         .filter(Membership.user_id == user_id, Membership.organization_id == org_id)
@@ -53,6 +63,8 @@ def ensure_org_membership(db: Session, user_id: str, org_id: str) -> Membership:
     )
     if membership is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="not_found")
+    if permission not in ROLE_PERMISSIONS.get(membership.role, ()):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="forbidden")
     return membership
 
 
