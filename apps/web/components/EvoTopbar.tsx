@@ -129,11 +129,14 @@ export function EvoTopbar({
           currentPath={pathname ?? `/o/${org}/p/${project}`}
         />
 
-        <form action={logoutAction} className="ops-account-form">
-          <button type="submit" className="user-avatar" title="Sair" aria-label="Sair">
-            {initials}
-          </button>
-        </form>
+        <div className="ops-account-controls">
+          <Link href="/account" className="btn btn--ghost">Conta</Link>
+          <form action={logoutAction} className="ops-account-form">
+            <button type="submit" className="user-avatar" title="Sair" aria-label="Sair">
+              {initials}
+            </button>
+          </form>
+        </div>
       </div>
     </header>
   );

@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
+from sqlalchemy import update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -19,6 +20,7 @@ from app.db import get_db
 from app.deps import get_current_user
 from app.domain.services.rate_limit_service import (
     check_login_rate_limit,
+    check_password_change_rate_limit,
     record_login_failure,
     reset_login_failures,
 )
@@ -98,6 +100,11 @@ class RegisterRequest(BaseModel):
 class LoginRequest(BaseModel):
     email: str = Field(min_length=3, max_length=320, pattern=EMAIL_RE_PATTERN)
     password: str = Field(min_length=1, max_length=256)
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str = Field(min_length=1, max_length=256)
+    new_password: str = Field(min_length=8, max_length=256)
 
 
 class WorkspaceOut(BaseModel):
@@ -188,7 +195,9 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)) -> AuthRes
     db.refresh(org)
     db.refresh(project)
 
-    token = create_session_token(sub=user.id, email=user.email, name=user.name)
+    token = create_session_token(
+        sub=user.id, email=user.email, name=user.name, credential_version=user.credential_version
+    )
     workspace = WorkspaceOut(
         org_id=org.id,
         org_slug=org.slug,
@@ -224,9 +233,45 @@ def login(
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid_credentials")
 
     reset_login_failures(email, ip)
-    token = create_session_token(sub=user.id, email=user.email, name=user.name)
+    token = create_session_token(
+        sub=user.id, email=user.email, name=user.name, credential_version=user.credential_version
+    )
     workspace = _default_workspace_for_user(db, user)
     return AuthResponse(token=token, user=_user_dict(user), workspace=workspace)
+
+
+@router.post("/change-password", status_code=status.HTTP_204_NO_CONTENT)
+def change_password(
+    payload: ChangePasswordRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> Response:
+    retry_after = check_password_change_rate_limit(user.id)
+    if retry_after is not None:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="too_many_attempts",
+            headers={"Retry-After": str(retry_after)},
+        )
+
+    expected_version = user.credential_version
+    # Refresh the identity-map entry after acquiring the lock: another session may have changed it.
+    locked_user = db.query(User).filter(User.id == user.id).populate_existing().with_for_update().one()
+    if locked_user.credential_version != expected_version:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="unauthorized")
+    if not locked_user.password_hash or not verify_password(payload.current_password, locked_user.password_hash):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="invalid_credentials")
+
+    # The version predicate also prevents lost updates on SQLite, which ignores FOR UPDATE.
+    result = db.execute(
+        update(User).where(User.id == locked_user.id, User.credential_version == expected_version).values(
+            password_hash=hash_password(payload.new_password), credential_version=expected_version + 1,
+        )
+    )
+    if result.rowcount != 1:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="unauthorized")
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)

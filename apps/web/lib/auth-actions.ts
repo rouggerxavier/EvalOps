@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import {
   AuthError,
   clearSessionCookie,
+  changePasswordWithApi,
   getSessionCookieToken,
   loginWithApi,
   logoutWithApi,
@@ -93,4 +94,36 @@ export async function logoutAction(): Promise<void> {
 
   await clearSessionCookie();
   redirect("/");
+}
+
+export async function changePasswordAction(formData: FormData): Promise<void> {
+  const token = await getSessionCookieToken();
+  if (!token) redirect("/login");
+
+  const currentPassword = String(formData.get("current_password") ?? "");
+  const newPassword = String(formData.get("new_password") ?? "");
+  const confirmation = String(formData.get("confirm_password") ?? "");
+  if (!currentPassword || Array.from(currentPassword).length > 256 ||
+      Array.from(newPassword).length < PASSWORD_MIN || Array.from(newPassword).length > 256) {
+    redirect("/account?error=invalid_password");
+  }
+  if (newPassword !== confirmation) redirect("/account?error=password_mismatch");
+
+  let failure: string | null = null;
+  try {
+    await changePasswordWithApi(token, { current_password: currentPassword, new_password: newPassword });
+  } catch (error) {
+    if (error instanceof AuthError && error.status === 401) {
+      await clearSessionCookie();
+      redirect("/login?session_expired=1");
+    }
+    failure = error instanceof AuthError && error.status === 400 ? "invalid_current_password"
+      : error instanceof AuthError && error.status === 422 ? "invalid_password"
+      : error instanceof AuthError && error.status === 429 ? "too_many_attempts"
+      : "unavailable";
+  }
+  if (failure) redirect(`/account?error=${failure}`);
+
+  await clearSessionCookie();
+  redirect("/login?password_changed=1");
 }

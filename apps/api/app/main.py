@@ -3,6 +3,8 @@ import time
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, status
+from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
@@ -64,6 +66,14 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="EvalOps API", version="0.1.0", lifespan=lifespan)
+
+
+@app.exception_handler(RequestValidationError)
+async def _validation_error(request: Request, exc: RequestValidationError):
+    if request.method == "POST" and _route_template(request) == "/v1/auth/change-password":
+        # FastAPI's default validation body includes input, which can contain passwords.
+        return JSONResponse(status_code=422, content={"detail": "invalid_password"})
+    return await request_validation_exception_handler(request, exc)
 
 
 def _route_template(request: Request) -> str | None:

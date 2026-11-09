@@ -36,8 +36,9 @@ def get_current_user(
     if jti and db.get(RevokedToken, jti) is not None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="unauthorized")
 
+    credential_version = claims.get("credential_version", 0)
     user = db.get(User, user_id)
-    if not user:
+    if not user or type(credential_version) is not int or credential_version != user.credential_version:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="unauthorized")
     request.state.user_id = user.id
     set_request_user(user.id)

@@ -251,6 +251,38 @@ O [runbook](../integrations/grankasa.md) e o [artefato de QA](grankasa-qa-2026-1
 registram reprodução, commits, hashes, resultados e limites. Recuperação de
 senha, retenção, exclusão e convites continuam a próxima etapa de conta/dados.
 
+### Atualização em 2026-11-09: Conta e troca autenticada de senha
+
+A página Conta exige cookie pessoal validado, inclusive em desenvolvimento com
+bearer de fallback configurado. A troca pede senha atual e nova, mantém a
+política de 8–256 codepoints para a nova senha e usa o usuário do JWT como única
+autoridade. Não há reset público ou envio de email nesta fatia.
+
+Hash e versão da credencial mudam no mesmo commit. JWTs pessoais anteriores,
+inclusive o usado na troca, deixam de autenticar novos pedidos; o cookie local
+é apagado e exige novo login. JWTs legados sem versão continuam compatíveis
+somente antes da primeira troca. Chaves de API de projeto não são revogadas.
+Releitura sob lock e atualização condicional impedem sobrescrita concorrente em
+Postgres e SQLite. Há limite por usuário antes do Argon2.
+
+A revisão independente de segurança e a de sessão/UI passaram. Foram corrigidos
+lookup de erro adversarial, truncamento de senhas Unicode, sino fora do viewport
+e associação acessível dos erros. O handler não reflete campos de senha em 422,
+inclusive sob prefixo de proxy, sem mudar validação das outras rotas.
+
+Gates: 642 testes API com 14 skips no gate completo, 236 web, typecheck, build e
+quatro E2E Chromium em 1280/375 px. Após o último ajuste de prefixo, 50 testes de
+auth passaram; a revisão independente repetiu 32 testes em SQLite e 32 em
+Postgres 16. Migration, preservação de usuário existente, concorrência, rollback,
+API keys e origem estrangeira foram verificados.
+
+A migration deve preceder o código. Não misturar instâncias antigas que ignoram
+versão após liberar a troca: elas revalidariam sessões revogadas. Um rollback
+precisa preservar o verificador ou rotacionar o segredo globalmente. Pedidos já
+autorizados podem terminar. A [operação](../ops/conta-senha.md) e a
+[auditoria da fatia](conta-senha-2026-11-09.md) detalham sequência, evidências e
+limites. Recuperação por email, retenção, exclusão e convites continuam pendentes.
+
 ## Segurança
 
 | # | Achado | Onde | Evidência |
@@ -304,7 +336,7 @@ senha, retenção, exclusão e convites continuam a próxima etapa de conta/dado
 
 | Área | Falta | Evidência |
 |---|---|---|
-| Conta | Recuperar e trocar senha, editar perfil, excluir conta. **Sem recuperação, senha esquecida exige SQL.** | Provado (sem rota) |
+| Conta | **Parcial:** troca autenticada de senha e encerramento das sessões pessoais disponíveis em Conta. Recuperar senha, editar perfil e excluir conta continuam pendentes; senha esquecida ainda exige intervenção. | Troca implementada e testada; recuperação pública não existe |
 | Organização | Convidar membro, remover, papéis. Criar e trocar de organização tem API (`/v1/organizations`), sem tela. | Provado (sem rota) |
 | Exclusão | Rubrica, prompt, dataset, item de dataset, experimento, projeto e organização não têm `DELETE`. `DELETE /v1/traces/{id}` existe, sem botão. | Provado |
 | Edição | Rubrica sem reverter versão; item de dataset e experimento não editam. | Provado (sem rota) |

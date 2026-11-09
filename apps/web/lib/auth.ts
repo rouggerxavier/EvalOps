@@ -166,3 +166,16 @@ export async function getSession(): Promise<AuthSession | null> {
     return null;
   }
 }
+
+export async function changePasswordWithApi(token: string, payload: {
+  current_password: string;
+  new_password: string;
+}): Promise<void> {
+  const res = await fetch(`${getApiBaseUrl()}/auth/change-password`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify(payload),
+    cache: "no-store",
+  });
+  if (!res.ok) throw new AuthError("password_change_failed", res.status);
+}

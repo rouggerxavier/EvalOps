@@ -8460,9 +8460,32 @@ table.t tbody tr.is-flagged:hover { background: rgb(239 93 93 / 0.1); }
   .ops-shell .ops-traces__date .filter-input { width: 100%; }
 }
 
+.notifications-control { position: relative; }
 .notifications-popover { position: absolute; top: 36px; right: 0; z-index: 20; width: 320px; }
 
 @media (max-width: 760px) {
-  /* The bell sits one avatar (44px + 8px gap) left of the page gutter; keep the panel inside the screen. */
-  .ops-shell .ops-topbar__right .notifications-popover { top: 52px; right: -52px; width: min(320px, calc(100vw - 32px)); }
+  /* Anchor the mobile panel to the toolbar, independent of the account controls' width. */
+  .ops-shell .ops-topbar__right .notifications-control { position: static; }
+  .ops-shell .ops-topbar__right .notifications-popover { top: calc(100% + 8px); right: 16px; width: min(320px, calc(100vw - 32px)); }
+}
+
+/* Conta pessoal: mesmo sistema de controles e tipografia do workspace. */
+.ops-shell .ops-account-controls { display: flex; align-items: center; gap: 8px; }
+.ops-account__content { width: min(100%, 560px); margin: 0 auto; padding: 32px 24px 48px; }
+.ops-account__nav { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 32px; }
+.ops-account__nav form { margin: 0; }
+.ops-account__heading { margin-bottom: 32px; }
+.ops-account__heading h1 { margin: 0 0 8px; font-size: 24px; letter-spacing: -0.02em; }
+.ops-account__heading p { margin: 0; color: var(--ops-muted); overflow-wrap: anywhere; }
+.ops-account__password { padding: 24px; border: 1px solid var(--ops-border); border-radius: var(--ops-radius-panel); background: var(--ops-panel); }
+.ops-account__password h2 { margin: 0 0 8px; font-size: 18px; }
+.ops-account__password > p { margin: 0 0 24px; color: var(--ops-muted); line-height: 1.6; }
+.ops-account .auth-field input { min-width: 0; min-height: 44px; border-radius: var(--ops-radius-control); }
+.ops-account .auth-field span { color: var(--ops-muted); font-size: 12px; }
+.ops-account__password > .ops-account__error { color: var(--ops-critical-text); }
+.auth-success { padding: 12px 14px; margin-bottom: 20px; color: var(--success); border: 1px solid var(--success-border); border-radius: var(--radius-md); background: var(--success-soft); }
+@media (max-width: 760px) {
+  .ops-account__content { padding: 24px 16px; }
+  .ops-account__password { padding: 20px 16px; }
+  .ops-account__password .btn { width: 100%; }
 }

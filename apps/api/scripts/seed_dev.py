@@ -11,15 +11,13 @@ Usage (from apps/api with venv active):
 import sys
 import os
 import pathlib
-from datetime import datetime, timedelta, timezone
 
 sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
 sys.path.insert(0, str(pathlib.Path(__file__).parent.parent))
 
-import jwt
-from app.db import SessionLocal, Base, engine
+from app.db import SessionLocal, Base, engine, ensure_schema_compatibility
 from app.models import User, Organization, Membership, Project
-from app.security import JWT_SECRET, JWT_ALGORITHM, new_id, hash_api_key, generate_api_key
+from app.security import create_access_token, new_id, hash_api_key, generate_api_key
 from app.models import ApiKey
 
 EMAIL = "dev@evalops.local"
@@ -32,6 +30,7 @@ TOKEN_DAYS  = 365  # long-lived for dev
 
 def main() -> None:
     Base.metadata.create_all(bind=engine)
+    ensure_schema_compatibility()
     db = SessionLocal()
 
     try:
@@ -107,15 +106,10 @@ def main() -> None:
         db.commit()
 
         # ── long-lived JWT for dashboard ──────────────────────────────────
-        now = datetime.now(timezone.utc)
-        payload = {
-            "sub":   user.id,
-            "email": user.email,
-            "name":  user.name,
-            "iat":   int(now.timestamp()),
-            "exp":   int((now + timedelta(days=TOKEN_DAYS)).timestamp()),
-        }
-        token = jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+        token = create_access_token(
+            sub=user.id, email=user.email, name=user.name, credential_version=user.credential_version,
+            expires_minutes=TOKEN_DAYS * 24 * 60,
+        )
 
         # ── write .env.local ──────────────────────────────────────────────
         env_path = pathlib.Path(__file__).parent.parent.parent.parent / "apps" / "web" / ".env.local"

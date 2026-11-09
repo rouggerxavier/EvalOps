@@ -1,4 +1,4 @@
-﻿import Link from "next/link";
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { ArrowLeft, ArrowRight } from "lucide-react";
 
@@ -10,7 +10,7 @@ export const metadata = {
   title: "Entrar - EvalOps Studio",
 };
 
-type Search = Promise<{ error?: string; email?: string; redirected?: string }>;
+type Search = Promise<{ error?: string; email?: string; redirected?: string; password_changed?: string; session_expired?: string }>;
 
 export default async function LoginPage({ searchParams }: { searchParams: Search }) {
   const sp = await searchParams;
@@ -38,6 +38,11 @@ export default async function LoginPage({ searchParams }: { searchParams: Search
               Entre no seu workspace para continuar rastreando, avaliando e evoluindo seus agentes.
             </p>
 
+            {sp?.password_changed === "1" ? (
+              <p className="auth-success" role="status">Senha alterada. Todas as suas sessões foram encerradas. Entre com a nova senha.</p>
+            ) : sp?.session_expired === "1" ? (
+              <p className="auth-error" role="alert">Sua sessão expirou. Entre novamente para continuar.</p>
+            ) : null}
             {sp?.error ? <p className="auth-error">{sp.error}</p> : null}
 
             <form action={loginAction}>
