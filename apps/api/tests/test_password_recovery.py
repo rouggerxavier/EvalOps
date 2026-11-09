@@ -3,6 +3,7 @@ import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 import json
+import logging
 from threading import Barrier, Event
 
 import pytest
@@ -291,7 +292,9 @@ def test_pg_worker_accepts_same_instant_in_non_utc_session(recovery_env):
         engine.dispose()
 
 
-def test_smtp_failure_invalidates_only_its_token_safe_logs(recovery_env, caplog):
+def test_smtp_failure_invalidates_only_its_token_safe_logs(recovery_env, caplog, monkeypatch):
+    # Lifespan disables propagation; restore root capture only for this test.
+    monkeypatch.setattr(logging.getLogger("evalops"), "propagate", True)
     client, factory, _, pool, sent, mailer = recovery_env
     assert client.post("/v1/auth/forgot-password", json={"email": "account@example.com"}).status_code == 202
     raw = []

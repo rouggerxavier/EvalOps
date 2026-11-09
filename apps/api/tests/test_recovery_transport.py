@@ -99,7 +99,7 @@ def test_outage_propagates_without_memory_fallback(monkeypatch):
         raise ConnectionError("synthetic outage")
     monkeypatch.setattr(limits, "_create_redis_client", unavailable)
     monkeypatch.setattr(limits._fallback_memory, "check", lambda *_: pytest.fail("memory fallback forbidden"))
-    with pytest.raises(Exception):
+    with pytest.raises(ConnectionError, match="synthetic outage"):
         limits.check_recovery_rate_limits("unknown@example.invalid", "test-peer")
 
 
