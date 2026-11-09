@@ -21,9 +21,9 @@ não ligada, não contrato quebrado.
 ## Status
 
 As etapas 1 a 4 foram corrigidas, e as promessas falsas da etapa 7 saíram da tela.
-A etapa 6 tem amostragem, feedback por chave/SDK, busca de prompts e avisos de cota
-integrados. Itens fechados no escopo descrito abaixo: S1, 1 a 17 e 19 a 28. O item
-18 permanece parcial porque o feedback ainda não compõe métricas agregadas.
+A etapa 6 tem amostragem, feedback por chave/SDK com métricas agregadas, busca de
+prompts e avisos de cota integrados. Itens fechados no escopo descrito abaixo:
+S1 e 1 a 28.
 
 - **Instalação:** a documentação e a landing mandam instalar a partir do repositório e avisam sobre o pacote de
   terceiro. O quickstart usa `set_llm` e `set_trace`, e foi executado contra o SDK real com cliente simulado.
@@ -59,7 +59,7 @@ Limites atuais:
 - O painel de run mostra nota parcial ao lado de "sem veredito", avisando que ela cobre apenas os avaliadores que mediram.
 - Horários recebidos de clientes ainda podem sair sem fuso no SQLite. Offsets já perdidos nesses históricos não podem ser reconstruídos com segurança; timestamps gerados pelo servidor são normalizados na saída.
 - O stepper da landing fala em checklist antes de promover para produção; o produto apoia essa decisão, sem promover variantes automaticamente.
-- O feedback ainda não é agregado às métricas, e os avisos não cobrem orçamento do juiz por fonte incompleta de gasto.
+- Os avisos não cobrem orçamento do juiz por fonte incompleta de gasto. O feedback humano é contado por envio, sem deduplicação de pessoas.
 - O pacote `evalops-python` segue sem publicação. A instalação pelo repositório continua válida; publicar é decisão pendente.
 
 ### Atualização em 2026-11-08: feedback e prompts no SDK
@@ -75,7 +75,7 @@ O feedback deve ser enviado após a ingestão do trace. `flush()` aguarda a fila
 mas não garante que a API aceitou o trace; o cliente pode receber 404. O POST não
 é repetido automaticamente após uma falha ambígua, evitando duplicação. A
 auditoria identifica o tipo de ator e o projeto da chave, sem identificar a
-chave individual. As métricas ainda não agregam esse feedback.
+chave individual. A agregação desse feedback foi adicionada na atualização descrita abaixo.
 
 Validação local: 50 testes API; 80 testes SDK em Python 3.12. A CI passou nas
 quatro versões suportadas do Python, além de API, web e migração em PostgreSQL 16.
@@ -188,6 +188,31 @@ a saída UTC representa o instante correto. Não houve migration, alteração de
 JSON ou índice. PostgreSQL e E2E de navegador não foram repetidos; revisão
 independente e CI permanecem gates antes do merge.
 
+### Atualização em 2026-11-08: métricas de feedback humano
+
+A overview retorna o objeto aditivo `human_feedback` e exibe um card separado da
+nota do juiz. São seis campos: envios, traces distintos, thumbs positivos e
+negativos, quantidade de notas válidas e média das notas de 1 a 5. Sem notas, a
+média é null; sem thumbs, a tela mostra Sem dados, distinguindo de 0% positivo.
+Comentários sem sinais contam como envios, sem alterar os denominadores.
+
+A coorte é a mesma dos traces criados na janela da overview, com projeto,
+ambiente e exclusão lógica respeitados. Todos os feedbacks desses traces entram,
+inclusive posteriores à janela. Feedback novo de trace antigo fica fora. Cada
+envio conta: a aplicação não deduplica pessoas. O card explicita a janela, o
+ambiente, as amostras e a atualização por feedback posterior. Nenhum texto ou
+identificador de usuário é agregado ou exposto; score do juiz e Quality Gate
+permanecem independentes. Há uma consulta agregada adicional, sem N+1, novos
+índices, modelos ou migrations.
+
+Validação local: 88 testes API, 15 web, typecheck e diffcheck passaram. Onze testes
+API foram repetidos após reforçar a invariância do juiz e Quality Gate. Chromium
+em 1280/375 px verificou quatro estados e números longos, sem overflow, usando
+SSR da página, Card, shell e CSS reais com dados e integrações simulados. As notas
+de QA registram os stubs; não houve navegação hidratada, PostgreSQL ou API/Redis
+compartilhados. Revisão independente e build integrado seguem como gates antes
+do merge.
+
 ## Segurança
 
 | # | Achado | Onde | Evidência |
@@ -220,7 +245,7 @@ independente e CI permanecem gates antes do merge.
 | 15 | **Fechado.** **Celular sem navegação.** Em 375 px a sidebar fica `display: none`, não há menu, e breadcrumb, busca e chip se sobrepõem. | `AppShell`, `EvoTopbar` | Provado |
 | 16 | **Fechado.** **`prompt_version_ref` não é validado:** referência inexistente entra com 202 e distorce o uso do prompt. | `trace_ingest_service.py:170` | Provado |
 | 17 | **Fechado.** **Chave com `read` quase não lê.** Com a chave, dão 401: traces, prompts, rubricas, avaliações e feedback. Só relatório e lote aceitam. | `ownership.py:114` | Provado |
-| 18 | **Parcial.** Feedback por chave `ingest` e pelo SDK foi integrado no #32, com resolução de `client_trace_id` dentro do projeto e auditoria. O envio não exige login no painel. A incorporação do feedback às métricas permanece pendente. | `routes_phase6.py`, SDK | Corrigido e testado; métricas pendentes |
+| 18 | **Fechado no escopo de envios e métricas.** Feedback por chave `ingest` e pelo SDK foi integrado no #32. A overview agrega envios, traces distintos, thumbs e notas 1–5 por projeto, ambiente e janela de criação dos traces, sem misturar a nota do juiz. Não há deduplicação de pessoas. | `routes_phase6.py`, SDK, `analytics/overview`, visão geral | Corrigido e testado |
 | 19 | **Fechado no escopo de busca.** A chave `read` lê prompts após #30; `Client.get_prompt(prompt_id, version=...)`, integrado no #32, retorna a versão atual ou fixa com seu template. Não foi adicionada promoção automática de variantes. | `routes_phase5.py`, SDK | Corrigido e testado |
 | 20 | **Fechado no escopo de cotas mensais.** O #33 avisa ao atingir 80% dos limites de traces, avaliações, exports, spans e tokens. O sino mostra uma cópia por projeto ativo, com leitura independente. O orçamento do juiz ainda não gera aviso porque a fonte de gasto é incompleta. | `usage_service.py`, sino existente | Corrigido e testado |
 
