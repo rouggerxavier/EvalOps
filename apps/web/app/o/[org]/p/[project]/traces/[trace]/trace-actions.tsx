@@ -1,13 +1,15 @@
 "use client";
 
 import type { CSSProperties, ReactNode } from "react";
-import { useState } from "react";
-import { Flag, GitCompare, Play, Target } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { useFormState, useFormStatus } from "react-dom";
+import { EyeOff, Flag, GitCompare, Play, Target } from "lucide-react";
 
 import { Modal } from "@/components/ui/Modal";
 import {
   compareTracesAction,
   flagTraceAction,
+  hideTraceAction,
   rerunTraceAction,
   triggerEvaluationAction,
 } from "@/lib/actions";
@@ -39,8 +41,52 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
+function HideSubmit() {
+  const { pending } = useFormStatus();
+  return <button type="submit" className="btn btn--danger" disabled={pending}>{pending ? "Ocultando…" : "Ocultar trace"}</button>;
+}
+
+function HideTraceConfirmation({ org, project, traceId, environment, onClose }: Pick<Props, "org" | "project" | "traceId" | "environment"> & { onClose: () => void }) {
+  const [state, action] = useFormState(hideTraceAction, { error: null });
+  const content = useRef<HTMLFormElement>(null);
+  useEffect(() => {
+    const dialog = content.current?.closest<HTMLElement>('[role="dialog"]');
+    const previousFocus = document.activeElement as HTMLElement | null;
+    if (!dialog) return;
+    dialog.setAttribute("aria-label", "Ocultar trace?");
+    dialog.setAttribute("aria-describedby", "hide-trace-description");
+    content.current?.querySelector<HTMLButtonElement>('[data-cancel]')?.focus();
+    const trapFocus = (event: KeyboardEvent) => {
+      if (event.key !== "Tab") return;
+      const buttons = Array.from(dialog.querySelectorAll<HTMLElement>('button:not(:disabled), a[href]'));
+      const first = buttons[0];
+      const last = buttons[buttons.length - 1];
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+    };
+    dialog.addEventListener("keydown", trapFocus);
+    return () => { dialog.removeEventListener("keydown", trapFocus); previousFocus?.focus(); };
+  }, []);
+  return (
+    <Modal open onClose={onClose} title="Ocultar trace?">
+      <form ref={content} action={action}>
+        <p id="hide-trace-description">O trace sairá da lista e seu detalhe ficará indisponível. Avaliações históricas, cópias em datasets, exports, auditoria e backups têm vida própria e não são apagados por esta ação.</p>
+        <input type="hidden" name="org" value={org} />
+        <input type="hidden" name="project" value={project} />
+        <input type="hidden" name="trace_id" value={traceId} />
+        {environment !== undefined ? <input type="hidden" name="environment" value={environment} /> : null}
+        {state.error ? <p role="alert" style={{ color: "var(--danger)" }}>{state.error}</p> : null}
+        <div style={actionsStyle}>
+          <button type="button" className="btn" data-cancel onClick={onClose}>Cancelar</button>
+          <HideSubmit />
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
 export function TraceHeaderActions({ org, project, traceId, rubrics, compareCandidates, flagged, environment }: Props) {
-  const [open, setOpen] = useState<null | "flag" | "rerun" | "compare" | "evaluate">(null);
+  const [open, setOpen] = useState<null | "flag" | "rerun" | "compare" | "evaluate" | "hide">(null);
   const close = () => setOpen(null);
 
   const hasRubric = rubrics.length > 0;
@@ -48,6 +94,8 @@ export function TraceHeaderActions({ org, project, traceId, rubrics, compareCand
 
   return (
     <>
+      <button type="button" className="btn" onClick={() => setOpen("hide")}><EyeOff size={14} aria-hidden="true" /> Ocultar trace</button>
+      {open === "hide" ? <HideTraceConfirmation org={org} project={project} traceId={traceId} environment={environment} onClose={close} /> : null}
       <button type="button" className="btn" onClick={() => setOpen("compare")}>
         <GitCompare size={14} /> Comparar
       </button>

@@ -170,7 +170,12 @@ def _build_variant_context(
     metadata = item.metadata_json or {}
     source_trace_id = metadata.get("source_trace_id") if isinstance(metadata, dict) else None
     if isinstance(source_trace_id, str):
-        trace = db.get(Trace, source_trace_id)
+        trace = (
+            db.query(Trace)
+            .join(Dataset, Dataset.project_id == Trace.project_id)
+            .filter(Dataset.id == item.dataset_id, Trace.id == source_trace_id, Trace.deleted_at.is_(None))
+            .one_or_none()
+        )
         if trace is not None:
             spans = db.query(Span).filter(Span.trace_id == trace.id).all()
             ctx = build_trace_context(trace, spans)
@@ -264,6 +269,8 @@ def execute_experiment(experiment: Experiment, db: Session) -> dict:
     rubric = db.get(Rubric, experiment.rubric_id)
     if dataset is None or rubric is None:
         raise ValueError("dataset_or_rubric_not_found")
+    if dataset.project_id != experiment.project_id:
+        raise ValueError("dataset_project_mismatch")
 
     rubric_version = (
         db.query(RubricVersion)

@@ -283,6 +283,30 @@ autorizados podem terminar. A [operação](../ops/conta-senha.md) e a
 [auditoria da fatia](conta-senha-2026-11-09.md) detalham sequência, evidências e
 limites. Recuperação por email, retenção, exclusão e convites continuam pendentes.
 
+### Atualização em 2026-11-09: ocultação de trace e origem de experimentos
+
+O detalhe oferece Ocultar trace, com confirmação, cancelamento, foco e erros
+seguros. A ação exige sessão pessoal validada, resolve o projeto, confere o
+projeto do trace e usa o token pessoal no DELETE. Bearer de fallback não autoriza
+ocultação. O retorno preserva a escolha de ambiente, inclusive todos explícito.
+
+A operação é lógica, sem alterar custo ou cota. Não elimina avaliações históricas,
+cópias em datasets/exports, auditoria ou backups. Não há purge ou restauração.
+O contrato existente mantém DELETE 204 e segundo DELETE 404.
+
+Também foi corrigido o carregamento de origem em experimentos: o trace precisa
+estar ativo e pertencer ao projeto do dataset, e o dataset precisa pertencer ao
+experimento. Os negativos de fonte estrangeira e ocultada falharam antes da
+correção. Conteúdo já copiado para o dataset continua independente.
+
+Validação: 46 testes API, 256 web, typecheck/build e sete cenários Playwright em
+1280/375 px com API simulada. A revisão independente repetiu os 46 testes API,
+20 testes web focados, typecheck e diffcheck, sem achados. Os testes de backend
+usam SQLite isolado e fila falsa; não houve provider ou Redis compartilhado.
+Não foi necessário PG para filtros por coluna/NULL/JOIN, sem mudança de JSON,
+índice ou migration. A [evidência D1](../ocultar-trace-2026-11-09.md) descreve
+limites e reprodução. Revisão e CI continuam gates antes do merge.
+
 ## Segurança
 
 | # | Achado | Onde | Evidência |
@@ -338,7 +362,7 @@ limites. Recuperação por email, retenção, exclusão e convites continuam pen
 |---|---|---|
 | Conta | **Parcial:** troca autenticada de senha e encerramento das sessões pessoais disponíveis em Conta. Recuperar senha, editar perfil e excluir conta continuam pendentes; senha esquecida ainda exige intervenção. | Troca implementada e testada; recuperação pública não existe |
 | Organização | Convidar membro, remover, papéis. Criar e trocar de organização tem API (`/v1/organizations`), sem tela. | Provado (sem rota) |
-| Exclusão | Rubrica, prompt, dataset, item de dataset, experimento, projeto e organização não têm `DELETE`. `DELETE /v1/traces/{id}` existe, sem botão. | Provado |
+| Exclusão | **Parcial:** o detalhe permite ocultar trace com sessão pessoal e confirmação. É exclusão lógica: avaliações históricas, datasets, exports, auditoria e backups permanecem independentes. Exclusão física e DELETE de rubrica/prompt/dataset/experimento/projeto/organização continuam pendentes. | Ocultação implementada; purge fora desta fatia |
 | Edição | Rubrica sem reverter versão; item de dataset e experimento não editam. | Provado (sem rota) |
 | Dataset | "Adicionar este trace ao dataset" a partir do trace, e correção humana virando exemplo. | Leitura |
 | Retenção | Traces não têm política de retenção ou limpeza por idade. A manutenção diária do worker já limpa tokens revogados expirados e exports expirados; ela não faz retenção de traces. | Leitura |
