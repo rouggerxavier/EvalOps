@@ -20,7 +20,8 @@ não ligada, não contrato quebrado.
 
 ## Status
 
-As etapas 1 a 4 foram corrigidas, e as promessas falsas da etapa 7 saíram da tela.
+As etapas 1 a 4 foram corrigidas, a etapa 5 tem conexão sintética com a Grankasa,
+e as promessas falsas da etapa 7 saíram da tela.
 A etapa 6 tem amostragem, feedback por chave/SDK com métricas agregadas, busca de
 prompts e avisos de cota integrados. Itens fechados no escopo descrito abaixo:
 S1 e 1 a 28.
@@ -233,6 +234,23 @@ de QA registram os stubs; não houve navegação hidratada, PostgreSQL ou API/Re
 compartilhados. Revisão independente e build integrado seguem como gates antes
 do merge.
 
+### Atualização em 2026-11-09: conexão sintética da Grankasa
+
+O adaptador e a primeira bateria da Grankasa foram integrados no PR #254 do
+consumidor. Duas execuções contra SDK, API HTTP, Postgres 16, Redis e arq reais
+confirmaram 24 traces e 24 avaliações: em cada lote, seis falas corretas
+aprovaram e seis inventadas reprovaram, sem erro ou resultado indefinido. Matriz,
+IDs, versão fixa e relatório foram conferidos. A revisão independente e o CI da
+Grankasa passaram antes do merge.
+
+É uma conexão opt-in exclusivamente sintética. Não captura conversas reais nem
+altera agente/prompt/worker/sender produtivos. A regex distingue os seis textos
+de preço definidos; não mede qualidade geral ou modelo. Tokens/custo não foram
+medidos (`cost_source=unknown`); não houve chamada a provider ou envio real.
+O [runbook](../integrations/grankasa.md) e o [artefato de QA](grankasa-qa-2026-11-09.json)
+registram reprodução, commits, hashes, resultados e limites. Recuperação de
+senha, retenção, exclusão e convites continuam a próxima etapa de conta/dados.
+
 ## Segurança
 
 | # | Achado | Onde | Evidência |
@@ -318,7 +336,7 @@ do merge.
 3. **Destravar o uso (3, 4, 5, 8, 12):** YAML válido, erro de rubrica com a causa, filtro de ambiente, escopo
    `evaluate` e página de uso.
 4. **Medir em volume (7, 9, 11, 14):** lote e relatório na tela, tendência por versão, conversa e filtros.
-5. **Ligar a Grankasa:** adaptador e primeira bateria sintética.
+5. **Fechado no escopo sintético. Ligar a Grankasa:** adaptador e primeira bateria integrados no [PR Grankasa #254](https://github.com/rouggerxavier/Grankasa/pull/254). Dois lotes reais no EvalOps somaram 24 traces/avaliações, sem modelo ou envio real. [Runbook e limites](../integrations/grankasa.md).
 6. **Fechar o ciclo (10, 18, 19):** avaliação automática por amostragem e feedback pelo SDK.
 7. **Antes de ter outros usuários:** promessas falsas (21 a 28), recuperação de senha, retenção, exclusão, convites
    com papéis e navegação no celular.
