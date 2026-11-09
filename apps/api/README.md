@@ -59,6 +59,19 @@ created with the `evaluate` scope, which is never a default; the report needs `r
 A `read` key also reads the project's traces, prompts, rubrics, evaluations and
 feedback (`GET` routes only). Writes from the dashboard still need a member's token.
 
+`GET /v1/analytics/overview` keeps its member-token authentication and adds
+`human_feedback`: `feedback_count`, `trace_count`, `thumbs_up`, `thumbs_down`,
+`rating_count` (integers) and `avg_rating` (number or `null`, rounded to four decimals).
+It uses the same project, environment, non-deleted traces and trace creation window
+as the overview KPIs (`24h`, `7d`, `30d`, or legacy `limit_days` when no window is set).
+All submissions on those traces count, including repeated and comment-only feedback;
+`trace_count` counts distinct traces, not people. Only `up`/`down` and ratings 1–5
+contribute to their respective signals; invalid historical signals still count as
+submissions. Empty cohorts return zero counts and a `null` average. Feedback creation
+time does not restrict this aggregate: late feedback updates the trace cohort, while
+new feedback on an older trace stays outside it. These signals do not change judge
+scores, Quality Gate or sampling.
+
 Every organization starts on the `free` plan (1000 traces and 500 evaluations per
 month). Operators change one organization's limits with:
 

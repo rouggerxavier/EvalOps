@@ -857,6 +857,28 @@ def _evaluation_kpis(db: Session, traces) -> tuple[float | None, int]:
     return (round(float(average), 4) if average is not None else None), int(covered or 0)
 
 
+def _human_feedback_kpis(db: Session, traces) -> dict:
+    valid_rating = case((HumanFeedback.rating.between(1, 5), HumanFeedback.rating))
+    count, trace_count, up, down, rating_count, average = db.execute(
+        select(
+            func.count(HumanFeedback.id),
+            func.count(func.distinct(HumanFeedback.trace_id)),
+            func.count(case((HumanFeedback.thumbs == "up", 1))),
+            func.count(case((HumanFeedback.thumbs == "down", 1))),
+            func.count(valid_rating),
+            func.avg(valid_rating),
+        ).where(HumanFeedback.trace_id.in_(traces.with_entities(Trace.id)))
+    ).one()
+    return {
+        "feedback_count": int(count),
+        "trace_count": int(trace_count),
+        "thumbs_up": int(up),
+        "thumbs_down": int(down),
+        "rating_count": int(rating_count),
+        "avg_rating": round(float(average), 4) if average is not None else None,
+    }
+
+
 @router.get("/analytics/overview")
 def analytics_overview(
     environment: str | None = None,
@@ -875,6 +897,7 @@ def analytics_overview(
     if environment:
         base_query = base_query.filter(Trace.environment == environment)
     rows = base_query.all()
+    human_feedback = _human_feedback_kpis(db, base_query)
     if not rows:
         return {
             "kpis": {
@@ -888,6 +911,7 @@ def analytics_overview(
             "cost_by_day": [],
             "model_breakdown": [],
             "recent_flagged": [],
+            "human_feedback": human_feedback,
         }
 
     avg_score, evaluated_traces = _evaluation_kpis(db, base_query)
@@ -976,4 +1000,5 @@ def analytics_overview(
             for row in model_rows
         ],
         "recent_flagged": [TraceOut.model_validate(row).model_dump() for row in flagged],
+        "human_feedback": human_feedback,
     }

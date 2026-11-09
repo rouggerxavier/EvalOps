@@ -81,6 +81,14 @@ export type TraceDetailResponse = {
 };
 
 export type OverviewResponse = {
+  human_feedback: {
+    feedback_count: number;
+    trace_count: number;
+    thumbs_up: number;
+    thumbs_down: number;
+    rating_count: number;
+    avg_rating: number | null;
+  };
   kpis: {
     traces: number;
     cost_usd: number;
