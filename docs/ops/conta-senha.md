@@ -6,7 +6,7 @@ O link **Conta** aparece na barra ativa do workspace, com **Sair** preservado.
 
 `POST /v1/auth/change-password` usa o JWT Bearer como única autoridade sobre o
 usuário. O JSON recebe `current_password` (1–256 caracteres) e `new_password`
-(8–256 caracteres). Não há recuperação pública, link de reset nem envio de email.
+(8–256 codepoints Unicode). Não há recuperação pública, link de reset nem envio de email.
 
 - `204`: hash Argon2 e versão da credencial alterados na mesma transação. Todas as
   sessões pessoais anteriores, inclusive a usada na troca, recebem `401` nos

@@ -10,8 +10,8 @@
 
 ## Resultado
 
-Verificações locais aprovadas, com revisão independente de segurança/UI solicitada
-pelo integrador antes de publicação. Recuperação pública não foi implementada.
+Verificações locais e revisões independentes de segurança e sessão/UI aprovadas
+antes da publicação. Recuperação pública não foi implementada.
 
 ## Entradas e autoridade
 
@@ -73,3 +73,16 @@ ou banco pessoal, navegadores além do Chromium, SMTP ou produção.
 **Rolling deploy e rollback precisam preservar o verificador de versão.** Código
 anterior revalidaria JWTs revogados; não baixe versões nem remova a coluna após uso.
 Sequência segura e alternativa com rotação de segredo em [operação](../ops/conta-senha.md).
+
+## Verificação incremental final
+
+O integrador reproduziu o erro 422 refletindo input quando a API usa prefixo de
+proxy. O handler passou a identificar a operação pelo template da rota, sem
+depender do path público. O teste HTTP usa JWT real e prefixo, confirma ausência
+do marcador sensível na resposta/log e preserva o 422 padrão em outra rota.
+
+No head de código `70c85c83b53f4e1394e2ab049f94523955b71026`, 50 testes de auth
+direcionados passaram após essa alteração. A revisão independente confirmou
+32/32 em SQLite e 32/32 em Postgres 16, sem findings pendentes. A revisão web
+manteve o carimbo por igualdade das fontes com seu head aprovado, sem repetir
+QA/build. A composição com a documentação da Grankasa altera somente docs.
