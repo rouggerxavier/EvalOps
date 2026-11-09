@@ -185,6 +185,15 @@ export async function getTrace(traceId: string): Promise<TraceDetailResponse> {
   return fetchJson<TraceDetailResponse>(`/traces/${traceId}`);
 }
 
+export async function hideTrace(traceId: string, sessionToken: string): Promise<void> {
+  const res = await fetch(`${getApiBaseUrl()}/traces/${encodeURIComponent(traceId)}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${sessionToken}` },
+    cache: "no-store",
+  });
+  if (res.status !== 204) throw new Error(`API ${res.status}`);
+}
+
 export async function flagTrace(traceId: string, payload: {
   reason: string;
   note?: string;

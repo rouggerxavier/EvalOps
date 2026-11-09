@@ -9,6 +9,7 @@ import { setApiKeyFlash } from "@/lib/flash";
 import { parseQualityGateForm } from "@/lib/quality-gate";
 import { sanitizeApiError } from "@/lib/safe-error";
 import { resolveEnvironment } from "@/lib/environment";
+import { getSession } from "@/lib/auth";
 import {
   bulkFlagTraces,
   buildDatasetFromTraces,
@@ -26,6 +27,8 @@ import {
   createRubricVersion,
   deleteApiKey,
   flagTrace,
+  getTrace,
+  hideTrace,
   markNotificationsRead,
   patchProject,
   putQualityGateConfig,
@@ -499,6 +502,37 @@ export async function flagTraceAction(formData: FormData): Promise<void> {
     errorMsg = messageFromActionError(error, "Failed to flag trace");
   }
   redirectWithMessage(path, errorMsg ? { error: errorMsg } : { flagged: "1" });
+}
+
+export async function hideTraceAction(_previous: { error: string | null }, formData: FormData): Promise<{ error: string | null }> {
+  const org = String(formData.get("org") ?? "");
+  const project = String(formData.get("project") ?? "");
+  const traceId = String(formData.get("trace_id") ?? "");
+  if (![org, project, traceId].every((value) => /^[a-zA-Z0-9_-]{1,255}$/.test(value)) || traceId.length > 64) {
+    return { error: "Trace inválido. Volte à lista e abra o trace novamente." };
+  }
+  const path = projectPath(org, project, "traces");
+  const rawEnvironment = formData.get("environment");
+  const environment = rawEnvironment === "" ? "" : typeof rawEnvironment === "string" ? resolveEnvironment(rawEnvironment) : undefined;
+  try {
+    const session = await getSession();
+    if (!session) return { error: "Entre com sua conta pessoal para ocultar este trace." };
+    const resolved = await resolveProject(org, project);
+    const detail = await getTrace(traceId);
+    if (detail.trace.project_id !== resolved.project_id) {
+      return { error: "Trace indisponível neste projeto. Volte à lista e atualize a página." };
+    }
+    await hideTrace(traceId, session.token);
+  } catch (error) {
+    const status = error instanceof Error ? error.message.match(/^API (\d{3})(?:\b|:)/)?.[1] : undefined;
+    if (status === "401") return { error: "Sua sessão expirou. Entre novamente para ocultar o trace." };
+    if (status === "403") return { error: "Sua conta não tem permissão para ocultar este trace." };
+    if (status === "404") return { error: "Trace indisponível. Ele pode já estar oculto. Volte à lista e atualize a página." };
+    return { error: "Não foi possível ocultar o trace. Tente novamente." };
+  }
+  revalidatePath(path);
+  revalidatePath(projectPath(org, project, `traces/${traceId}`));
+  redirectWithMessage(path, environment === undefined ? {} : { environment });
 }
 
 export async function bulkFlagTracesAction(formData: FormData): Promise<void> {

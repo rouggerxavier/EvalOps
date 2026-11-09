@@ -120,6 +120,18 @@ A cobertura é alta e não testa o que importa:
 - Testes de avaliador montam `messages_out` à mão. Nenhum teste faz SDK → API → avaliação.
 - A CI da `main` não roda os testes web, e o último run na `main` é de maio.
 
+## Atualização em 2026-11-09 — fonte de trace em experimento
+
+A inspeção de ciclo de dados revelou que `_build_variant_context` carregava um
+`source_trace_id` sem checar projeto ou `deleted_at`. A fonte agora é consultada
+como trace ativo no projeto do dataset; o executor também recusa dataset de
+outro projeto. Não há enriquecimento com metadados/spans de origem estrangeira
+ou ocultada. Cópias já pertencentes ao dataset não são apagadas por essa regra.
+
+A regressão foi reproduzida antes da correção. O gate direcionado de API passou
+em 46 testes; a revisão independente repetiu o mesmo conjunto e os testes web
+da ocultação. Não há mudança de schema, persistência JSON ou provider real.
+
 ## O que está bom
 
 - **Isolamento entre tenants:** 16 leituras e 3 escritas de outro usuário, em Postgres, todas com 404.
