@@ -730,7 +730,8 @@ evaluators:
             headers=headers,
             json={"trace_id": trace_id, "rubric_id": rubric2_id},
         )
-        assert run_r.status_code == 403
+        # No membership in the rubric's organization: do not reveal its existence.
+        assert run_r.status_code == 404
 
 
 class TestFailFastAndAutoFail:

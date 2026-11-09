@@ -107,7 +107,7 @@ Limites das correções:
 - **Lockfile web fora de sincronia:** `npm ci` falha por faltar Playwright; a CI usa `npm install` e esconde isso. Corrigido na branch `fix/web-deps-audit`: lockfile regenerado, `npm ci` limpo passa.
 - **Sem lockfile Python:** faixas abertas (`fastapi>=0.115,<1`) causaram o item 8. Já resolvido: `apps/api/requirements.lock` (`uv pip compile`, inclui `dev`) fixa todas as dependências instaladas; CI, os dois compose e o README instalam com `-c requirements.lock`. Não há Dockerfile da API.
 - **Limpeza:** ~~`maintenance.run_all` não tem agendamento em compose nem worker.~~ **Corrigido** (`claude/replay-limpeza-971a38`): cron diário no worker arq (`maintenance_cleanup_job` em `WorkerSettings.cron_jobs`), em lotes de 1000 com commit por lote; hora em `EVALOPS_MAINTENANCE_HOUR` (padrão 3) no fuso `EVALOPS_MAINTENANCE_TZ` (padrão UTC, ou seja 0h em Brasília).
-- **Papéis:** nenhuma rota verifica papel, só pertencimento. Hoje não há convite, então o risco é baixo; vira real no dia em que houver.
+- **Papéis:** corrigido no backend por R1. Cada request JWT consulta `Membership` no banco: owner administra, member opera e viewer lê; valores desconhecidos não concedem acesso. Scopes de API key mantêm contrato independente. Member perde administração explicitamente; convites e adequação dos controles da UI continuam em R2. [Contrato, inventário de rotas e evidências](../security/r1-membership-permissions.md).
 - **`alembic check`:** acusa 3 índices criados por migration e ausentes dos models; `create_all` fica sem eles. Corrigido na branch `claude/schema-docs-902ced`: `ix_evaluation_runs_trace_created` e os dois `ix_traces_metadata_prompt_*` (só Postgres, via `ddl_if`) declarados em `app/models.py`; `alembic check` em Postgres 16 dá `No new upgrade operations detected.`
 - **Docs:** o README cita `docs/04-*`, `docs/07-*`, `docs/11-*` e `docs/plans/`, que não existem, e Next 14 (é 15.5.18). O código cita `docs/ops/database-migrations.md`, também ausente. Corrigido na branch `claude/schema-docs-902ced`: README sem links quebrados e com Next.js 15; `docs/ops/database-migrations.md` criado com o fluxo real. Resta `apps/web/lib/rag.ts` citando `docs/08-*`, fora do escopo.
 
@@ -119,6 +119,18 @@ A cobertura é alta e não testa o que importa:
 - `apps/api/tests/conftest.py` força SQLite, então o bug de migration é invisível.
 - Testes de avaliador montam `messages_out` à mão. Nenhum teste faz SDK → API → avaliação.
 - A CI da `main` não roda os testes web, e o último run na `main` é de maio.
+
+## Atualização em 2026-11-09 — fonte de trace em experimento
+
+A inspeção de ciclo de dados revelou que `_build_variant_context` carregava um
+`source_trace_id` sem checar projeto ou `deleted_at`. A fonte agora é consultada
+como trace ativo no projeto do dataset; o executor também recusa dataset de
+outro projeto. Não há enriquecimento com metadados/spans de origem estrangeira
+ou ocultada. Cópias já pertencentes ao dataset não são apagadas por essa regra.
+
+A regressão foi reproduzida antes da correção. O gate direcionado de API passou
+em 46 testes; a revisão independente repetiu o mesmo conjunto e os testes web
+da ocultação. Não há mudança de schema, persistência JSON ou provider real.
 
 ## O que está bom
 

@@ -65,20 +65,20 @@ router = APIRouter(prefix="/v1")
 # Ownership is centralised in app.ownership. These keep the
 # (id, user_id, db) call shape the handlers below already use.
 
-def _project_or_404(project_id: str, user_id: Actor, db: Session) -> Project:
-    return _project_or_404_base(db, user_id, project_id)
+def _project_or_404(project_id: str, user_id: Actor, db: Session, permission: str = "read") -> Project:
+    return _project_or_404_base(db, user_id, project_id, permission)
 
 
-def _prompt_or_404(prompt_id: str, user_id: Actor, db: Session) -> Prompt:
-    return _prompt_or_404_base(db, user_id, prompt_id)
+def _prompt_or_404(prompt_id: str, user_id: Actor, db: Session, permission: str = "read") -> Prompt:
+    return _prompt_or_404_base(db, user_id, prompt_id, permission)
 
 
-def _dataset_or_404(dataset_id: str, user_id: str, db: Session) -> Dataset:
-    return _dataset_or_404_base(db, user_id, dataset_id)
+def _dataset_or_404(dataset_id: str, user_id: str, db: Session, permission: str = "read") -> Dataset:
+    return _dataset_or_404_base(db, user_id, dataset_id, permission)
 
 
-def _experiment_or_404(experiment_id: str, user_id: str, db: Session) -> Experiment:
-    return _experiment_or_404_base(db, user_id, experiment_id)
+def _experiment_or_404(experiment_id: str, user_id: str, db: Session, permission: str = "read") -> Experiment:
+    return _experiment_or_404_base(db, user_id, experiment_id, permission)
 
 
 @router.get("/projects/{project_id}/prompts")
@@ -99,7 +99,7 @@ def create_prompt(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
-    project = _project_or_404(project_id, user.id, db)
+    project = _project_or_404(project_id, user.id, db, "write")
     existing = (
         db.query(Prompt)
         .filter(Prompt.project_id == project_id, Prompt.slug == payload.slug)
@@ -251,7 +251,7 @@ def create_prompt_version(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
-    prompt = _prompt_or_404(prompt_id, user.id, db)
+    prompt = _prompt_or_404(prompt_id, user.id, db, "write")
     version_num = int(prompt.current_version) + 1
     row = PromptVersion(
         id=new_id("pmv"),
@@ -298,7 +298,7 @@ def create_dataset(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> DatasetOut:
-    ds_project = _project_or_404(project_id, user.id, db)
+    ds_project = _project_or_404(project_id, user.id, db, "write")
     existing = (
         db.query(Dataset)
         .filter(Dataset.project_id == project_id, Dataset.slug == payload.slug)
@@ -334,7 +334,7 @@ def create_dataset_items(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
-    _dataset_or_404(dataset_id, user.id, db)
+    _dataset_or_404(dataset_id, user.id, db, "write")
     if not payload.items:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="items_required")
     current_count = db.query(DatasetItem).filter(DatasetItem.dataset_id == dataset_id).count()
@@ -381,7 +381,7 @@ def build_dataset_from_traces(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
-    dataset = _dataset_or_404(dataset_id, user.id, db)
+    dataset = _dataset_or_404(dataset_id, user.id, db, "write")
     query = db.query(Trace).filter(
         Trace.project_id == dataset.project_id,
         Trace.deleted_at.is_(None),
@@ -446,8 +446,8 @@ def create_experiment(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> ExperimentOut:
-    _project_or_404(project_id, user.id, db)
-    dataset = _dataset_or_404(payload.dataset_id, user.id, db)
+    _project_or_404(project_id, user.id, db, "write")
+    dataset = _dataset_or_404(payload.dataset_id, user.id, db, "write")
     rubric = db.get(Rubric, payload.rubric_id)
     if not rubric or rubric.project_id != project_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="not_found")
@@ -484,7 +484,7 @@ def run_experiment(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
-    experiment = _experiment_or_404(experiment_id, user.id, db)
+    experiment = _experiment_or_404(experiment_id, user.id, db, "write")
 
     # Fix-7B.5 (A-08): mirror the evaluation route's judge budget gate so an
     # experiment whose rubric uses llm_judge cannot bypass the plan budget.

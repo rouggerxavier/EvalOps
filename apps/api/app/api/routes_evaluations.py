@@ -19,7 +19,7 @@ from app.domain.services.eval_service import (
 from app.domain.services.rubric_report_service import WINDOWS, filtered_traces, rubric_report
 from app.infra.llm import cli_judge
 from app.models import EvaluationRun, EvaluationScore, Project, Rubric, RubricVersion, Trace, User
-from app.ownership import Actor, actor_access, load_project, load_trace, project_access
+from app.ownership import Actor, actor_access, load_project, load_rubric, load_trace, project_access
 from app.workers.queue import get_arq_pool
 from app.safe_errors import safe_message
 from app.schemas import (
@@ -63,11 +63,9 @@ def trigger_evaluation(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
-    trace = load_trace(db, user.id, payload.trace_id)
+    trace = load_trace(db, user.id, payload.trace_id, "write")
 
-    rubric = db.get(Rubric, payload.rubric_id)
-    if not rubric:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="not_found")
+    rubric = load_rubric(db, user.id, payload.rubric_id, "write")
     if rubric.project_id != trace.project_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="forbidden")
 
@@ -133,7 +131,7 @@ def trigger_evaluation(
 @router.post("/projects/{project_id}/evaluations/batch", status_code=status.HTTP_202_ACCEPTED)
 async def trigger_evaluation_batch(
     payload: EvaluationBatchIn,
-    project: Project = Depends(project_access("evaluate")),
+    project: Project = Depends(project_access("evaluate", "write")),
     db: Session = Depends(get_db),
     arq_pool=Depends(get_arq_pool),
 ) -> dict:

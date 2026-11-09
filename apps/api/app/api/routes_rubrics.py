@@ -6,7 +6,7 @@ from app.deps import get_current_user
 from app.domain.rubrics.parser import ignored_fields, parse_rubric_yaml
 from app.domain.services.audit_service import record_audit
 from app.models import EvaluatorRow, Project, Rubric, RubricVersion, User
-from app.ownership import get_owned_project, get_owned_rubric, project_access, rubric_access
+from app.ownership import project_access, rubric_access
 from app.safe_errors import safe_message
 from app.schemas import RubricCreate, RubricOut, RubricVersionCreate, RubricVersionOut
 from app.security import new_id
@@ -53,7 +53,7 @@ def list_rubrics(
 @router.post("/projects/{project_id}/rubrics", status_code=status.HTTP_201_CREATED)
 def create_rubric(
     payload: RubricCreate,
-    project: Project = Depends(get_owned_project),
+    project: Project = Depends(project_access(None, "write")),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
@@ -165,7 +165,7 @@ def get_rubric_version(
 @router.post("/rubrics/{rubric_id}/versions", status_code=status.HTTP_201_CREATED)
 def create_rubric_version(
     payload: RubricVersionCreate,
-    rubric: Rubric = Depends(get_owned_rubric),
+    rubric: Rubric = Depends(rubric_access(None, "write")),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
