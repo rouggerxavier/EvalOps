@@ -51,12 +51,20 @@ test("backend errors become safe fixed codes", async () => {
 
 test("fragment is removed including query, without persistent token storage", () => {
   const { takeRecoveryFragment } = loadTs("lib/recovery-fragment.ts");
-  const calls = [], history = { state: {}, replaceState: (...args) => calls.push(args) };
+  const calls = [], history = { state: { opaque: ["/reset-password#" + "a".repeat(43), { value: "a".repeat(43) }], flag: true }, replaceState: (...args) => calls.push(args) };
   assert.equal(takeRecoveryFragment({ hash: "#" + "a".repeat(43), pathname: "/reset-password" }, history), "a".repeat(43));
-  assert.deepEqual(calls, [[history.state, "", "/reset-password"]]);
+  assert.deepEqual(calls, [[{ opaque: ["/reset-password", { value: "" }], flag: true }, "", "/reset-password"]]);
   assert.equal(takeRecoveryFragment({ hash: "#bad", pathname: "/reset-password" }, history), "");
+  takeRecoveryFragment({ hash: "#" + "a".repeat(43), pathname: "/reset-password" }, { state: null, replaceState: (...args) => calls.push(args) });
+  assert.deepEqual(calls.at(-1), [null, "", "/reset-password"]);
+  for (const fragment of ["reset-password", "children"]) {
+    const state = { segment: "reset-password", route: "children", url: `/reset-password#${fragment}` };
+    const replacements = [];
+    assert.equal(takeRecoveryFragment({ hash: `#${fragment}`, pathname: "/reset-password" }, { state, replaceState: (...args) => replacements.push(args) }), "");
+    assert.deepEqual(replacements, [[{ segment: "reset-password", route: "children", url: "/reset-password" }, "", "/reset-password"]]);
+  }
   const source = readFileSync(new URL("../components/RecoveryForms.tsx", import.meta.url), "utf8");
-  assert.match(source, /if \(token\.current === null\) token\.current = takeRecoveryFragment/);
+  assert.match(source, /if \(token\.current === null\) capture\(\)/);
   assert.doesNotMatch(source, /localStorage|sessionStorage|document\.cookie|type="hidden"|name="token"/);
   assert.match(source, /aria-busy=\{pending\}/);
 });

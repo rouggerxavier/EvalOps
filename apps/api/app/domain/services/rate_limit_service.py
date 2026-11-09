@@ -376,6 +376,8 @@ def check_recovery_rate_limits(email: str | None, ip: str) -> tuple[int | None, 
         backend = RedisRateLimiter(client)
         ip_digest = hashlib.sha256(ip.encode()).hexdigest()
         ip_result = backend.check(f"recovery-ip:{ip_digest}", 20, 300)
+        if not ip_result.allowed:
+            return ip_result.retry_after_seconds, False
         account_allowed = True
         if email is not None:
             digest = hashlib.sha256(email.strip().lower().encode()).hexdigest()

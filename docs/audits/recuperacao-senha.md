@@ -11,8 +11,10 @@
 
 ## Veredito
 
-Não foram encontrados bloqueadores na revisão do autor. Os gates direcionados,
-o build, o fluxo real com caixa falsa e o gate completo da API passaram.
+As reproduções das revisões independentes foram corrigidas e cobertas por
+regressões; a revalidação independente do novo commit está pendente. O delta passou
+nos gates direcionados, build e fluxo real com caixa falsa. O gate completo da API
+abaixo corresponde à versão anterior à revisão e não foi repetido neste delta.
 
 ## Entradas e ativos
 
@@ -34,7 +36,7 @@ o build, o fluxo real com caixa falsa e o gate completo da API passaram.
 
 ## Achados e correções
 
-Nenhum achado aberto nesta revisão. O primeiro gate completo encontrou duas
+O primeiro gate completo encontrou duas
 falhas de caplog no replay: o teste novo da migration carregava `alembic.ini`, e
 `fileConfig` desabilitava os loggers existentes do processo. O teste agora usa
 `Config()` com `script_location` explícito, sem reconfigurar logging. A sequência
@@ -42,10 +44,24 @@ migration+replay reproduziu 2 falhas/2 sucessos antes e passou nos 4 casos depoi
 mantendo as asserções de logs. Os limites operacionais conhecidos estão abaixo
 e no [runbook](../ops/recuperacao-senha.md).
 
+| Severidade | Reprodução independente | Correção e regressão |
+| --- | --- | --- |
+| High | Duas sessões SQLite leem pending e enviam dois emails | Claim CAS exige rowcount1 antes do commit/SMTP; duas sessões reais com barreira na geração do candidato agora enviam uma vez |
+| Medium | IP bloqueado gasta três tentativas da conta de uma vítima | Retorno após IP negado precede conta; Redis dedicado mantém três tentativas disponíveis para outro IP |
+| Medium | PG com timezone Fortaleza lê o mesmo instante em -03 e worker recusa job | Aware usa astimezoneUTC; teste real de sessão PG em -03 envia e consome o link |
+| Medium | Reabrir hash no mesmo documento deixa campos desabilitados | Listener hashchange substitui token/erro; E2E válido→inválido→válido conserva Document e redefine senha |
+| Medium | Next mantém token no history.state após remover URL | Saneamento de strings do estado opaco, replaceState nativo e PopStateEvent; E2E confere captura, erro, sucesso e Back |
+| Low | Falha503 sugere aguardar minutos mesmo com feature desabilitada | Copy segura explica indisponibilidade e sugere tentar mais tarde ou contatar administrador, sem expor configuração |
+
+As três regressões backend reproduziram falha antes e passaram após a correção.
+As regressões web falharam no build anterior por token no histórico e hash não
+consumido. A solução final passou no Next real; apenas replaceState(null) e
+router.replace não bastaram, e as tentativas incompletas foram descartadas.
+
 ## Cobertura e verificações
 
-A cobertura existente na unidade protege os riscos relevantes; a retomada não
-adicionou testes redundantes. Ela concluiu E2E e inspeção da UI e revisou o diff.
+A cobertura da revisão acrescenta três regressões backend e amplia o E2E para
+reabertura no mesmo documento, histórico e cabeçalhos de requisição.
 
 | Comportamento / falha | Evidência |
 | --- | --- |
@@ -55,9 +71,10 @@ adicionou testes redundantes. Ela concluiu E2E e inspeção da UI e revisou o di
 | TLS, timeout, auth, origem fixa e injeção de destinatário | Testes do transporte sem conexão SMTP |
 | Migration e limpeza | Upgrade→downgrade0013→upgrade→check em schema UUID; dry-run/idempotência; migration+replay 4 passaram após corrigir isolamento de logging |
 | Unicode, validação e redirecionamento seguro | Node: 16 testes focados; suite web completa: 242 passaram |
-| Integração web/API e sessões | Playwright Chromium: 3 passaram em dev e 3 em produção |
+| Integração web/API e sessões após revisão | Playwright Chromium: 4 passaram em dev/StrictMode e 4 em produção |
 | Tipagem e pacote web | `npx tsc --noEmit` e `npm run build` passaram na retomada |
-| Gate completo final da API | `pytest -q`: 696 passaram, 14 omitidos, 32 avisos, 74,19 s |
+| Gate completo da API anterior à revisão | `pytest -q`: 696 passaram, 14 omitidos, 32 avisos, 74,19 s |
+| Gate API do delta de revisão | Recovery + transport + change-password + migration + worker: 89 passaram, 2 avisos, 17,29 s, com PG16/Redis dedicados |
 
 O gate final rodou somente `apps/api`, sem SDK no mesmo processo, com
 `EVALOPS_RATE_LIMIT_BACKEND=memory`, `REDIS_URL=redis://127.0.0.1:18683/15`,
@@ -65,9 +82,15 @@ O gate final rodou somente `apps/api`, sem SDK no mesmo processo, com
 `ACCOUNT_TEST_DATABASE_URL=postgresql+psycopg://evalops:evalops@127.0.0.1:15633/evalops_account_test`.
 
 O E2E percorre login → forgot → caixa falsa → fragmento → confirmação inválida →
-reset → login novo. Verifica token ausente de URL final, HTML, cookies, storages
-e logs, recusa de origem externa, sessão antiga rejeitada e replay inválido.
-Também cobre fragmento ausente/adulterado e query adversarial.
+reset → login novo. Verifica token ausente de URL final, HTML, cookies, storages,
+history.state, cabeçalhos e logs, recusa de origem externa, sessão antiga rejeitada
+e replay inválido. Também cobre fragmento ausente/adulterado, query adversarial,
+reabertura hash-only no mesmo documento, erro anterior limpo e Back.
+
+A repetição local de E2Es esgotou a cota de IP loopback na primeira rodada dev
+após a revisão. Foi removido somente o bucket do IP127.0.0.1 no Redis dedicado
+18683/db15, preservando todos os buckets de conta, antes da execução dev final.
+Nenhuma política de limite do produto foi desabilitada para o E2E.
 
 A tentativa inicial de E2E em produção usou localhost como API e foi rejeitada
 pela validação já existente de configuração. A execução final passou usando

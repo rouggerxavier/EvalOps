@@ -36,3 +36,11 @@ Desabilitar SMTP/origem; remover rotas/UI/worker depois de escoar jobs. Downgrad
 - UI desktop/mobile, teclado, foco e contraste verificados. Nenhum SMTP real foi usado.
 - Corrigido isolamento do teste de migration que desabilitava loggers do replay; sequência RED 2 falhas/2 sucessos → GREEN 4 sucessos.
 - Evidências e limites: [revisão da recuperação](../audits/recuperacao-senha.md).
+
+## Delta da revisão independente
+- Claim CAS protege concorrência SQLite; lockUserPG preservado, timestamp aware normalizado pelo instante.
+- IP bloqueado não consome bucket de conta. Três regressões backend RED→GREEN; gate dirigido 89 passaram.
+- Reabertura hash-only substitui token/erro sem reload; token removido também do history.state do Next, sem campos privados.
+- E2E real 4/4 em produção e dev/StrictMode; 16 testes Node focados, tsc e build passaram.
+- Copy de indisponibilidade não promete minutos nem expõe configuração.
+- FULL API anterior continua registrado; não repetido no delta para serializar CI. Novo commit aguarda revalidação dos dois revisores antes de publicação.

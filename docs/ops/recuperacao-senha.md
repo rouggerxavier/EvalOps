@@ -44,6 +44,8 @@ para detectar essa condição; o202 confirma aceitação, não entrega.
   normalizada3/900s (supressão silenciosa202). Conta existe ou não, usa os mesmos
   buckets. Chaves guardam digest SHA256, nunca email/IP/token em claro. Cada registro
   usa MULTI/EXEC atômico. Janelas fixas permitem até cerca de2× ao cruzar a borda.
+- IP já bloqueado encerra a verificação antes do bucket da conta; um atacante
+  bloqueado não gasta a cota da vítima usando emails no corpo da requisição.
 - O limite de reset também usa o bucket de IP, antes da consulta/hash de senha.
   Login/troca autenticada mantêm suas políticas existentes.
 
@@ -57,8 +59,12 @@ Não configure o servidor ASGI para confiar irrestritamente em proxies externos.
 O link usa exclusivamente a origem configurada: `/reset-password#<token>`. Nenhum
 Host, Origin, return_to ou header encaminhado define o destino. O fragmento não vai
 na requisição HTTP. O cliente captura/remove o fragmento e query do histórico após
-montar, preserva em ref de memória sob StrictMode e envia somente no corpo da Server
-Action same-origin. Não há cookie, local/sessionStorage ou input oculto para o token.
+montar e em `hashchange`, preserva em ref de memória sob StrictMode e envia somente
+no corpo da Server Action same-origin. Também remove o token de strings no estado
+JSON do histórico e sincroniza o roteador pelo evento nativo de navegação, sem ler
+campos privados do Next. Reabrir um link na mesma aba substitui o token e o erro
+anteriores, sem recarregar o documento. Não há cookie, local/sessionStorage ou
+input oculto para o token.
 Recarregar a página perde o token: reabra o email ou peça novo link. Páginas têm
 no-referrer, noindex/nofollow e resposta no-store. Senha/token não retornam nos erros.
 
@@ -72,8 +78,13 @@ Token bruto `secrets.token_urlsafe(32)` nasce no worker. Pedido pendente com mai
 30min não é enviado; token gerado tem TTL exato30min desde a geração, sem extensão
 por retry. Um job antigo ou de versão antiga não substitui pedido posterior.
 
-Antes do SMTP, worker grava `sending` e hash e faz commit. Uma execução duplicada
-não gera token nem envia outra mensagem. **Crash após esse commit pode perder a
+Antes do SMTP, worker reclama `pending`→`sending` com UPDATE condicional por
+usuário/pedido/versão/status e exige exatamente uma linha alterada antes do commit.
+O lock do usuário continua no PostgreSQL; o CAS também protege duas sessões
+SQLite, onde FOR UPDATE é ignorado. Execuções duplicadas podem gerar candidatos
+em memória, mas só a vencedora persiste o hash e envia a mensagem. Timestamps aware
+são comparados no mesmo instante UTC, preservando sessões PG com timezone local.
+**Crash após esse commit pode perder a
 mensagem**, inclusive antes do envio; é o limite deliberado sem outbox/framework.
 O usuário pode pedir novo link. Crash depois da entrega mantém o link válido até
 uso/expiração. Falha SMTP marca `failed` e remove somente o hash daquele pedido;

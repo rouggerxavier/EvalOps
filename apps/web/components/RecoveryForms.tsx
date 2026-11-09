@@ -13,7 +13,7 @@ function errorMessage(code: string): string {
     case "invalid_password": return "Use uma senha de 8 a 256 caracteres.";
     case "password_mismatch": return "A confirmação deve ser igual à nova senha.";
     case "too_many_attempts": return "Muitas tentativas. Aguarde alguns minutos e tente novamente.";
-    default: return "Não foi possível concluir agora. Tente novamente em alguns minutos.";
+    default: return "A recuperação de senha está indisponível no momento. Tente novamente mais tarde ou entre em contato com o administrador.";
   }
 }
 
@@ -43,19 +43,36 @@ export function ResetPasswordForm() {
   const [pending, setPending] = useState(false);
   const [state, setState] = useState<RecoveryState>({});
   useEffect(() => {
-    // StrictMode re-runs effects; never replace the captured token with the now-empty fragment.
-    if (token.current === null) token.current = takeRecoveryFragment(window.location, window.history);
-    setReady(Boolean(token.current));
-    if (!token.current) setState({ error: "invalid_reset" });
+    const capture = () => {
+      setReady(false);
+      // Use the native method so a hash-only entry with null state stays null.
+      token.current = takeRecoveryFragment(window.location, {
+        state: window.history.state, replaceState: History.prototype.replaceState.bind(window.history),
+      });
+      setState(token.current ? {} : { error: "invalid_reset" });
+      // Let the router restore the cleaned history after its hydration listeners are installed.
+      queueMicrotask(() => {
+        window.dispatchEvent(new PopStateEvent("popstate", { state: window.history.state }));
+        setReady(Boolean(token.current));
+      });
+    };
+    // StrictMode re-runs effects after the fragment was already consumed.
+    if (token.current === null) capture();
+    window.addEventListener("hashchange", capture);
+    return () => window.removeEventListener("hashchange", capture);
   }, []);
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (pending || !token.current) return;
+    const submittedToken = token.current;
     const form = new FormData(event.currentTarget);
-    form.set("token", token.current);
+    form.set("token", submittedToken);
     setPending(true);
-    try { setState(await resetPasswordAction(form)); }
-    catch { setState({ error: "unavailable" }); }
+    try {
+      const result = await resetPasswordAction(form);
+      if (token.current === submittedToken) setState(result);
+    }
+    catch { if (token.current === submittedToken) setState({ error: "unavailable" }); }
     finally { setPending(false); }
   }
   const invalidPassword = state.error === "invalid_password" || state.error === "password_mismatch";

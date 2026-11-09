@@ -15,8 +15,8 @@ test.describe("password recovery with fake mailbox", () => {
       const accountResponse = await request.post(`${API}/auth/register`, { data: { name: "Recuperação QA", email, password: OLD } });
       expect(accountResponse.status()).toBe(201);
       const account = await accountResponse.json();
-      const urls: string[] = [];
-      page.on("request", (req) => urls.push(req.url()));
+      const requestMetadata: string[] = [];
+      page.on("request", (req) => requestMetadata.push(req.url(), JSON.stringify(req.headers())));
       await page.setViewportSize({ width, height: 900 });
       await page.goto("/login");
       await page.getByRole("link", { name: "Esqueci minha senha" }).click();
@@ -38,6 +38,7 @@ test.describe("password recovery with fake mailbox", () => {
       await expect(page.getByLabel("Nova senha", { exact: true })).toBeEnabled();
       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
       expect(await page.content()).not.toContain(token);
+      expect(await page.evaluate(() => JSON.stringify(history.state))).not.toContain(token);
       expect(await page.evaluate(() => [...Object.values(localStorage), ...Object.values(sessionStorage)])).not.toContain(token);
       expect((await context.cookies()).some((cookie) => cookie.value.includes(token))).toBe(false);
       await page.getByLabel("Nova senha", { exact: true }).fill(NEW);
@@ -47,6 +48,7 @@ test.describe("password recovery with fake mailbox", () => {
       const action = await submitted;
       await expect(page.getByRole("main").getByRole("alert")).toContainText("confirmação deve ser igual");
       expect(page.url()).not.toContain(token);
+      expect(await page.evaluate(() => JSON.stringify(history.state))).not.toContain(token);
       const foreign = await context.request.post(`${baseURL}/reset-password`, {
         headers: { "Next-Action": action.headers()["next-action"], "Content-Type": action.headers()["content-type"], Origin: "https://foreign.example.invalid" },
         data: action.postData()!,
@@ -57,6 +59,7 @@ test.describe("password recovery with fake mailbox", () => {
       await page.getByLabel("Confirmar nova senha", { exact: true }).fill(NEW);
       await page.getByRole("button", { name: "Redefinir senha e entrar" }).click();
       await expect(page).toHaveURL(/\/login\?password_changed=1$/);
+      expect(await page.evaluate(() => JSON.stringify(history.state))).not.toContain(token);
       expect((await request.get(`${API}/auth/session`, { headers: { Authorization: `Bearer ${account.token}` } })).status()).toBe(401);
       expect((await request.post(`${API}/auth/reset-password`, { data: { token, new_password: OLD } })).status()).toBe(400);
       await page.getByLabel("Email", { exact: true }).fill(email);
@@ -66,15 +69,18 @@ test.describe("password recovery with fake mailbox", () => {
       const session = (await context.cookies()).find((cookie) => cookie.name === "evalops_session");
       expect(session).toBeDefined();
       expect((await request.get(`${API}/auth/session`, { headers: { Authorization: `Bearer ${session!.value}` } })).status()).toBe(200);
-      expect(urls.some((url) => url.includes(token) || url.includes(OLD) || url.includes(encodeURIComponent(NEW)))).toBe(false);
+      expect(requestMetadata.some((value) => value.includes(token) || value.includes(OLD) || value.includes(encodeURIComponent(NEW)))).toBe(false);
       for (const logfile of [process.env.E2E_RECOVERY_API_LOG, process.env.E2E_RECOVERY_WEB_LOG].filter(Boolean)) {
         const logs = readFileSync(logfile!, "utf8");
         expect(logs.includes(token) || logs.includes(OLD) || logs.includes(NEW)).toBe(false);
       }
+      await page.goBack();
+      expect(page.url()).not.toContain(token);
+      expect(await page.evaluate(() => JSON.stringify(history.state))).not.toContain(token);
     });
   }
   test("invalid or missing fragment stays safe and offers a fresh link", async ({ page }) => {
-    for (const fragment of ["", "#bad", "#" + "x".repeat(43)]) {
+    for (const fragment of ["", "#bad", "#reset-password", "#children", "#" + "x".repeat(43)]) {
       await page.goto(`/reset-password?error=__proto__${fragment}`);
       await expect(page).toHaveURL(/\/reset-password$/);
       if (fragment.length === 44) {
@@ -87,5 +93,33 @@ test.describe("password recovery with fake mailbox", () => {
       await expect(page.getByRole("heading", { name: "Redefinir senha" })).toBeVisible();
       expect(await page.getByRole("main").innerText()).not.toContain("__proto__");
     }
+  });
+  test("reopened link replaces the token in the same document", async ({ page, request, baseURL }) => {
+    const email = `recovery-reopen-${Date.now()}@example.invalid`;
+    expect((await request.post(`${API}/auth/register`, { data: { name: "Reabrir QA", email, password: OLD } })).status()).toBe(201);
+    expect((await request.post(`${API}/auth/forgot-password`, { data: { email } })).status()).toBe(202);
+    const { link } = await (await request.get(`${API.replace(/\/v1$/, "")}/_test/inbox`, { params: { email } })).json();
+    const token = link.split("#")[1];
+    await page.goto("/reset-password");
+    await expect(page.getByLabel("Nova senha", { exact: true })).toBeDisabled();
+    await page.evaluate(() => { (window as any).__recoveryDocument = document; });
+    for (const fragment of ["x".repeat(43), "bad", token]) {
+      await page.evaluate((hash) => { location.hash = hash; }, fragment);
+      await expect(page).toHaveURL(`${baseURL}/reset-password`);
+      expect(await page.evaluate(() => (window as any).__recoveryDocument === document)).toBe(true);
+      if (fragment === "bad") {
+        await expect(page.getByLabel("Nova senha", { exact: true })).toBeDisabled();
+        await expect(page.getByRole("main").getByRole("alert")).toContainText("link é inválido");
+      } else {
+        await expect(page.getByLabel("Nova senha", { exact: true })).toBeEnabled();
+        await expect(page.getByRole("main").getByRole("alert")).toHaveCount(0);
+      }
+      expect(await page.evaluate(() => JSON.stringify(history.state))).not.toContain(fragment);
+    }
+    await page.getByLabel("Nova senha", { exact: true }).fill(NEW);
+    await page.getByLabel("Confirmar nova senha", { exact: true }).fill(NEW);
+    await page.getByRole("button", { name: "Redefinir senha e entrar" }).click();
+    await expect(page).toHaveURL(/\/login\?password_changed=1$/);
+    expect((await request.post(`${API}/auth/login`, { data: { email, password: NEW } })).status()).toBe(200);
   });
 });

@@ -100,6 +100,22 @@ def test_outage_propagates_without_memory_fallback(monkeypatch):
         limits.check_recovery_rate_limits("unknown@example.invalid", "test-peer")
 
 
+def test_blocked_ip_does_not_spend_account_quota(monkeypatch):
+    target = os.getenv("RECOVERY_TEST_REDIS_URL")
+    if not target:
+        pytest.skip("requires dedicated Redis")
+    assert target == "redis://127.0.0.1:18683/15"
+    monkeypatch.setenv("REDIS_URL", target)
+    email, blocked, fresh = uuid.uuid4().hex + "@example.invalid", uuid.uuid4().hex, uuid.uuid4().hex
+    for _ in range(20):
+        assert limits.check_recovery_rate_limits(None, blocked)[0] is None
+    for _ in range(3):
+        assert limits.check_recovery_rate_limits(email, blocked)[0] is not None
+    for _ in range(3):
+        assert limits.check_recovery_rate_limits(email, fresh) == (None, True)
+    assert limits.check_recovery_rate_limits(email, fresh) == (None, False)
+
+
 @pytest.mark.parametrize("recipient", ["first,second@example.invalid", "name <second@example.invalid>", "second@example.invalid\r\nBcc: third@example.invalid"])
 def test_smtp_rejects_address_lists_or_injected_headers_before_connect(configured, monkeypatch, recipient):
     import smtplib

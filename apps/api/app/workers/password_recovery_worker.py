@@ -51,15 +51,19 @@ def _dispatch(factory, user_id: str, version: int, request_id: str, requested_at
         reset = db.query(PasswordReset).filter_by(user_id=user_id).populate_existing().one_or_none()
         if (user is None or reset is None or not user.password_hash or user.credential_version != version
                 or reset.credential_version != version or reset.request_id != request_id or reset.status != "pending"
-                or reset.requested_at.replace(tzinfo=timezone.utc).isoformat() != requested_at
+                or (reset.requested_at.replace(tzinfo=timezone.utc) if reset.requested_at.tzinfo is None
+                    else reset.requested_at.astimezone(timezone.utc)).isoformat() != requested_at
                 or _is_expired(reset.expires_at, now)):
             return
         token = secrets.token_urlsafe(32)
         digest = token_digest(token)
-        reset.token_hash = digest
-        reset.status = "sending"
-        reset.created_at = now
-        reset.expires_at = now + RESET_TTL
+        claimed = db.execute(update(PasswordReset).where(
+            PasswordReset.user_id == user_id, PasswordReset.request_id == request_id,
+            PasswordReset.credential_version == version, PasswordReset.status == "pending",
+        ).values(token_hash=digest, status="sending", created_at=now, expires_at=now + RESET_TTL))
+        if claimed.rowcount != 1:
+            db.rollback()
+            return
         recipient = user.email
         # shortcut: this claim prevents retries but a crash can lose mail; add an outbox if delivery must be guaranteed.
         db.commit()

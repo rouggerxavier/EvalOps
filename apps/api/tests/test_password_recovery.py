@@ -8,9 +8,12 @@ from threading import Barrier
 import pytest
 from fastapi import HTTPException
 from starlette.requests import Request
+from sqlalchemy import create_engine, text
+from sqlalchemy.orm import sessionmaker
 
 from test_change_password import account_env, headers, OLD_PASSWORD, NEW_PASSWORD
 from app.api import routes_auth
+from app.db import Base
 from app.domain.services import password_recovery as recovery, rate_limit_service as limits
 from app.maintenance.cleanup import cleanup_expired_password_resets
 from app.models import PasswordReset, User
@@ -181,6 +184,60 @@ def test_crash_after_claim_never_regenerates(recovery_env):
     with factory() as db:
         row = db.query(PasswordReset).one()
         assert (row.token_hash, row.expires_at) == (digest, expiry)
+
+
+def test_sqlite_concurrent_dispatch_claim_sends_only_once(recovery_env, tmp_path, monkeypatch):
+    engine = create_engine(f"sqlite:///{tmp_path / 'dispatch.db'}", connect_args={"check_same_thread": False})
+    factory = sessionmaker(bind=engine, expire_on_commit=False, autoflush=False)
+    Base.metadata.create_all(engine)
+    moment = datetime.now(timezone.utc)
+    with factory() as db:
+        db.add(User(id="dispatch-user", email="dispatch@example.invalid", name="Dispatch", password_hash="nonempty"))
+        db.commit()
+        version = recovery.prepare_request(db, "dispatch-user", "dispatch-request", moment)
+    gate, generated, sent = Barrier(2), [], []
+    original = worker.secrets.token_urlsafe
+    def concurrent_token(size):
+        gate.wait(timeout=10)
+        token = original(size)
+        generated.append(token)
+        return token
+    monkeypatch.setattr(worker.secrets, "token_urlsafe", concurrent_token)
+    try:
+        with ThreadPoolExecutor(2) as executor:
+            futures = [executor.submit(worker._dispatch, factory, "dispatch-user", version,
+                        "dispatch-request", moment.isoformat(), lambda cfg, recipient, token: sent.append(token)) for _ in range(2)]
+            for future in futures:
+                future.result(timeout=15)
+        assert len(generated) == 2 and len(sent) == 1
+        with factory() as db:
+            row = db.query(PasswordReset).one()
+            assert row.status == "sent" and row.token_hash == recovery.token_digest(sent[0])
+    finally:
+        engine.dispose()
+
+
+def test_pg_worker_accepts_same_instant_in_non_utc_session(recovery_env):
+    client, factory, _, pool, sent, mailer = recovery_env
+    source = factory.kw["bind"]
+    if source.dialect.name != "postgresql":
+        pytest.skip("requires dedicated PG16")
+    assert client.post("/v1/auth/forgot-password", json={"email": "account@example.com"}).status_code == 202
+    with factory() as db:
+        schema = db.execute(text("SELECT current_schema()")).scalar_one()
+    assert schema.startswith("account_test_")
+    engine = create_engine(source.url, connect_args={"options": f"-csearch_path={schema} -ctimezone=America/Fortaleza"})
+    local_factory = sessionmaker(bind=engine, expire_on_commit=False, autoflush=False)
+    try:
+        with local_factory() as db:
+            stored = db.query(PasswordReset).one().requested_at
+            assert stored.utcoffset() == timedelta(hours=-3)
+            assert stored == datetime.fromisoformat(pool.jobs[-1][1][3])
+        worker._dispatch(local_factory, *pool.jobs[-1][1], mailer)
+        assert len(sent) == 1
+        assert reset(client, sent[0][2]).status_code == 204
+    finally:
+        engine.dispose()
 
 
 def test_smtp_failure_invalidates_only_its_token_safe_logs(recovery_env, caplog):
