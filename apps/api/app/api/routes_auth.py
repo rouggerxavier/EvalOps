@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
-from sqlalchemy import update
+from sqlalchemy import delete, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -24,7 +24,7 @@ from app.domain.services.rate_limit_service import (
     record_login_failure,
     reset_login_failures,
 )
-from app.models import AuditLog, Membership, Organization, Project, RevokedToken, User
+from app.models import AuditLog, Membership, Organization, PasswordReset, Project, RevokedToken, User
 from app.security import (
     create_session_token,
     decode_access_token,
@@ -270,6 +270,7 @@ def change_password(
     )
     if result.rowcount != 1:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="unauthorized")
+    db.execute(delete(PasswordReset).where(PasswordReset.user_id == locked_user.id))
     db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
@@ -322,3 +323,69 @@ def logout(
 def session(user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> AuthResponse:
     workspace = _default_workspace_for_user(db, user)
     return AuthResponse(token="", user=_user_dict(user), workspace=workspace)
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: str = Field(min_length=3, max_length=320, pattern=EMAIL_RE_PATTERN)
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str = Field(min_length=43, max_length=43, pattern=r"^[A-Za-z0-9_-]{43}$")
+    new_password: str = Field(min_length=8, max_length=256)
+
+
+def _recovery_unavailable() -> HTTPException:
+    return HTTPException(status_code=503, detail="recovery_unavailable")
+
+
+@router.post("/forgot-password", status_code=202)
+async def forgot_password(payload: ForgotPasswordRequest, request: Request, db: Session = Depends(get_db)) -> Response:
+    from app.config import recovery_mail_config
+    from app.domain.services.password_recovery import prepare_request
+    from app.domain.services.rate_limit_service import check_recovery_rate_limits
+
+    pool = getattr(request.app.state, "arq_pool", None)
+    if recovery_mail_config() is None or pool is None:
+        raise _recovery_unavailable()
+    email = payload.email.strip().lower()
+    try:
+        # Global dependencies are checked before lookup, regardless of account existence.
+        await pool.ping()
+        retry, account_allowed = check_recovery_rate_limits(email, _client_ip(request))
+    except Exception:
+        raise _recovery_unavailable() from None
+    if retry is not None:
+        raise HTTPException(status_code=429, detail="too_many_attempts", headers={"Retry-After": str(retry)})
+    if account_allowed:
+        now = datetime.now(timezone.utc)
+        request_id = new_id("pwr")
+        user = db.query(User).filter(User.email == email).first()
+        user_id, version = new_id("usr"), 0
+        if user is not None and user.password_hash:
+            user_id = user.id
+            version = prepare_request(db, user.id, request_id, now)
+        try:
+            await pool.enqueue_job("send_password_reset_job", user_id, version, request_id, now.isoformat(),
+                                   _job_id=request_id, _expires=1800)
+        except Exception:
+            raise _recovery_unavailable() from None
+    return Response(status_code=202)
+
+
+@router.post("/reset-password", status_code=204)
+def reset_password(payload: ResetPasswordRequest, request: Request, db: Session = Depends(get_db)) -> Response:
+    from app.config import recovery_mail_config
+    from app.domain.services.password_recovery import consume_reset
+    from app.domain.services.rate_limit_service import check_recovery_rate_limits
+
+    if recovery_mail_config() is None:
+        raise _recovery_unavailable()
+    try:
+        retry, _ = check_recovery_rate_limits(None, _client_ip(request))
+    except Exception:
+        raise _recovery_unavailable() from None
+    if retry is not None:
+        raise HTTPException(status_code=429, detail="too_many_attempts", headers={"Retry-After": str(retry)})
+    if not consume_reset(db, payload.token, payload.new_password):
+        raise HTTPException(status_code=400, detail="invalid_reset")
+    return Response(status_code=204)

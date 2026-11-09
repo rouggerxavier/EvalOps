@@ -6,7 +6,7 @@ O link **Conta** aparece na barra ativa do workspace, com **Sair** preservado.
 
 `POST /v1/auth/change-password` usa o JWT Bearer como única autoridade sobre o
 usuário. O JSON recebe `current_password` (1–256 caracteres) e `new_password`
-(8–256 codepoints Unicode). Não há recuperação pública, link de reset nem envio de email.
+(8–256 codepoints Unicode). A recuperação pública e sua configuração estão em [recuperação por email](recuperacao-senha.md).
 
 - `204`: hash Argon2 e versão da credencial alterados na mesma transação. Todas as
   sessões pessoais anteriores, inclusive a usada na troca, recebem `401` nos
@@ -51,8 +51,7 @@ antigo antes de reabrir tráfego. A troca do segredo afeta todas as sessões pes
 Os comandos de downgrade abaixo foram usados somente no banco descartável de teste.
 
 Pedidos já autorizados antes da troca podem terminar; a revogação é conferida em
-cada autenticação seguinte. Quem esqueceu a senha continua dependendo de uma etapa
-futura de recuperação com contrato SMTP/proxy definido.
+cada autenticação seguinte. Quem esqueceu a senha pode usar a recuperação por email quando SMTP, origem pública e Redis estiverem configurados.
 
 ## Verificação local
 

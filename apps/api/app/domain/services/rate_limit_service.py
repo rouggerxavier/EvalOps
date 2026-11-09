@@ -362,3 +362,24 @@ def reset_all() -> None:
     except Exception:
         pass
     _fallback_memory.reset()
+
+
+def check_recovery_rate_limits(email: str | None, ip: str) -> tuple[int | None, bool]:
+    """Dedicated distributed buckets. Any Redis error propagates: never memory fallback."""
+    from app import config
+
+    url = config.redis_url()
+    if not url:
+        raise RuntimeError("recovery_unavailable")
+    client = _create_redis_client(url, config.redis_timeout_ms() / 1000)
+    try:
+        backend = RedisRateLimiter(client)
+        ip_digest = hashlib.sha256(ip.encode()).hexdigest()
+        ip_result = backend.check(f"recovery-ip:{ip_digest}", 20, 300)
+        account_allowed = True
+        if email is not None:
+            digest = hashlib.sha256(email.strip().lower().encode()).hexdigest()
+            account_allowed = backend.check(f"recovery-account:{digest}", 3, 900).allowed
+        return ip_result.retry_after_seconds, account_allowed
+    finally:
+        client.close()
