@@ -3,6 +3,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator
 
+from app.timestamps import ServerTimestamp
+
 
 class OrganizationCreate(BaseModel):
     name: str = Field(min_length=2, max_length=255)
@@ -15,7 +17,7 @@ class OrganizationOut(BaseModel):
     id: str
     name: str
     slug: str
-    created_at: datetime
+    created_at: ServerTimestamp
 
 
 class ProjectCreate(BaseModel):
@@ -35,7 +37,7 @@ class ProjectOut(BaseModel):
     slug: str
     description: str | None = None
     default_environment: str = "prod"
-    created_at: datetime
+    created_at: ServerTimestamp
 
 
 class ProjectUpdateIn(BaseModel):
@@ -49,7 +51,7 @@ class MemberOut(BaseModel):
     email: str
     name: str
     role: str
-    joined_at: datetime
+    joined_at: ServerTimestamp
 
 
 class ApiKeyCreate(BaseModel):
@@ -89,8 +91,8 @@ class ApiKeyOut(BaseModel):
     environment: str
     scopes: list[str]
     rate_limit_per_minute: int
-    created_at: datetime
-    revoked_at: datetime | None = None
+    created_at: ServerTimestamp
+    revoked_at: ServerTimestamp | None = None
     expires_at: datetime | None = None
 
 
@@ -168,7 +170,7 @@ class TraceOut(BaseModel):
     user_ref: str | None = None
     metadata: dict = Field(alias="metadata_json")
     redacted: bool = False
-    created_at: datetime
+    created_at: ServerTimestamp
     # Populated at the route layer (list + detail) — not a column. Marked
     # optional so model_validate(trace) does not complain.
     cost_source: str | None = None
@@ -190,7 +192,7 @@ class TraceFlagOut(BaseModel):
     user_id: str
     reason: str
     note: str | None = None
-    created_at: datetime
+    created_at: ServerTimestamp
 
 
 class BulkTraceFlagIn(TraceFlagIn):
@@ -257,7 +259,7 @@ class RubricVersionOut(BaseModel):
     yaml_source: str
     parsed_spec: dict
     created_by: str
-    created_at: datetime
+    created_at: ServerTimestamp
 
 
 class RubricOut(BaseModel):
@@ -269,7 +271,7 @@ class RubricOut(BaseModel):
     description: str | None = None
     current_version: int
     threshold: float
-    created_at: datetime
+    created_at: ServerTimestamp
 
 
 class EvaluationRunRequest(BaseModel):
@@ -317,11 +319,11 @@ class EvaluationRunOut(BaseModel):
     passed: bool | None = None
     cost_usd: float | None = None
     latency_ms: int | None = None
-    started_at: datetime | None = None
-    completed_at: datetime | None = None
+    started_at: ServerTimestamp | None = None
+    completed_at: ServerTimestamp | None = None
     error: dict | None = Field(default=None, alias="error_json")
     run_metadata: dict
-    created_at: datetime
+    created_at: ServerTimestamp
 
 
 # Phase 5: prompts, datasets and experiments
@@ -351,7 +353,7 @@ class PromptOut(BaseModel):
     slug: str
     description: str | None = None
     current_version: int
-    created_at: datetime
+    created_at: ServerTimestamp
 
 
 class PromptVersionOut(BaseModel):
@@ -365,7 +367,7 @@ class PromptVersionOut(BaseModel):
     metadata: dict = Field(alias="metadata_json")
     changelog: str | None = None
     created_by: str
-    created_at: datetime
+    created_at: ServerTimestamp
 
 
 class DatasetCreate(BaseModel):
@@ -399,7 +401,7 @@ class DatasetOut(BaseModel):
     slug: str
     description: str | None = None
     source: str
-    created_at: datetime
+    created_at: ServerTimestamp
 
 
 class DatasetItemOut(BaseModel):
@@ -411,7 +413,7 @@ class DatasetItemOut(BaseModel):
     input: dict
     expected_output: dict | None = None
     metadata: dict = Field(alias="metadata_json")
-    created_at: datetime
+    created_at: ServerTimestamp
 
 
 class ExperimentVariantIn(BaseModel):
@@ -445,7 +447,7 @@ class ExperimentOut(BaseModel):
     variants: list
     pass_criteria: dict
     baseline_variant: str | None = None
-    created_at: datetime
+    created_at: ServerTimestamp
 
 
 class ExperimentRunOut(BaseModel):
@@ -461,9 +463,9 @@ class ExperimentRunOut(BaseModel):
     comparisons: dict
     criteria_failures: list
     run_metadata: dict
-    started_at: datetime | None = None
-    completed_at: datetime | None = None
-    created_at: datetime
+    started_at: ServerTimestamp | None = None
+    completed_at: ServerTimestamp | None = None
+    created_at: ServerTimestamp
 
 
 class HumanFeedbackCreate(BaseModel):
@@ -488,7 +490,7 @@ class HumanFeedbackOut(BaseModel):
     tags: list
     user_ref: str | None = None
     correction: dict | None = None
-    created_at: datetime
+    created_at: ServerTimestamp
 
 
 class ExportJobCreate(BaseModel):
@@ -509,10 +511,10 @@ class ExportJobOut(BaseModel):
     file_path: str | None = None
     file_size_bytes: int | None = None
     error: str | None = None
-    expires_at: datetime | None = None
+    expires_at: ServerTimestamp | None = None
     created_by: str | None = None
-    created_at: datetime
-    completed_at: datetime | None = None
+    created_at: ServerTimestamp
+    completed_at: ServerTimestamp | None = None
 
 
 class ExportListResponse(BaseModel):
@@ -524,7 +526,7 @@ class AttentionItemOut(BaseModel):
     trace_id: str
     cause: str
     service: str | None = None
-    at: datetime
+    at: ServerTimestamp
 
 
 class AttentionResponse(BaseModel):
@@ -568,7 +570,7 @@ class PromptUsageTraceOut(BaseModel):
     environment: str
     status: str
     prompt_version_ref: str | None = None
-    used_at: datetime
+    used_at: ServerTimestamp
 
 
 class PromptUsageOut(BaseModel):
@@ -628,8 +630,8 @@ class NotificationOut(BaseModel):
     kind: str
     title: str
     meta: dict
-    created_at: datetime
-    read_at: datetime | None = None
+    created_at: ServerTimestamp
+    read_at: ServerTimestamp | None = None
 
 
 class NotificationListResponse(BaseModel):
@@ -656,7 +658,7 @@ class QualityGateConfigOut(QualityGateSettings):
 
     project_id: str
     configured: bool
-    updated_at: datetime | None = None
+    updated_at: ServerTimestamp | None = None
 
 
 class QualityGateReason(BaseModel):
@@ -686,7 +688,7 @@ class QualityGateStatusOut(BaseModel):
     status: Literal["pass", "review", "fail"]
     window: Literal["24h", "7d", "30d"]
     environment: str | None
-    calculated_at: datetime
+    calculated_at: ServerTimestamp
     config: QualityGateConfigOut
     metrics: QualityGateMetrics
     reasons: list[QualityGateReason]
@@ -701,7 +703,7 @@ class EvaluationSamplingSettings(BaseModel):
 
 class EvaluationSamplingConfigOut(EvaluationSamplingSettings):
     model_config = ConfigDict(from_attributes=True)
-    updated_at: datetime | None = None
+    updated_at: ServerTimestamp | None = None
 
 
 class EvaluationSamplingJobOut(BaseModel):
@@ -714,9 +716,9 @@ class EvaluationSamplingJobOut(BaseModel):
     run_id: str | None
     dispatch_attempts: int
     execution_attempts: int
-    next_attempt_at: datetime
-    created_at: datetime
-    updated_at: datetime
+    next_attempt_at: ServerTimestamp
+    created_at: ServerTimestamp
+    updated_at: ServerTimestamp
 
     @computed_field
     @property

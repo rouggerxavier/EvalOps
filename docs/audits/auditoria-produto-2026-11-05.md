@@ -57,7 +57,7 @@ Limites atuais:
 - Com "qualquer env" em Traces e o chip em `dev`, o chip continua mostrando `dev` nessa visão.
 - A navegação por conversa mostra os 50 turnos mais recentes, sem paginação no detalhe.
 - O painel de run mostra nota parcial ao lado de "sem veredito", avisando que ela cobre apenas os avaliadores que mediram.
-- Há horários sem fuso nas respostas da API, afetando a apresentação relativa.
+- Horários recebidos de clientes ainda podem sair sem fuso no SQLite. Offsets já perdidos nesses históricos não podem ser reconstruídos com segurança; timestamps gerados pelo servidor são normalizados na saída.
 - O stepper da landing fala em checklist antes de promover para produção; o produto apoia essa decisão, sem promover variantes automaticamente.
 - O feedback ainda não é agregado às métricas, e os avisos não cobrem orçamento do juiz por fonte incompleta de gasto.
 - O pacote `evalops-python` segue sem publicação. A instalação pelo repositório continua válida; publicar é decisão pendente.
@@ -166,6 +166,27 @@ confere o projeto da execução.
 Validação local: 15 testes API, 13 testes web direcionados e typecheck. A regressão
 foi reproduzida antes do fix. Não houve alteração de JSON, índices ou migrations;
 Postgres e browser não foram repetidos. O build permanece no gate da CI.
+
+### Atualização em 2026-11-08: fuso dos horários gerados pelo servidor
+
+O SQLite perde o offset ao carregar colunas datetime. A saída da API agora atribui
+UTC aos valores sem fuso cuja origem é comprovadamente o relógio do servidor.
+Valores já aware preservam seu instante e offset. A regra cobre schemas de saída,
+feedback e flags no detalhe, início da assinatura e o horário do feedback em
+novos exports JSONL. Não modifica banco, migrations ou arquivos já exportados.
+
+A correção é restrita: início/fim de traces, spans e eventos, último evento do
+SDK, vencimento informado de chave e fim da assinatura não recebem uma suposição
+de UTC. Timestamps de clientes com offset perdido no histórico SQLite continuam
+ambíguos. Não foi demonstrado o mesmo defeito no PostgreSQL.
+
+Validação local: 207 testes API passaram e um foi ignorado no gate do developer;
+o root repetiu os quatro testes novos, incluindo reload SQLite, model_dump,
+respostas HTTP, offsets existentes, nulos e novo JSONL. O helper real da web foi
+executado com TZ=America/Fortaleza: o valor sem fuso aparecia três horas no futuro;
+a saída UTC representa o instante correto. Não houve migration, alteração de
+JSON ou índice. PostgreSQL e E2E de navegador não foram repetidos; revisão
+independente e CI permanecem gates antes do merge.
 
 ## Segurança
 
