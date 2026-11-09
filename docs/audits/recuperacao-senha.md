@@ -57,6 +57,10 @@ As três regressões backend reproduziram falha antes e passaram após a correç
 As regressões web falharam no build anterior por token no histórico e hash não
 consumido. A solução final passou no Next real; apenas replaceState(null) e
 router.replace não bastaram, e as tentativas incompletas foram descartadas.
+Fragmentos inválidos curtos como `#reset-password` e `#children` retiram somente
+a ocorrência com `#`; o valor bruto é removido apenas para tokens de formato
+válido. Regressões Node preservam os segmentos e estado null; o E2E inclui esses
+fragmentos sem sair da rota nem quebrar a navegação.
 
 ## Cobertura e verificações
 
@@ -122,4 +126,21 @@ contraste de 6,22:1 no texto auxiliar, 7,31:1 no erro e 12,44:1 no botão primá
   configuração operacional antes de prometer limite por visitante.
 - Nenhum leitor de tela ou aparelho físico foi usado. As verificações foram em
   Chromium local, código semântico, teclado, capturas e cores computadas.
-- Publicação, push, PR e merge ficaram fora desta unidade.
+- Publicação, push, PR e merge remoto ficaram fora desta unidade.
+
+## Composição antes da publicação
+
+O delta A2 foi commitado em `f6818ef`. A composição local incorporou `33a8384`,
+que já contém a main `205e64c` de D1. O inventário R1 detectou as duas rotas novas
+de recuperação antes da classificação (RED); ambas foram declaradas explicitamente
+como `own-contract/public` no TSV e na asserção de exceções. Os requests anônimos
+de recuperação continuam responsáveis pelo contrato público. A revisão final e a
+publicação permanecem com o orquestrador.
+
+A composição passou em 166 testes API direcionados: recuperação, transporte,
+troca de senha, migration, worker, inventário/permissões, origem de experimento e
+ocultação de trace (31,92 s, 2 avisos). O gate Node de recuperação/Conta/ocultação
+passou em 36 testes, e o build web composto passou. Nenhum FULL API adicional foi
+executado enquanto o CI remoto das outras unidades estava ativo. O E2E da árvore
+composta passou nos 4 casos em produção (5,4 s), incluindo `#reset-password` e
+`#children`, histórico, cabeçalhos, hash-only no mesmo documento e Back.

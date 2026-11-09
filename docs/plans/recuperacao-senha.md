@@ -44,3 +44,4 @@ Desabilitar SMTP/origem; remover rotas/UI/worker depois de escoar jobs. Downgrad
 - E2E real 4/4 em produção e dev/StrictMode; 16 testes Node focados, tsc e build passaram.
 - Copy de indisponibilidade não promete minutos nem expõe configuração.
 - FULL API anterior continua registrado; não repetido no delta para serializar CI. Novo commit aguarda revalidação dos dois revisores antes de publicação.
+- Composição local com R1 `33a8384` (inclui D1/main `205e64c`): inventário classifica forgot/reset como own-contract/public e mantém requests anônimos. 166 testes API e 36 Node passaram; build e 4 E2Es em produção passaram na árvore composta.
