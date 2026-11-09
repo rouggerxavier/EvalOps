@@ -2,7 +2,7 @@
 
 import type { ElementType } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import {
   Activity,
   Database,
@@ -56,6 +56,7 @@ export function Sidebar({
   onClose: () => void;
 }) {
   const pathname = usePathname();
+  const queryEnvironment = useSearchParams().get("environment");
   const base = `/o/${org}/p/${project}`;
   const usagePercent = usage?.limit ? Math.min(100, Math.round((usage.used / usage.limit) * 100)) : 0;
   const attentionLabel = attentionCount !== null && attentionCount >= 25 ? "25+" : String(attentionCount ?? "");
@@ -74,7 +75,7 @@ export function Sidebar({
       aria-modal={mobileMenuOpen ? true : undefined}
     >
       <div className="ops-sidebar__head">
-        <Link className="sb-brand" href={base} onClick={onNavigate}>
+        <Link className="sb-brand" href={projectHref(base, "", queryEnvironment)} onClick={onNavigate}>
           <span className="sb-brand__logo" aria-hidden="true">E</span>
           <span className="sb-brand__name">EvalOps Studio</span>
         </Link>
@@ -99,7 +100,7 @@ export function Sidebar({
               return (
                 <Link
                   key={id}
-                  href={projectHref(base, path)}
+                  href={projectHref(base, path, queryEnvironment)}
                   className={`sb-nav-item${active ? " is-active" : ""}`}
                   aria-current={active ? "page" : undefined}
                   onClick={onNavigate}

@@ -20,6 +20,7 @@ type Props = {
   rubrics: Pick<Rubric, "id" | "slug" | "current_version">[];
   compareCandidates: Pick<Trace, "id" | "name">[];
   flagged: boolean;
+  environment?: string;
 };
 
 const actionsStyle: CSSProperties = {
@@ -38,7 +39,7 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-export function TraceHeaderActions({ org, project, traceId, rubrics, compareCandidates, flagged }: Props) {
+export function TraceHeaderActions({ org, project, traceId, rubrics, compareCandidates, flagged, environment }: Props) {
   const [open, setOpen] = useState<null | "flag" | "rerun" | "compare" | "evaluate">(null);
   const close = () => setOpen(null);
 
@@ -106,6 +107,7 @@ export function TraceHeaderActions({ org, project, traceId, rubrics, compareCand
 
       <Modal open={open === "compare"} onClose={close} title="Comparar com outro trace" subtitle="POST /v1/traces/compare">
         <form action={compareTracesAction}>
+          {environment !== undefined ? <input type="hidden" name="environment" value={environment} /> : null}
           <input type="hidden" name="org" value={org} />
           <input type="hidden" name="project" value={project} />
           <input type="hidden" name="left_trace_id" value={traceId} />

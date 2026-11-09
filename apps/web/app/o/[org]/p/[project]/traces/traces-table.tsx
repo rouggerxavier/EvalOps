@@ -8,6 +8,7 @@ import { StatusBadge } from "@/components/ui/Badge";
 import { Copyable } from "@/components/ui/Copyable";
 import { Modal } from "@/components/ui/Modal";
 import { ScoreCell } from "@/components/ui/ScoreCell";
+import { projectHref } from "@/components/app-shell-nav";
 import { bulkFlagTracesAction } from "@/lib/actions";
 import { formatCost, formatLatency, formatRelativeTime } from "@/lib/format";
 import {
@@ -22,9 +23,10 @@ type Props = {
   project: string;
   rows: Trace[];
   verdicts: Record<string, EvaluationVerdict | null>;
+  environment?: string;
 };
 
-export function TracesTable({ org, project, rows, verdicts }: Props) {
+export function TracesTable({ org, project, rows, verdicts, environment }: Props) {
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const [modalOpen, setModalOpen] = useState(false);
 
@@ -72,7 +74,7 @@ export function TracesTable({ org, project, rows, verdicts }: Props) {
             </button>
             {selectedIds.length === 2 ? (
               <Link
-                href={`/o/${org}/p/${project}/traces/compare?left=${encodeURIComponent(selectedIds[0])}&right=${encodeURIComponent(selectedIds[1])}`}
+                href={`/o/${org}/p/${project}/traces/compare?left=${encodeURIComponent(selectedIds[0])}&right=${encodeURIComponent(selectedIds[1])}${environment === undefined ? "" : `&environment=${encodeURIComponent(environment)}`}`}
                 className="btn btn--sm"
               >
                 <GitCompareArrows size={12} /> Comparar
@@ -118,7 +120,7 @@ export function TracesTable({ org, project, rows, verdicts }: Props) {
               const isRag = isTraceRagCandidate(trace);
               const isChecked = selected.has(trace.id);
               const verdict = verdicts[trace.id] ?? null;
-              const href = `/o/${org}/p/${project}/traces/${trace.id}`;
+              const href = projectHref(`/o/${org}/p/${project}/traces`, `/${trace.id}`, environment);
               return (
                 <tr
                   key={trace.id}

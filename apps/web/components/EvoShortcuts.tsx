@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 
 import { APP_SHELL_NAV_ITEMS, projectHref } from "@/components/app-shell-nav";
 
@@ -30,6 +30,7 @@ function isTypingTarget(target: EventTarget | null): boolean {
 
 export function EvoShortcuts() {
   const router = useRouter();
+  const queryEnvironment = useSearchParams().get("environment");
   const params = useParams<{ org?: string; project?: string }>();
 
   useEffect(() => {
@@ -73,7 +74,7 @@ export function EvoShortcuts() {
       clearPrefix();
       if (!target && target !== "") return;
       event.preventDefault();
-      router.push(projectHref(base, target));
+      router.push(projectHref(base, target, queryEnvironment));
     }
 
     window.addEventListener("keydown", onKeyDown);
@@ -81,7 +82,7 @@ export function EvoShortcuts() {
       window.removeEventListener("keydown", onKeyDown);
       clearPrefix();
     };
-  }, [params?.org, params?.project, router]);
+  }, [params?.org, params?.project, router, queryEnvironment]);
 
   return null;
 }

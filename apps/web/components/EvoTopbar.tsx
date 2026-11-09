@@ -3,12 +3,13 @@
 import { useEffect, useRef } from "react";
 import Link from "next/link";
 import { ChevronRight, Menu, Search, X } from "lucide-react";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 
 import { getActiveNavItem, getPageTitle, projectHref } from "@/components/app-shell-nav";
 import { NotificationsBell } from "@/components/ui/NotificationsBell";
 import { setEnvironmentAction } from "@/lib/actions";
 import { logoutAction } from "@/lib/auth-actions";
+import { resolveEnvironment } from "@/lib/environment";
 import type { NotificationItem } from "@/lib/types";
 
 const ENVIRONMENTS = ["all", "prod", "staging", "dev"] as const;
@@ -44,6 +45,8 @@ export function EvoTopbar({
   onMenuToggle: () => void;
 }) {
   const pathname = usePathname();
+  const queryEnvironment = useSearchParams().get("environment");
+  const activeEnvironment = resolveEnvironment(queryEnvironment, environment) ?? "all";
   const base = `/o/${org}/p/${project}`;
   const searchRef = useRef<HTMLInputElement>(null);
   const activeItem = getActiveNavItem(pathname, base);
@@ -85,11 +88,11 @@ export function EvoTopbar({
       <nav className={`crumbs ops-crumbs${isDetailPage ? " ops-crumbs--detail" : ""}`} aria-label="Caminho">
         <span className="ops-crumbs__workspace">{orgLabel}</span>
         <span className="crumbs__sep ops-crumbs__workspace"><ChevronRight size={12} /></span>
-        <Link className="ops-crumbs__workspace" href={base}><strong>{projectLabel}</strong></Link>
+        <Link className="ops-crumbs__workspace" href={projectHref(base, "", queryEnvironment)}><strong>{projectLabel}</strong></Link>
         <span className="crumbs__sep ops-crumbs__workspace"><ChevronRight size={12} /></span>
         {isDetailPage ? (
           <>
-            <Link href={projectHref(base, activeItem.path)}>{activeItem.label}</Link>
+            <Link href={projectHref(base, activeItem.path, queryEnvironment)}>{activeItem.label}</Link>
             <span className="crumbs__sep"><ChevronRight size={12} /></span>
           </>
         ) : null}
@@ -97,6 +100,7 @@ export function EvoTopbar({
       </nav>
 
       <form className="topbar__search ops-topbar__search" action={`${base}/traces`} method="get">
+        {queryEnvironment !== null ? <input type="hidden" name="environment" value={queryEnvironment} /> : null}
         <Search className="topbar__search-icon" size={14} />
         <input ref={searchRef} name="q" placeholder="Buscar por nome, id, usuário ou conversa..." aria-label="Buscar traces" />
         <span className="topbar__search-kbd">CmdK</span>
@@ -111,7 +115,7 @@ export function EvoTopbar({
             className="filter-select ops-environment-select"
             name="environment"
             aria-label="Ambiente"
-            value={environment}
+            value={activeEnvironment}
             onChange={(event) => event.currentTarget.form?.requestSubmit()}
           >
             {ENVIRONMENTS.map((env) => <option key={env} value={env}>{envLabel(env)}</option>)}

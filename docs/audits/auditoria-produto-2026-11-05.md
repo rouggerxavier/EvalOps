@@ -54,7 +54,6 @@ Dois defeitos novos apareceram e foram corrigidos:
 
 Limites atuais:
 
-- Com "qualquer env" em Traces e o chip em `dev`, o chip continua mostrando `dev` nessa visão.
 - A navegação por conversa mostra os 50 turnos mais recentes, sem paginação no detalhe.
 - O painel de run mostra nota parcial ao lado de "sem veredito", avisando que ela cobre apenas os avaliadores que mediram.
 - Horários recebidos de clientes ainda podem sair sem fuso no SQLite. Offsets já perdidos nesses históricos não podem ser reconstruídos com segurança; timestamps gerados pelo servidor são normalizados na saída.
@@ -166,6 +165,26 @@ confere o projeto da execução.
 Validação local: 15 testes API, 13 testes web direcionados e typecheck. A regressão
 foi reproduzida antes do fix. Não houve alteração de JSON, índices ou migrations;
 Postgres e browser não foram repetidos. O build permanece no gate da CI.
+
+### Atualização em 2026-11-08: chip e navegação com ambiente explícito
+
+O chip agora usa a mesma regra de precedência das páginas: a query válida vence
+o cookie, a query vazia representa todos os ambientes e a ausência mantém o
+fallback existente. Links do shell, busca, atalhos e o fluxo de Traces preservam
+a escolha explícita ao abrir detalhes, trocar abas, comparar, paginar e limpar
+filtros. Não há persistência nova ou mudança nos contratos da API.
+
+Validação local: RED em quatro dos sete casos iniciais e no link para detalhe;
+44 testes direcionados, typecheck, diffcheck e detector sem achados no final.
+Next dev com API simulada e Chromium verificou SSR/hidratação em 1280/390 px,
+query vazia/prod/ausente, detalhes e retorno, paginação, busca e atalhos G R/G T.
+O seletor foi validado por selectOption/onChange/requestSubmit: ArrowDown não
+acionou a troca na automação headless. Uma revisão encontrou a perda de ambiente
+no formulário Comparar; o ajuste foi validado com submit real, redirects de
+sucesso/erro e retorno, preservando cookie e payload da API. A revisão do delta
+passou em 34 testes e 12 combinações próprias. Redirects de outras ações de modal
+e reexecução, e paginação de exports, não foram auditados. Sem API ou Redis reais;
+o build permanece no gate da CI.
 
 ### Atualização em 2026-11-08: fuso dos horários gerados pelo servidor
 

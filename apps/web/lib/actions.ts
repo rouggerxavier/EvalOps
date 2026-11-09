@@ -8,6 +8,7 @@ import { isRedirectError } from "next/dist/client/components/redirect-error";
 import { setApiKeyFlash } from "@/lib/flash";
 import { parseQualityGateForm } from "@/lib/quality-gate";
 import { sanitizeApiError } from "@/lib/safe-error";
+import { resolveEnvironment } from "@/lib/environment";
 import {
   bulkFlagTraces,
   buildDatasetFromTraces,
@@ -552,6 +553,10 @@ export async function compareTracesAction(formData: FormData): Promise<void> {
   const rightTraceId = String(formData.get("right_trace_id") ?? "");
   const sourcePath = projectPath(org, project, leftTraceId ? `traces/${leftTraceId}` : "traces");
   const comparePath = projectPath(org, project, "traces/compare");
+  const rawEnvironment = formData.get("environment");
+  const environment = rawEnvironment === "" ? "" : typeof rawEnvironment === "string" ? resolveEnvironment(rawEnvironment) : undefined;
+  const environmentParams: Record<string, string> = {};
+  if (environment !== undefined) environmentParams.environment = environment;
 
   let errorMsg: string | null = null;
   try {
@@ -561,9 +566,9 @@ export async function compareTracesAction(formData: FormData): Promise<void> {
     errorMsg = messageFromActionError(error, "Failed to compare traces");
   }
   if (errorMsg) {
-    redirectWithMessage(sourcePath, { error: errorMsg });
+    redirectWithMessage(sourcePath, { error: errorMsg, ...environmentParams });
   }
-  redirectWithMessage(comparePath, { left: leftTraceId, right: rightTraceId });
+  redirectWithMessage(comparePath, { left: leftTraceId, right: rightTraceId, ...environmentParams });
 }
 
 export async function createExportAction(formData: FormData): Promise<void> {
