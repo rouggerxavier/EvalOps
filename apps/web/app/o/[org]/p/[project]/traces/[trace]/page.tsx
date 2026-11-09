@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { notFound } from "next/navigation";
 import { Activity, AlertCircle, Copy, Flag as FlagIcon, Layers, MessageSquare, Target, Terminal } from "lucide-react";
 
 import { AuthRequiredPanel } from "@/components/AuthRequiredPanel";
@@ -12,6 +13,7 @@ import { RagPanel } from "@/components/ui/RagPanel";
 import { createTraceFeedbackAction } from "@/lib/actions";
 import {
   getRubrics,
+  resolveProject,
   getTrace,
   getTraceEvaluations,
   getTraceRag,
@@ -75,8 +77,12 @@ export default async function TraceDetailPage({ params, searchParams }: Props) {
 
   if (!(await hasAuthToken())) return <AuthRequiredPanel layout="main" />;
 
+  const resolved = await resolveProject(org, project);
+  const canWrite = resolved.membership?.permissions.includes("write") ?? false;
+  const canDestructive = resolved.membership?.permissions.includes("destructive") ?? false;
   const detail = await getTrace(trace);
   const t = detail.trace;
+  if (t.project_id !== resolved.project_id) notFound();
   const ragEnabled = isRagTrace(detail);
 
   const tab = parseTab(qp.tab);
@@ -168,6 +174,8 @@ export default async function TraceDetailPage({ params, searchParams }: Props) {
         <div className="page-header__actions">
           <Link href={projectHref(`/o/${org}/p/${project}`, "/traces", qp.environment)} className="btn">Voltar</Link>
           <TraceHeaderActions
+            canWrite={canWrite}
+            canDestructive={canDestructive}
             org={org}
             project={project}
             traceId={t.id}
@@ -546,7 +554,7 @@ export default async function TraceDetailPage({ params, searchParams }: Props) {
                 Feedback registrado com sucesso.
               </div>
             ) : null}
-            <form
+            {canWrite ? <form
               action={createTraceFeedbackAction}
               style={{ display: "flex", flexDirection: "column", gap: 10 }}
             >
@@ -572,7 +580,7 @@ export default async function TraceDetailPage({ params, searchParams }: Props) {
               <button type="submit" className="btn btn--sm btn--primary" style={{ justifyContent: "center" }}>
                 Enviar feedback
               </button>
-            </form>
+            </form> : null}
           </Card>
         </div>
       ) : null}

@@ -122,6 +122,7 @@ export default async function ProjectOverviewPage({ params, searchParams }: Prop
   if (!(await hasAuthToken())) return <AuthRequiredPanel layout="main" />;
 
   const resolved = await resolveProject(org, project);
+  const canWrite = resolved.membership?.permissions.includes("write") ?? false;
   const projectId = resolved.project_id;
   const [overview, attention, sdk, rubricsRes, flaggedRes, gate] = await Promise.all([
     getOverview(projectId, environment, window_),
@@ -177,7 +178,7 @@ export default async function ProjectOverviewPage({ params, searchParams }: Prop
         <div className="ops-overview__actions">
           <WindowSelect org={org} project={project} current={window_} environment={environment} />
           <Link href={exportHref} className="btn btn--sm">Exportar</Link>
-          <EvaluateHeaderButton ctx={actionsCtx} />
+          {canWrite ? <EvaluateHeaderButton ctx={actionsCtx} /> : null}
         </div>
       </header>
 
@@ -201,7 +202,7 @@ export default async function ProjectOverviewPage({ params, searchParams }: Prop
         )}
       </section>
 
-      <QualityGateCard gate={gate} settingsHref={`/o/${org}/p/${project}/settings#quality-gate`} />
+      <QualityGateCard gate={gate} settingsHref={resolved.membership?.permissions.includes("admin") ? `/o/${org}/p/${project}/settings#quality-gate` : undefined} />
 
       <section className="kpi-grid kpi-grid--5 ops-overview__metrics" aria-label="Indicadores do período">
         <Metric label="Taxa de aprovação" icon={<Target size={13} aria-hidden="true" />} value={approval.rate === null ? "Sem dados" : fmtPercent(approval.rate)} />

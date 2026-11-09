@@ -14,7 +14,7 @@ for (const environment of [undefined, "", "prod"]) {
     const { default: Detail } = loadTs("app/o/[org]/p/[project]/traces/[trace]/page.tsx", {
       "@/components/ui/Modal": { Modal: ({ title, children }) => title === "Comparar com outro trace" ? children : null },
       "@/lib/actions": { compareTracesAction: "/compare" },
-      "@/lib/api": { hasAuthToken: async () => true, getTrace: async () => ({ trace, spans: [], feedback: [], flags: [] }),
+      "@/lib/api": { hasAuthToken: async () => true, resolveProject: async () => ({ project_id: "project", membership: { permissions: ["read"] } }), getTrace: async () => ({ trace, spans: [], feedback: [], flags: [] }),
         getRubrics: async () => ({ data: [] }), getTraces: async () => ({ data: [{ ...trace, id: "right" }], next_cursor: null }),
         getTraceEvaluations: async () => ({ data: [] }) },
     });

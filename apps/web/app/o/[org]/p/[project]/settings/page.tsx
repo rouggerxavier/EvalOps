@@ -1,3 +1,5 @@
+import { MembershipManagement } from "./membership-management";
+import { getSession } from "@/lib/auth";
 import { AlertCircle, CheckCircle2 } from "lucide-react";
 
 import { SamplingSettings } from "@/components/SamplingSettings";
@@ -11,6 +13,7 @@ import {
   getSamplingJobs,
   getRubrics,
   getMembers,
+  getInvitations,
   getOrganizationSubscription,
   getOrganizationUsage,
   getProjects,
@@ -22,7 +25,7 @@ import type { Member, OrgSubscription, OrgUsage, Project } from "@/lib/types";
 
 type Props = {
   params: Promise<{ org: string; project: string }>;
-  searchParams: Promise<{ updated?: string; created?: string; error?: string; gate_saved?: string; sampling_saved?: string; sampling_retried?: string }>;
+  searchParams: Promise<{ updated?: string; created?: string; error?: string; gate_saved?: string; sampling_saved?: string; member_cursor?: string; sampling_retried?: string }>;
 };
 
 function usd(value: number): string {
@@ -95,42 +98,6 @@ function PlanAndUsage({
   );
 }
 
-function roleLabel(role: string): string {
-  if (role === "owner") return "Admin";
-  if (role === "member") return "Membro";
-  return role || "Sem dados";
-}
-
-function Members({ members, error }: { members: Member[]; error: string | null }) {
-  return (
-    <section className="card">
-      <div className="card__header"><h2 className="card__title">Membros</h2></div>
-      {error ? (
-        <p className="ops-empty" role="alert">Sem dados de membros: {error}</p>
-      ) : (
-        <div className="table-wrap">
-          <table className="t">
-            <thead><tr><th>Nome</th><th>Email</th><th>Papel</th><th className="t__num">Entrou</th></tr></thead>
-            <tbody>
-              {members.length === 0 ? (
-                <tr><td className="empty-row" colSpan={4}>Sem dados de membros.</td></tr>
-              ) : members.map((member) => (
-                <tr key={member.user_id}>
-                  <td className="t__name">{member.name || "Sem dados"}</td>
-                  <td>{member.email || "Sem dados"}</td>
-                  <td>{roleLabel(member.role)}</td>
-                  <td className="t__num">{relativePt(member.joined_at)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-      {!error ? <p className="ops-note">A lista retorna até 50 membros por consulta. Total: Sem dados.</p> : null}
-    </section>
-  );
-}
-
 export default async function SettingsPage({ params, searchParams }: Props) {
   const { org, project } = await params;
   const qp = await searchParams;
@@ -138,16 +105,18 @@ export default async function SettingsPage({ params, searchParams }: Props) {
   if (!(await hasAuthToken())) return <AuthRequiredPanel layout="main" />;
 
   const resolved = await resolveProject(org, project);
-  const [projectsResult, membersResult, usageResult, subscriptionResult, gateConfig, samplingData] = await Promise.all([
+  const canAdmin = resolved.membership?.permissions.includes("admin") ?? false;
+  const [session, membersResult, invitationsResult] = await Promise.all([
+    getSession(),
+    getMembers(resolved.org_id, qp.member_cursor).then((result) => ({ ...result, error: null as string | null })).catch(() => ({ data: [] as Member[], next_cursor: null, error: "Não foi possível carregar membros." })),
+    canAdmin ? getInvitations(resolved.org_id).then((data) => ({ data, error: null as string | null })).catch(() => ({ data: null, error: "Não foi possível carregar convites. Atualize a lista." })) : Promise.resolve({ data: null, error: null }),
+  ]);
+  const management = <MembershipManagement org={org} project={project} organizationId={resolved.org_id} currentUserId={session?.user.id ?? null} members={membersResult.data} memberCursor={membersResult.next_cursor} membersError={membersResult.error} invitations={invitationsResult.data} invitationsError={invitationsResult.error} canAdmin={canAdmin} />;
+  if (!canAdmin) return <div className="page"><header className="page-header"><h1 className="page-header__title">Ajustes</h1></header>{management}</div>;
+  const [projectsResult, usageResult, subscriptionResult, gateConfig, samplingData] = await Promise.all([
     getProjects(resolved.org_id)
       .then((result) => ({ data: result.data, error: null as string | null }))
       .catch((error) => ({ data: [] as Project[], error: safeErrorMessage(error, "Falha ao carregar projetos.") })),
-    getMembers(resolved.org_id)
-      .then((result) => ({
-        data: result.data,
-        error: null as string | null,
-      }))
-      .catch((error) => ({ data: [] as Member[], error: safeErrorMessage(error, "Falha ao carregar membros.") })),
     getOrganizationUsage(resolved.org_id)
       .then((usage) => ({ usage, error: null as string | null }))
       .catch((error) => ({ usage: null, error: safeErrorMessage(error, "Falha ao carregar uso.") })),
@@ -264,9 +233,9 @@ export default async function SettingsPage({ params, searchParams }: Props) {
             subscription={subscriptionResult.subscription}
             subscriptionError={subscriptionResult.error}
           />
-          <Members members={membersResult.data} error={membersResult.error} />
         </div>
       </div>
+      {management}
     </div>
   );
 }

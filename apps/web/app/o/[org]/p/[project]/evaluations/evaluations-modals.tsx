@@ -39,6 +39,7 @@ type TraceOption = {
 };
 
 type Props = {
+  canWrite: boolean;
   org: string;
   project: string;
   projectId: string;
@@ -52,7 +53,7 @@ function fmtPct(value: number | null): string {
   return `${Math.round(value * 100)}%`;
 }
 
-export function EvaluationsModals({ org, project, projectId, rubrics, traces, drawerRow }: Props) {
+export function EvaluationsModals({ org, project, projectId, rubrics, traces, drawerRow, canWrite }: Props) {
   const params = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
@@ -120,18 +121,18 @@ export function EvaluationsModals({ org, project, projectId, rubrics, traces, dr
         </div>
         <div style={{ marginTop: 14, display: "flex", justifyContent: "flex-end", gap: 8 }}>
           <button type="button" className="btn btn--sm" onClick={close}>Fechar</button>
-          <button type="button" className="btn btn--sm" onClick={openPublish}>
+          {canWrite ? <button type="button" className="btn btn--sm" onClick={openPublish}>
             <ArrowUp size={11} /> Criar versão v{drawerRow.current_version + 1}
-          </button>
-          <button type="button" className="btn btn--sm btn--primary" onClick={openRunForRubric}>
+          </button> : null}
+          {canWrite ? <button type="button" className="btn btn--sm btn--primary" onClick={openRunForRubric}>
             <Play size={11} /> Rodar avaliação
-          </button>
+          </button> : null}
         </div>
       </Modal>
     );
   }
 
-  if (modal === "run") {
+  if (canWrite && modal === "run") {
     const canRun = rubrics.length > 0 && traces.length > 0;
     return (
       <Modal
@@ -181,7 +182,7 @@ export function EvaluationsModals({ org, project, projectId, rubrics, traces, dr
     );
   }
 
-  if (modal === "create") {
+  if (canWrite && modal === "create") {
     return (
       <Modal
         open
@@ -216,7 +217,7 @@ export function EvaluationsModals({ org, project, projectId, rubrics, traces, dr
     );
   }
 
-  if (modal === "publish" && drawerRow) {
+  if (canWrite && modal === "publish" && drawerRow) {
     return (
       <Modal
         open

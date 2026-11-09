@@ -54,3 +54,16 @@ Tab/Shift+Tab, Escape, retorno de foco, navegação e mudança para desktop.
 
 O usuário de `E2E_EMAIL` precisa ser membro da organização/projeto configurados;
 criar automaticamente outro usuário não concede acesso ao workspace do seed.
+
+Convites/memberships: a fixture de contrato é local, fica só em memória e não usa SMTP,
+Redis ou banco. Em três terminais dentro de `apps/web`:
+
+```sh
+E2E_INVITATIONS=1 node e2e/invitations-fake-api.mjs
+EVALOPS_API_BASE_URL=http://127.0.0.1:18145/v1 npm run dev -- --port 13145
+E2E_INVITATIONS=1 E2E_BASE_URL=http://127.0.0.1:13145 npm run test:e2e -- e2e/invitations.spec.ts
+```
+
+A suíte cobre owner/member/viewer, confirmações por teclado em 375/1280 px,
+conflito controlado, expiração e segredo no fragmento. Ela verifica o contrato web;
+a prova integrada com backend real e mailbox fake continua sendo um gate separado.
