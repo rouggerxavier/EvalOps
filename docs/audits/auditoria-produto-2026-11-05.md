@@ -224,7 +224,8 @@ identificador de usuário é agregado ou exposto; score do juiz e Quality Gate
 permanecem independentes. Há uma consulta agregada adicional, sem N+1, novos
 índices, modelos ou migrations.
 
-Validação local: 88 testes API, 15 web, typecheck e diffcheck passaram. Onze testes
+Validação local: 88 testes API, 15 web direcionados e 226 testes web na composição
+com o chip passaram; typecheck e diffcheck também. Onze testes
 API foram repetidos após reforçar a invariância do juiz e Quality Gate. Chromium
 em 1280/375 px verificou quatro estados e números longos, sem overflow, usando
 SSR da página, Card, shell e CSS reais com dados e integrações simulados. As notas
@@ -290,7 +291,7 @@ do merge.
 | Exclusão | Rubrica, prompt, dataset, item de dataset, experimento, projeto e organização não têm `DELETE`. `DELETE /v1/traces/{id}` existe, sem botão. | Provado |
 | Edição | Rubrica sem reverter versão; item de dataset e experimento não editam. | Provado (sem rota) |
 | Dataset | "Adicionar este trace ao dataset" a partir do trace, e correção humana virando exemplo. | Leitura |
-| Retenção | Traces guardam conversa para sempre: não há prazo nem limpeza. `maintenance.run_all` segue sem agendamento. | Leitura |
+| Retenção | Traces não têm política de retenção ou limpeza por idade. A manutenção diária do worker já limpa tokens revogados expirados e exports expirados; ela não faz retenção de traces. | Leitura |
 | Regressão | Portão de CI (PR #19 em rascunho) e comparação pareada de duas versões do agente. | Leitura |
 
 ## Acabamento
