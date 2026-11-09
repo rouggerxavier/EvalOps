@@ -36,6 +36,7 @@ from app.schemas import (
     TraceOut,
 )
 from app.security import new_id
+from app.timestamps import server_timestamp
 
 router = APIRouter(prefix="/v1")
 
@@ -783,7 +784,7 @@ def get_trace(
             "tags": row.tags or [],
             "user_ref": row.user_ref,
             "correction": row.correction,
-            "created_at": row.created_at,
+            "created_at": server_timestamp(row.created_at),
         }
         for row in feedback
     ]
@@ -803,7 +804,7 @@ def get_trace(
         "events_count": len(events),
         "feedback": feedback_data,
         "flags": [
-            {"id": row.id, "reason": row.reason, "note": row.note, "created_at": row.created_at}
+            {"id": row.id, "reason": row.reason, "note": row.note, "created_at": server_timestamp(row.created_at)}
             for row in flags
         ],
     }
