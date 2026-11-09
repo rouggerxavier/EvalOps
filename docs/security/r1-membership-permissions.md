@@ -1,6 +1,6 @@
 # R1 — permissões organizacionais no backend
 
-Auditoria de access control e contrato de API, branch `fix/autorizacao-papeis`, base `00e05e1`, 2026-11-09. Escopo: deps, ownership, rotas não-auth, wrappers phase5, testes e este documento. Auth/session/password, schemas/modelos/migrations, workers, convites e UI estão fora desta fatia.
+Auditoria de access control e contrato de API, branch `fix/autorizacao-papeis`, base de implementação `00e05e1`, integrada com a main `205e64c`, 2026-11-09. Escopo: deps, ownership, rotas não-auth, wrappers phase5, testes e documentação. Auth/session/password, schemas/modelos/migrations, workers, convites e UI estão fora desta fatia.
 
 ## Decisão e contrato público
 
@@ -58,5 +58,7 @@ Runner: `/Users/rougger/dev/EvalOps/.claude/worktrees/amostragem-20261108/.venv/
 - `PYTHONPATH=apps/api python -m pytest -q apps/api/tests`: 720 passaram, 14 skips, 31 warnings, 74,51s; log local `/tmp/r1-full-api-20261109.log`.
 - `PYTHONPATH=packages/sdk-python python -m pytest -q packages/sdk-python/tests`: 80 passaram.
 - `git diff --check`: passou.
+
+A composição com D1, já integrado no PR #43, passou em 77 testes de permissões, isolamento da origem e ocultação. O carregamento de `source_trace_id` fica restrito ao projeto e a traces ativos; não depende apenas da autorização do experimento. Nenhum schema ou dado real foi alterado.
 
 A primeira execução conjunta API+SDK teve 9 falhas, 768 passes e 14 skips: inventário contaminado por rotas artificiais de phase13, expectativa anterior 403 para rubric sem membership, três testes de rate limit usando Redis inativo e quatro asserts de caplog do SDK interferidos pela configuração de logger da API no mesmo processo. O inventário e a expectativa foram corrigidos; os gates dirigidos e SDK separado confirmaram as causas. Não houve alteração em produção para contornar o runner. A execução final de toda a API, isolada do SDK e com rate limiter em memória, passou integralmente; warnings de depreciação permanecem fora desta fatia.
