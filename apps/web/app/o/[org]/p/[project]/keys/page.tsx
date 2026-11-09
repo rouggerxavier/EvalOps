@@ -24,8 +24,9 @@ export default async function KeysPage({ params, searchParams }: Props) {
 
   if (!(await hasAuthToken())) return <AuthRequiredPanel layout="main" />;
 
-  const flash = qp.created ? await consumeApiKeyFlash() : null;
   const resolved = await resolveProject(org, project);
+  if (!resolved.membership?.permissions.includes("admin")) return <div className="page"><h1>Chaves de API</h1><p role="status">Acesso restrito. Somente um owner pode administrar chaves de API.</p></div>;
+  const flash = qp.created ? await consumeApiKeyFlash() : null;
   let keys: Awaited<ReturnType<typeof getApiKeys>>["data"] = [];
   let loadError: string | null = null;
   try {

@@ -76,6 +76,7 @@ export default async function PromptsPage({ params, searchParams }: Props) {
   if (!(await hasAuthToken())) return <AuthRequiredPanel layout="main" />;
 
   const resolved = await resolveProject(org, project);
+  const canWrite = resolved.membership?.permissions.includes("write") ?? false;
   const prompts = (await getPrompts(resolved.project_id)).data;
   const versionsByPrompt = new Map(
     await Promise.all(
@@ -113,7 +114,7 @@ export default async function PromptsPage({ params, searchParams }: Props) {
             As instruções que a IA recebe, com o histórico de cada versão.
           </p>
         </div>
-        <details className="ops-create" open={prompts.length === 0}>
+        {canWrite ? <details className="ops-create" open={prompts.length === 0}>
           <summary className="btn btn--sm btn--primary"><Plus size={12} /> Novo prompt</summary>
           <form action={createPromptAction} className="ops-form">
             <input type="hidden" name="org" value={org} />
@@ -143,7 +144,7 @@ export default async function PromptsPage({ params, searchParams }: Props) {
             </label>
             <button type="submit" className="btn btn--sm btn--primary">Criar prompt</button>
           </form>
-        </details>
+        </details> : null}
       </header>
 
       {errorMessage && <div className="ops-flash ops-flash--error" role="alert">{errorMessage}</div>}
@@ -184,7 +185,7 @@ export default async function PromptsPage({ params, searchParams }: Props) {
                   <p>{selected.description ?? "Sem descrição disponível."}</p>
                 </div>
                 {selectedVersions.length > 0 && (
-                  <details className="ops-create ops-create--version" id="prompt-version">
+                  canWrite ? <details className="ops-create ops-create--version" id="prompt-version">
                     <summary className="btn btn--sm"><GitBranch size={12} /> Nova versão</summary>
                     <form action={createPromptVersionAction} className="ops-form">
                       <input type="hidden" name="org" value={org} />
@@ -204,7 +205,7 @@ export default async function PromptsPage({ params, searchParams }: Props) {
                       </label>
                       <button type="submit" className="btn btn--sm btn--primary">Publicar versão</button>
                     </form>
-                  </details>
+                  </details> : null
                 )}
               </header>
               <div className="ops-prompt-status" role="status">

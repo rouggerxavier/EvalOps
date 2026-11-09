@@ -48,11 +48,13 @@ function formatScore(value: number): string {
 
 function RunResultCard({
   run,
+  canWrite,
   experiment,
   org,
   project,
 }: {
   run: ExperimentRun;
+  canWrite: boolean;
   experiment: Experiment | undefined;
   org: string;
   project: string;
@@ -80,12 +82,12 @@ function RunResultCard({
           {runStatus}
         </span>
         {experiment ? (
-          <form action={runExperimentAction}>
+          canWrite ? <form action={runExperimentAction}>
             <input type="hidden" name="org" value={org} />
             <input type="hidden" name="project" value={project} />
             <input type="hidden" name="experiment_id" value={experiment.id} />
             <button type="submit" className="btn">Rodar de novo</button>
-          </form>
+          </form> : null
         ) : null}
       </div>
       {runIsSynthetic ? (
@@ -242,6 +244,7 @@ export default async function ExperimentosPage({ params, searchParams }: Props) 
   if (!(await hasAuthToken())) return <AuthRequiredPanel layout="main" />;
 
   const resolved = await resolveProject(org, project);
+  const canWrite = resolved.membership?.permissions.includes("write") ?? false;
   const [datasetsRes, rubricsRes, experimentsRes] = await Promise.all([
     getDatasets(resolved.project_id),
     getRubrics(resolved.project_id),
@@ -281,7 +284,7 @@ export default async function ExperimentosPage({ params, searchParams }: Props) 
             Teste versões de prompt e modelo no mesmo dataset, antes de publicar.
           </p>
         </div>
-        <details className="ops-inline">
+        {canWrite ? <details className="ops-inline">
           <summary className="btn btn--primary">Novo experimento</summary>
           {datasetsRes.data.length > 0 && rubricsRes.data.length > 0 ? (
             <form action={createExperimentAction} className="card ops-form">
@@ -338,7 +341,7 @@ export default async function ExperimentosPage({ params, searchParams }: Props) 
               {rubricsRes.data.length === 0 ? <Link href={`/o/${org}/p/${project}/rubrics`}>Criar rubrica</Link> : null}
             </div>
           )}
-        </details>
+        </details> : null}
       </header>
 
       <p className="ops-note">
@@ -349,7 +352,7 @@ export default async function ExperimentosPage({ params, searchParams }: Props) 
       {qp.run ? <p className="ops-note" role="status">Execução concluída.</p> : null}
 
       {runDetail ? (
-        <RunResultCard run={runDetail.run} experiment={experimentForRun} org={org} project={project} />
+        <RunResultCard canWrite={canWrite} run={runDetail.run} experiment={experimentForRun} org={org} project={project} />
       ) : (
         <section className="card ops-empty">
           <div>
@@ -401,12 +404,12 @@ export default async function ExperimentosPage({ params, searchParams }: Props) 
                     <Link href={`?experiment_id=${experiment.id}`} className="btn btn--sm">
                       <History size={12} aria-hidden="true" /> Histórico
                     </Link>
-                    <form action={runExperimentAction}>
+                    {canWrite ? <form action={runExperimentAction}>
                       <input type="hidden" name="org" value={org} />
                       <input type="hidden" name="project" value={project} />
                       <input type="hidden" name="experiment_id" value={experiment.id} />
                       <button type="submit" className="btn btn--sm"><Play size={12} aria-hidden="true" /> Rodar</button>
-                    </form>
+                    </form> : null}
                   </td>
                 </tr>
               ))}

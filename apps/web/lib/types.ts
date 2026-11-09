@@ -1,4 +1,5 @@
 export type ResolvedProject = {
+  membership: { role: string; permissions: string[] };
   org_id: string;
   org_slug: string;
   org_name: string;
@@ -576,4 +577,16 @@ export type SamplingJob = {
   run_id: string | null;
   execution_attempts: number;
   retry_warning: string | null;
+};
+
+export type Invitation = {
+  id: string; organization_id: string; email: string; role: "member" | "viewer";
+  invited_by_user_id: string | null;
+  status: "pending" | "sending" | "sent" | "failed" | "accepted" | "revoked" | "expired";
+  created_at: string; expires_at: string; accepted_at: string | null; revoked_at: string | null;
+};
+export type InvitationList = { data: Invitation[]; next_cursor: string | null };
+export type InvitationAcceptance = {
+  organization_id: string; organization_slug: string; role: string;
+  permissions: string[]; already_member: boolean;
 };

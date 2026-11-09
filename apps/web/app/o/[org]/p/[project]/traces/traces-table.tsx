@@ -19,6 +19,7 @@ import type { Trace } from "@/lib/types";
 import { EvaluationStatus, type EvaluationVerdict } from "./trace-status";
 
 type Props = {
+  canWrite: boolean;
   org: string;
   project: string;
   rows: Trace[];
@@ -26,7 +27,7 @@ type Props = {
   environment?: string;
 };
 
-export function TracesTable({ org, project, rows, verdicts, environment }: Props) {
+export function TracesTable({ org, project, rows, verdicts, environment, canWrite }: Props) {
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const [modalOpen, setModalOpen] = useState(false);
 
@@ -80,9 +81,9 @@ export function TracesTable({ org, project, rows, verdicts, environment }: Props
                 <GitCompareArrows size={12} /> Comparar
               </Link>
             ) : null}
-            <button type="button" className="btn btn--sm btn--primary" onClick={() => setModalOpen(true)}>
+            {canWrite ? <button type="button" className="btn btn--sm btn--primary" onClick={() => setModalOpen(true)}>
               <Flag size={12} /> Flagear em lote
-            </button>
+            </button> : null}
           </div>
         </div>
       ) : null}
@@ -228,7 +229,7 @@ export function TracesTable({ org, project, rows, verdicts, environment }: Props
       </div>
 
       <Modal
-        open={modalOpen}
+        open={canWrite && modalOpen}
         onClose={() => setModalOpen(false)}
         title="Flagear traces selecionados"
         subtitle={`${selectedIds.length} trace(s) · POST /v1/traces/bulk-flag`}

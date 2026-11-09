@@ -24,6 +24,7 @@ function envLabel(env: (typeof ENVIRONMENTS)[number]): string {
 export function EvoTopbar({
   org,
   project,
+  permissions,
   orgLabel,
   projectLabel,
   initials,
@@ -35,6 +36,7 @@ export function EvoTopbar({
 }: {
   org: string;
   project: string;
+  permissions: string[];
   orgLabel: string;
   projectLabel: string;
   initials: string;
@@ -123,6 +125,7 @@ export function EvoTopbar({
         </form>
         <NotificationsBell
           notifications={notifications}
+          canWrite={permissions.includes("write")}
           org={org}
           project={project}
           projectId={projectId}

@@ -7,10 +7,10 @@ import { APP_SHELL_NAV_ITEMS, projectHref } from "@/components/app-shell-nav";
 
 const SHORTCUT_TIMEOUT_MS = 1200;
 
-function shortcutMap(): Map<string, string> {
+function shortcutMap(permissions: string[]): Map<string, string> {
   const map = new Map<string, string>();
   for (const item of APP_SHELL_NAV_ITEMS) {
-    if (!item.shortcut) continue;
+    if (!item.shortcut || (item.id === "keys" && !permissions.includes("admin"))) continue;
     const parts = item.shortcut.toLowerCase().split(/\s+/);
     if (parts.length !== 2 || parts[0] !== "g") continue;
     map.set(parts[1], item.path);
@@ -28,7 +28,7 @@ function isTypingTarget(target: EventTarget | null): boolean {
   return false;
 }
 
-export function EvoShortcuts() {
+export function EvoShortcuts({ permissions }: { permissions: string[] }) {
   const router = useRouter();
   const queryEnvironment = useSearchParams().get("environment");
   const params = useParams<{ org?: string; project?: string }>();
@@ -38,7 +38,7 @@ export function EvoShortcuts() {
     const project = typeof params?.project === "string" ? params.project : null;
     if (!org || !project) return;
     const base = `/o/${org}/p/${project}`;
-    const shortcuts = shortcutMap();
+    const shortcuts = shortcutMap(permissions);
 
     let prefixArmed = false;
     let prefixTimer: number | null = null;
@@ -82,7 +82,7 @@ export function EvoShortcuts() {
       window.removeEventListener("keydown", onKeyDown);
       clearPrefix();
     };
-  }, [params?.org, params?.project, router, queryEnvironment]);
+  }, [params?.org, params?.project, router, queryEnvironment, permissions]);
 
   return null;
 }

@@ -18,6 +18,7 @@ type Props = {
   children: ReactNode;
   org: string;
   project: string;
+  permissions: string[];
   orgLabel: string;
   projectLabel: string;
   initials: string;
@@ -33,6 +34,7 @@ export function OpsShellFrame({
   children,
   org,
   project,
+  permissions,
   orgLabel,
   projectLabel,
   initials,
@@ -112,6 +114,7 @@ export function OpsShellFrame({
       <Sidebar
         org={org}
         project={project}
+        permissions={permissions}
         projects={projects}
         attentionCount={attentionCount}
         usage={usage}
@@ -123,6 +126,7 @@ export function OpsShellFrame({
         <EvoTopbar
           org={org}
           project={project}
+          permissions={permissions}
           orgLabel={orgLabel}
           projectLabel={projectLabel}
           initials={initials}
@@ -142,7 +146,7 @@ export function OpsShellFrame({
           onClick={closeMobileMenu}
         />
       ) : null}
-      <EvoShortcuts />
+      <EvoShortcuts permissions={permissions} />
       <Suspense fallback={null}>
         <EvoToastBridge />
       </Suspense>

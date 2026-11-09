@@ -124,6 +124,7 @@ export default async function ExportsPage({ params, searchParams }: Props) {
     );
   }
 
+  const canWrite = resolvedProject.membership?.permissions.includes("write") ?? false;
   const [listResult, knownRows] = await Promise.all([
     listExports(resolvedProject.project_id, 50, qp.cursor)
       .then((result) => ({ data: result.data, nextCursor: result.next_cursor, error: null as string | null }))
@@ -159,7 +160,7 @@ export default async function ExportsPage({ params, searchParams }: Props) {
       {qp.created ? <p className="ops-note" role="status">Export criado.</p> : null}
       {listResult.error ? <p className="ops-note" role="alert">{listResult.error}</p> : null}
 
-      <section className="card">
+      {canWrite ? <section className="card">
         <div className="card__header"><h2 className="card__title">Criar export</h2></div>
         <form action={createExportAction} className="ops-form ops-form__grid">
           <input type="hidden" name="org" value={org} />
@@ -190,7 +191,7 @@ export default async function ExportsPage({ params, searchParams }: Props) {
           </label>
           <button type="submit" className="btn btn--primary">Criar export</button>
         </form>
-      </section>
+      </section> : null}
 
       <section className="card">
         <div className="card__header"><h2 className="card__title">Exports recentes</h2></div>
@@ -236,7 +237,7 @@ export default async function ExportsPage({ params, searchParams }: Props) {
                       {canDownload ? (
                         <Link className="btn btn--sm" href={getExportDownloadPath(row.job.id, returnPath)} download>Baixar</Link>
                       ) : canRetry ? (
-                        <form action={createExportAction}>
+                        canWrite ? <form action={createExportAction}>
                           <input type="hidden" name="org" value={org} />
                           <input type="hidden" name="project" value={project} />
                           <input type="hidden" name="project_id" value={resolvedProject.project_id} />
@@ -245,7 +246,7 @@ export default async function ExportsPage({ params, searchParams }: Props) {
                           <input type="hidden" name="status" value={typeof row.job.filters.status === "string" ? row.job.filters.status : ""} />
                           <input type="hidden" name="name_contains" value={typeof row.job.filters.name_contains === "string" ? row.job.filters.name_contains : ""} />
                           <button type="submit" className="btn btn--sm">Refazer</button>
-                        </form>
+                        </form> : null
                       ) : (
                         <button type="button" className="btn btn--sm" disabled>{statusLabel(status)}</button>
                       )}

@@ -100,7 +100,7 @@ test("keyboard G T preserves an explicit all-environments query", () => {
       "next/navigation": { useParams: () => ({ org: "org", project: "project" }),
         useSearchParams: () => new URLSearchParams("environment="), useRouter: () => ({ push: (href) => { destination = href; } }) },
     });
-    EvoShortcuts();
+    EvoShortcuts({ permissions: ["read"] });
     listener({ key: "g", target: null });
     listener({ key: "t", target: null, preventDefault() {} });
     assert.equal(destination, `${base}/traces?environment=`);
