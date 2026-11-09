@@ -12,9 +12,11 @@
 ## Veredito
 
 As reproduções das revisões independentes foram corrigidas e cobertas por
-regressões; a revalidação independente do novo commit está pendente. O delta passou
-nos gates direcionados, build e fluxo real com caixa falsa. O gate completo da API
-abaixo corresponde à versão anterior à revisão e não foi repetido neste delta.
+regressões. Backend e web tiveram revalidação independente aprovada, incluindo
+a corrida SQLite de substituição durante o hash. O delta passou nos gates
+direcionados e fluxo real com caixa falsa. O gate completo da API abaixo
+corresponde à versão anterior à revisão; a CI do SHA publicado continua sendo
+gate antes do merge.
 
 ## Entradas e ativos
 
@@ -47,6 +49,7 @@ e no [runbook](../ops/recuperacao-senha.md).
 | Severidade | Reprodução independente | Correção e regressão |
 | --- | --- | --- |
 | High | Duas sessões SQLite leem pending e enviam dois emails | Claim CAS exige rowcount1 antes do commit/SMTP; duas sessões reais com barreira na geração do candidato agora enviam uma vez |
+| Medium | Token antigo é validado antes do hash; um pedido novo substitui o antigo, mas o reset antigo altera a senha e apaga o novo | DELETE condicional por usuário/pedido/hash reclama somente o pedido vigente antes do CAS User, na mesma transação. Regressão SQLite prova recusa do antigo, senha/versão intactas e novo token ainda consumível |
 | Medium | IP bloqueado gasta três tentativas da conta de uma vítima | Retorno após IP negado precede conta; Redis dedicado mantém três tentativas disponíveis para outro IP |
 | Medium | PG com timezone Fortaleza lê o mesmo instante em -03 e worker recusa job | Aware usa astimezoneUTC; teste real de sessão PG em -03 envia e consome o link |
 | Medium | Reabrir hash no mesmo documento deixa campos desabilitados | Listener hashchange substitui token/erro; E2E válido→inválido→válido conserva Document e redefine senha |
@@ -74,11 +77,12 @@ reabertura no mesmo documento, histórico e cabeçalhos de requisição.
 | Duplicação, crash e falha de SMTP; fila sem email/token | Worker falso e ARQ com Redis dedicado |
 | TLS, timeout, auth, origem fixa e injeção de destinatário | Testes do transporte sem conexão SMTP |
 | Migration e limpeza | Upgrade→downgrade0013→upgrade→check em schema UUID; dry-run/idempotência; migration+replay 4 passaram após corrigir isolamento de logging |
-| Unicode, validação e redirecionamento seguro | Node: 16 testes focados; suite web completa: 242 passaram |
+| Unicode, validação e redirecionamento seguro | Revisão independente: 16 testes focados; suite web composta: 262 passaram |
 | Integração web/API e sessões após revisão | Playwright Chromium: 4 passaram em dev/StrictMode e 4 em produção |
 | Tipagem e pacote web | `npx tsc --noEmit` e `npm run build` passaram na retomada |
 | Gate completo da API anterior à revisão | `pytest -q`: 696 passaram, 14 omitidos, 32 avisos, 74,19 s |
 | Gate API do delta de revisão | Recovery + transport + change-password + migration + worker: 89 passaram, 2 avisos, 17,29 s, com PG16/Redis dedicados |
+| Gate final após corrida SQLite | Recovery + transport + change-password + migration + worker: 90 passaram sem skips, 2 avisos. Revisão independente repetiu em 17,89 s, além de selfchecks de substituição, reset concorrente, conclusão SMTP antiga, rollback após CAS User perdido e lock PG durante hash |
 
 O gate final rodou somente `apps/api`, sem SDK no mesmo processo, com
 `EVALOPS_RATE_LIMIT_BACKEND=memory`, `REDIS_URL=redis://127.0.0.1:18683/15`,
@@ -126,7 +130,7 @@ contraste de 6,22:1 no texto auxiliar, 7,31:1 no erro e 12,44:1 no botão primá
   configuração operacional antes de prometer limite por visitante.
 - Nenhum leitor de tela ou aparelho físico foi usado. As verificações foram em
   Chromium local, código semântico, teclado, capturas e cores computadas.
-- Publicação, push, PR e merge remoto ficaram fora desta unidade.
+- O merge remoto exige CI verde no SHA publicado; a configuração produtiva de SMTP permanece fora desta validação.
 
 ## Composição antes da publicação
 
@@ -144,3 +148,10 @@ passou em 36 testes, e o build web composto passou. Nenhum FULL API adicional fo
 executado enquanto o CI remoto das outras unidades estava ativo. O E2E da árvore
 composta passou nos 4 casos em produção (5,4 s), incluindo `#reset-password` e
 `#children`, histórico, cabeçalhos, hash-only no mesmo documento e Back.
+
+A revisão independente final conferiu a web em `ed1927c`: 262 testes Node,
+tipagem e quatro E2Es em produção mais quatro em dev/StrictMode. O fix SQLite
+`84e03e4` altera somente serviço e teste backend; a composição com a main oficial
+é `8224d8e`, com árvore idêntica ao fix. A revalidação backend aprovou essa árvore
+sem novos achados. A revisão também provou rollback da remoção do pedido quando
+o CAS da credencial perde, além da preservação do lock User no PostgreSQL.

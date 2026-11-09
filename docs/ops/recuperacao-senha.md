@@ -92,7 +92,11 @@ completar/falhar um envio antigo não altera pedido novo.
 
 Reset localiza o usuário pelo digest, bloqueia User, reconsulta o pedido, valida
 hash/estado/expiração/versão e grava hash Argon2 + incremento da versão + exclusão
-do pedido no mesmo commit. Reset×reset tem um vencedor; reset×troca serializa no
+do pedido no mesmo commit. Antes do CAS da credencial, um DELETE condicional por
+usuário/pedido/hash precisa reclamar exatamente uma linha; isso impede um token
+substituído durante o hash de consumir o pedido posterior no SQLite. O hash é
+calculado antes do primeiro write-lock SQLite e rollback preserva o pedido quando
+o CAS da credencial perde. Reset×reset tem um vencedor; reset×troca serializa no
 mesmo lock. A troca autenticada também exclui o pedido no commit. Rollback preserva
 senha, versão e pedido. A manutenção existente inclui pedidos expirados em `all`,
 ou `python -m app.maintenance.cleanup --target password-resets --dry-run` / `--apply`.
