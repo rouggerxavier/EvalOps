@@ -174,6 +174,7 @@ export default async function TraceDetailPage({ params, searchParams }: Props) {
             rubrics={rubricsRes.data}
             compareCandidates={compareCandidates}
             flagged={detail.flags.length > 0}
+            environment={qp.environment}
           />
         </div>
       </header>
