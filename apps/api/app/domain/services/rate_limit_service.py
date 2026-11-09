@@ -320,6 +320,19 @@ def check_login_rate_limit(email: str, ip: str) -> int | None:
         return result.retry_after_seconds
 
 
+def check_password_change_rate_limit(user_id: str) -> int | None:
+    """Count every authenticated attempt before password hashing; reuse auth outage fallback."""
+    key = f"password_changes:{user_id}"
+    fallback = _fallback_memory.check(key, LOGIN_MAX_FAILURES, LOGIN_WINDOW_S, record=False)
+    if not fallback.allowed:
+        return fallback.retry_after_seconds
+    try:
+        return _backend.check(key, LOGIN_MAX_FAILURES, LOGIN_WINDOW_S).retry_after_seconds
+    except Exception:
+        _log.warning("rate_limit: backend unavailable for password change; using in-memory fallback")
+        return _fallback_memory.check(key, LOGIN_MAX_FAILURES, LOGIN_WINDOW_S).retry_after_seconds
+
+
 def record_login_failure(email: str, ip: str) -> None:
     key = _login_key(email, ip)
     try:

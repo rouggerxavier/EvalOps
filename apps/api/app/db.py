@@ -79,6 +79,10 @@ def ensure_schema_compatibility() -> None:
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE users ADD COLUMN password_hash VARCHAR(512)"))
 
+        if "credential_version" not in user_cols:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE users ADD COLUMN credential_version INTEGER NOT NULL DEFAULT 0"))
+
     if "api_keys" in tables:
         key_cols = {col["name"] for col in inspector.get_columns("api_keys")}
         if "expires_at" not in key_cols:

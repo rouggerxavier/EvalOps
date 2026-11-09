@@ -32,7 +32,7 @@ export function NotificationsBell({
   const canMarkRead = unread.length > 0 && projectId !== null;
 
   return (
-    <div style={{ position: "relative" }}>
+    <div className="notifications-control">
       <button
         type="button"
         className="icon-btn"

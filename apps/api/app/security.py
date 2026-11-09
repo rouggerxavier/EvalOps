@@ -58,7 +58,9 @@ def new_id(prefix: str) -> str:
     return f"{prefix}_{secrets.token_hex(12)}"
 
 
-def create_access_token(*, sub: str, email: str, name: str, expires_minutes: int | None = None) -> str:
+def create_access_token(
+    *, sub: str, email: str, name: str, expires_minutes: int | None = None, credential_version: int = 0
+) -> str:
     now = datetime.now(timezone.utc)
     minutes = expires_minutes if expires_minutes is not None else JWT_EXPIRE_MINUTES
     payload = {
@@ -68,12 +70,16 @@ def create_access_token(*, sub: str, email: str, name: str, expires_minutes: int
         "iat": int(now.timestamp()),
         "exp": int((now + timedelta(minutes=minutes)).timestamp()),
         "jti": secrets.token_hex(16),
+        "credential_version": credential_version,
     }
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
 
-def create_session_token(*, sub: str, email: str, name: str) -> str:
-    return create_access_token(sub=sub, email=email, name=name, expires_minutes=JWT_SESSION_EXPIRE_MINUTES)
+def create_session_token(*, sub: str, email: str, name: str, credential_version: int = 0) -> str:
+    return create_access_token(
+        sub=sub, email=email, name=name, expires_minutes=JWT_SESSION_EXPIRE_MINUTES,
+        credential_version=credential_version,
+    )
 
 
 def hash_password(plain: str) -> str:
