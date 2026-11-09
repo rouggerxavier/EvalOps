@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Activity, AlertCircle, Copy, Flag as FlagIcon, Layers, MessageSquare, Target, Terminal } from "lucide-react";
 
 import { AuthRequiredPanel } from "@/components/AuthRequiredPanel";
+import { projectHref } from "@/components/app-shell-nav";
 import { Badge, StatusBadge } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
 import { Copyable } from "@/components/ui/Copyable";
@@ -35,6 +36,7 @@ type Props = {
   params: Promise<{ org: string; project: string; trace: string }>;
   searchParams: Promise<{
     tab?: string;
+    environment?: string;
     feedback?: string;
     flagged?: string;
     rerun?: string;
@@ -135,7 +137,8 @@ export default async function TraceDetailPage({ params, searchParams }: Props) {
       : "info";
 
   const tabBase = `/o/${org}/p/${project}/traces/${t.id}`;
-  const tabHref = (next: Tab) => `${tabBase}?tab=${next}`;
+  const environmentQuery = qp.environment === undefined ? "" : `&environment=${encodeURIComponent(qp.environment)}`;
+  const tabHref = (next: Tab) => `${tabBase}?tab=${next}${environmentQuery}`;
 
   return (
     <div className="page">
@@ -163,7 +166,7 @@ export default async function TraceDetailPage({ params, searchParams }: Props) {
           </div>
         </div>
         <div className="page-header__actions">
-          <Link href={`/o/${org}/p/${project}/traces`} className="btn">Voltar</Link>
+          <Link href={projectHref(`/o/${org}/p/${project}`, "/traces", qp.environment)} className="btn">Voltar</Link>
           <TraceHeaderActions
             org={org}
             project={project}
@@ -193,7 +196,7 @@ export default async function TraceDetailPage({ params, searchParams }: Props) {
             <div className="attention__title">Reexecução enfileirada</div>
             <div className="attention__desc">
               Novo trace:{" "}
-              <Link href={`/o/${org}/p/${project}/traces/${qp.new_trace_id}`} className="mono">
+              <Link href={projectHref(`/o/${org}/p/${project}/traces`, `/${qp.new_trace_id}`, qp.environment)} className="mono">
                 {qp.new_trace_id}
               </Link>
               . Worker processa em background — recarregue para ver o status.
@@ -219,7 +222,7 @@ export default async function TraceDetailPage({ params, searchParams }: Props) {
           <div>
             <div className="attention__title">
               Replay de{" "}
-              <Link href={`/o/${org}/p/${project}/traces/${replayOf}`} className="mono">
+              <Link href={projectHref(`/o/${org}/p/${project}/traces`, `/${replayOf}`, qp.environment)} className="mono">
                 {replayOf}
               </Link>
               {replayStatus ? <> · status: <span className="mono">{replayStatus}</span></> : null}
@@ -309,7 +312,7 @@ export default async function TraceDetailPage({ params, searchParams }: Props) {
                 {turn.id === t.id ? (
                   <strong aria-current="page">{turn.name}</strong>
                 ) : (
-                  <Link href={`/o/${org}/p/${project}/traces/${turn.id}`}>{turn.name}</Link>
+                  <Link href={projectHref(`/o/${org}/p/${project}/traces`, `/${turn.id}`, qp.environment)}>{turn.name}</Link>
                 )}
                 {turn.id === t.id ? <Badge variant="info">este turno</Badge> : null}
                 <StatusBadge status={turn.status} />

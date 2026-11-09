@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
-import { cookies } from "next/headers";
 
 import { OpsShellFrame } from "@/components/OpsShellFrame";
+import { getActiveEnvironment } from "@/lib/active-env";
 import {
   getAttention,
   getNotifications,
@@ -10,9 +10,6 @@ import {
   getProjects,
   resolveProject,
 } from "@/lib/api";
-
-const ENV_COOKIE = "evalops_env";
-const VALID_ENVS = new Set(["dev", "staging", "prod"]);
 
 type Props = {
   children: ReactNode;
@@ -23,12 +20,7 @@ type Props = {
 
 export async function AppShell({ children, org, project, initials }: Props) {
   const resolved = await resolveProject(org, project).catch(() => null);
-  const cookieStore = await cookies();
-  const envCookie = cookieStore.get(ENV_COOKIE)?.value;
-  // No cookie means no filter: the chip must not claim an environment the data ignores.
-  const environment: "all" | "dev" | "staging" | "prod" = VALID_ENVS.has(envCookie ?? "")
-    ? (envCookie as "dev" | "staging" | "prod")
-    : "all";
+  const environment = (await getActiveEnvironment(undefined)) ?? "all";
 
   let notifications: Awaited<ReturnType<typeof getNotifications>>["data"] = [];
   let projects: { org: string; project: string; label: string }[] = [{ org, project, label: project }];

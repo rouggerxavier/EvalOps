@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Clock, Download, GitCompareArrows, Layers, Search, X } from "lucide-react";
 
 import { AuthRequiredPanel } from "@/components/AuthRequiredPanel";
+import { projectHref } from "@/components/app-shell-nav";
 import { getActiveEnvironment } from "@/lib/active-env";
 import { getTraces, hasAuthToken, resolveProject } from "@/lib/api";
 
@@ -171,7 +172,7 @@ export default async function TracesListPage({ params, searchParams }: Props) {
       })()
     : null;
 
-  const exportsHref = `/o/${org}/p/${project}/exports`;
+  const exportsHref = projectHref(`/o/${org}/p/${project}`, "/exports", qp.environment);
   const hasCursor = Boolean(qp.cursor);
   const autoRefreshEnabled = !hasCursor && rows.length > 0;
   const autoRefreshDisabledReason = hasCursor ? "Pausado em página paginada" : undefined;
@@ -180,6 +181,7 @@ export default async function TracesListPage({ params, searchParams }: Props) {
   const hasFilters = Boolean(qp.name || qp.status || verdictFilter || Object.keys(filters).length > 0);
   const clearParams = new URLSearchParams();
   if (environment) clearParams.set("environment", environment);
+  else if (qp.environment === "") clearParams.set("environment", "");
   if (tab !== "all") clearParams.set("tab", tab);
   const clearFiltersHref = clearParams.toString() ? `${tabBase}?${clearParams}` : tabBase;
 
@@ -197,7 +199,7 @@ export default async function TracesListPage({ params, searchParams }: Props) {
               ao vivo
             </span>
           ) : null}
-          <Link href={`/o/${org}/p/${project}/traces/compare`} className="btn">
+          <Link href={projectHref(tabBase, "/compare", qp.environment)} className="btn">
             <GitCompareArrows size={14} /> Comparar
           </Link>
           <Link href={exportsHref} className="btn">
@@ -350,7 +352,7 @@ export default async function TracesListPage({ params, searchParams }: Props) {
         ) : rows.length === 0 ? (
           <TracesEmpty project={project} />
         ) : (
-          <TracesTable org={org} project={project} rows={rows} verdicts={verdicts} />
+          <TracesTable org={org} project={project} rows={rows} verdicts={verdicts} environment={qp.environment} />
         )}
       </section>
 
