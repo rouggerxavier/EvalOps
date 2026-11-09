@@ -40,12 +40,18 @@ def consume_reset(db: Session, token: str, new_password: str, *, now: datetime |
             or reset.credential_version != user.credential_version or not user.password_hash):
         return False
     previous = user.credential_version
+    password_hash = hash_password(new_password)
+    # Claim the validated request atomically; SQLite ignores the User FOR UPDATE lock.
+    claimed = db.execute(delete(PasswordReset).where(PasswordReset.user_id == user_id,
+                         PasswordReset.request_id == reset.request_id, PasswordReset.token_hash == digest))
+    if claimed.rowcount != 1:
+        db.rollback()
+        return False
     # Version predicate also protects the SQLite development path, where FOR UPDATE is ignored.
     changed = db.execute(update(User).where(User.id == user_id, User.credential_version == previous).values(
-        password_hash=hash_password(new_password), credential_version=previous + 1))
+        password_hash=password_hash, credential_version=previous + 1))
     if changed.rowcount != 1:
         db.rollback()
         return False
-    db.execute(delete(PasswordReset).where(PasswordReset.user_id == user_id))
     db.commit()
     return True

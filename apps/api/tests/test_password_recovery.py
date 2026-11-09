@@ -3,7 +3,7 @@ import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 import json
-from threading import Barrier
+from threading import Barrier, Event
 
 import pytest
 from fastapi import HTTPException
@@ -214,6 +214,57 @@ def test_sqlite_concurrent_dispatch_claim_sends_only_once(recovery_env, tmp_path
             row = db.query(PasswordReset).one()
             assert row.status == "sent" and row.token_hash == recovery.token_digest(sent[0])
     finally:
+        engine.dispose()
+
+
+def test_sqlite_superseded_reset_preserves_new_request_and_password(recovery_env, tmp_path, monkeypatch):
+    engine = create_engine(f"sqlite:///{tmp_path / 'reset.db'}", connect_args={"check_same_thread": False})
+    factory = sessionmaker(bind=engine, expire_on_commit=False, autoflush=False)
+    Base.metadata.create_all(engine)
+    moment = datetime.now(timezone.utc)
+    original_hash, entered, resume, tokens = recovery.hash_password, Event(), Event(), []
+    def mailer(cfg, recipient, token):
+        tokens.append(token)
+    def paused_hash(password):
+        entered.set()
+        assert resume.wait(timeout=10)
+        return original_hash(password)
+    def consume_old():
+        with factory() as db:
+            return recovery.consume_reset(db, tokens[0], NEW_PASSWORD)
+    try:
+        with factory() as db:
+            db.add(User(id="reset-user", email="reset@example.invalid", name="Reset",
+                        password_hash=original_hash(OLD_PASSWORD)))
+            db.commit()
+            version = recovery.prepare_request(db, "reset-user", "old-request", moment)
+        worker._dispatch(factory, "reset-user", version, "old-request", moment.isoformat(), mailer)
+        with monkeypatch.context() as patch:
+            patch.setattr(recovery, "hash_password", paused_hash)
+            with ThreadPoolExecutor(1) as executor:
+                future = executor.submit(consume_old)
+                try:
+                    assert entered.wait(timeout=10)
+                    with factory() as db:
+                        version = recovery.prepare_request(db, "reset-user", "new-request", moment)
+                    worker._dispatch(factory, "reset-user", version, "new-request", moment.isoformat(), mailer)
+                    with factory() as db:
+                        assert db.query(PasswordReset).one().request_id == "new-request"
+                finally:
+                    resume.set()
+                assert future.result(timeout=15) is False
+        with factory() as db:
+            user, row = db.get(User, "reset-user"), db.query(PasswordReset).one()
+            assert user.credential_version == 0 and verify_password(OLD_PASSWORD, user.password_hash)
+            assert row.request_id == "new-request" and row.status == "sent"
+            assert row.token_hash == recovery.token_digest(tokens[1])
+            assert recovery.consume_reset(db, tokens[1], NEW_PASSWORD) is True
+        with factory() as db:
+            user = db.get(User, "reset-user")
+            assert user.credential_version == 1 and verify_password(NEW_PASSWORD, user.password_hash)
+            assert db.query(PasswordReset).count() == 0
+    finally:
+        resume.set()
         engine.dispose()
 
 
