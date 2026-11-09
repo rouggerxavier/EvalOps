@@ -40,8 +40,9 @@ export const APP_SHELL_NAV_SECTIONS: AppShellNavSection[] = [
 
 export const APP_SHELL_NAV_ITEMS = APP_SHELL_NAV_SECTIONS.flatMap((section) => section.items);
 
-export function projectHref(base: string, path: string): string {
-  return path === "" ? base : `${base}${path}`;
+export function projectHref(base: string, path: string, environment?: string | null): string {
+  const href = path === "" ? base : `${base}${path}`;
+  return environment == null ? href : `${href}?environment=${encodeURIComponent(environment)}`;
 }
 
 export function getActiveNavItem(pathname: string, base: string): AppShellNavItem {

@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
+import { resolveEnvironment, type Environment } from "./environment";
 
 const ENV_COOKIE = "evalops_env";
-const VALID_ENVS = new Set(["dev", "staging", "prod"]);
 
 /**
  * Single source of truth for the "active" environment on a server-rendered page.
@@ -20,11 +20,11 @@ const VALID_ENVS = new Set(["dev", "staging", "prod"]);
  * pages still read only the query string, so switching the chip didn't filter
  * any data.
  */
-export async function getActiveEnvironment(qpEnv: string | undefined): Promise<string | undefined> {
+export async function getActiveEnvironment(qpEnv: string | undefined): Promise<Environment | undefined> {
   if (qpEnv === "") return undefined;
-  if (qpEnv && VALID_ENVS.has(qpEnv)) return qpEnv;
+  const queryEnvironment = resolveEnvironment(qpEnv);
+  if (queryEnvironment) return queryEnvironment;
   const store = await cookies();
   const cookieValue = store.get(ENV_COOKIE)?.value;
-  if (cookieValue && VALID_ENVS.has(cookieValue)) return cookieValue;
-  return undefined;
+  return resolveEnvironment(qpEnv, cookieValue);
 }

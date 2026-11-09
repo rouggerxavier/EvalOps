@@ -27,9 +27,8 @@ test("EvoTopbar environment selector posts setEnvironmentAction (no purely-local
   assert.doesNotMatch(topbar, /setEnvironment\(env\)/);
 });
 
-test("AppShell reads evalops_env cookie and forwards it to the topbar", () => {
-  assert.match(shell, /evalops_env/);
-  assert.match(shell, /cookies\(\)/);
+test("AppShell resolves its cookie fallback through the shared helper and forwards it to the topbar", () => {
+  assert.match(shell, /getActiveEnvironment\(undefined\)/);
   assert.match(shell, /environment=\{environment\}/);
 });
 

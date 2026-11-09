@@ -2,6 +2,7 @@ import Link from "next/link";
 import { AlertCircle, ArrowLeftRight, GitCompareArrows } from "lucide-react";
 
 import { AuthRequiredPanel } from "@/components/AuthRequiredPanel";
+import { projectHref } from "@/components/app-shell-nav";
 import { Card } from "@/components/ui/Card";
 import { ScoreCell } from "@/components/ui/ScoreCell";
 import { compareTraces, getTrace, getTraceEvaluations, getTraceRag, hasAuthToken } from "@/lib/api";
@@ -16,7 +17,7 @@ import { TraceSteps } from "../trace-steps";
 
 type Props = {
   params: Promise<{ org: string; project: string }>;
-  searchParams: Promise<{ left?: string; right?: string; error?: string }>;
+  searchParams: Promise<{ left?: string; right?: string; error?: string; environment?: string }>;
 };
 
 type Tone = "good" | "bad" | "neutral";
@@ -63,7 +64,8 @@ export default async function TraceComparePage({ params, searchParams }: Props) 
   if (!(await hasAuthToken())) return <AuthRequiredPanel layout="main" />;
 
   const baseHref = `/o/${org}/p/${project}/traces/compare`;
-  const tracesHref = `/o/${org}/p/${project}/traces`;
+  const tracesHref = projectHref(`/o/${org}/p/${project}`, "/traces", qp.environment);
+  const environmentQuery = qp.environment === undefined ? "" : `&environment=${encodeURIComponent(qp.environment)}`;
   const leftId = qp.left?.trim() || undefined;
   const rightId = qp.right?.trim() || undefined;
   const safeQueryError = qp.error ? safeErrorMessage(qp.error, "Falha na comparação.") : null;
@@ -163,7 +165,7 @@ export default async function TraceComparePage({ params, searchParams }: Props) 
         <div className="page-header__actions">
           <Link className="btn" href={tracesHref}>Voltar</Link>
           {leftId && rightId ? (
-            <Link className="btn" href={`${baseHref}?left=${encodeURIComponent(rightId)}&right=${encodeURIComponent(leftId)}`} title="Inverter lados">
+            <Link className="btn" href={`${baseHref}?left=${encodeURIComponent(rightId)}&right=${encodeURIComponent(leftId)}${environmentQuery}`} title="Inverter lados">
               <ArrowLeftRight size={14} /> Inverter lados
             </Link>
           ) : null}
@@ -206,12 +208,12 @@ export default async function TraceComparePage({ params, searchParams }: Props) 
                   <tr>
                     <th>Indicador</th>
                     <th>
-                      <Link href={`/o/${org}/p/${project}/traces/${leftDetail.trace.id}`}>
+                      <Link href={projectHref(`/o/${org}/p/${project}/traces`, `/${leftDetail.trace.id}`, qp.environment)}>
                         A · <span className="t__mono">{leftDetail.trace.id}</span>
                       </Link>
                     </th>
                     <th>
-                      <Link href={`/o/${org}/p/${project}/traces/${rightDetail.trace.id}`}>
+                      <Link href={projectHref(`/o/${org}/p/${project}/traces`, `/${rightDetail.trace.id}`, qp.environment)}>
                         B · <span className="t__mono">{rightDetail.trace.id}</span>
                       </Link>
                     </th>
