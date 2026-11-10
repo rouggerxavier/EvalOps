@@ -47,7 +47,13 @@ Cada pacote implementa somente sua fatia, reconfere main, preserva mudanças loc
 | P4 web vertical | DESIGN.md, lib/api/actions/types, datasets/evaluations; SPEC-008 | fluxo humano completo e navegação; E2E 375/1280px, teclado e resultados API idênticos |
 | P5 integração/valor | todos os aceites e auditoria | prova integrada, benchmark e relatório go/iterate/stop; zero mudança sem evidência de necessidade |
 
-P0 deve integrar principal mínimo ou alinhar schema com P2 antes de serializar ownership; P1 depende P0; P2 depende contratos P0/P1; P3 depende P1; P4 depende endpoints P1/P2/P3. Não delegar arquivos compartilhados simultaneamente sem isolamento. Recomendado `execution-prompt-builder` após aceite do plano para gerar prompts finais; testes e review proporcionais na implementação.
+P0 deve integrar principal mínimo, access labels de origem/derivados, DTO MetricFact tipado e colunas/discriminantes de decisão antes de serializar ownership; P1 depende P0; P2 depende contratos P0/P1; P3 depende P1; P4 depende endpoints P1/P2/P3. Não delegar arquivos compartilhados simultaneamente sem isolamento. Recomendado `execution-prompt-builder` após aceite do plano para gerar prompts finais; testes e review proporcionais na implementação.
+
+### Gates ajustados após revisão do PR #46
+
+F0 inclui política de origem/ambiente da SPEC-009 e nega automação sobre dados legados ainda não classificados, incluindo teste de bypass por rotas legadas para o principal novo; não exige desclassificação entre ambientes. P3 precisa da persistência de decisão e opt-in task_v1 da SPEC-007 antes de P4. F1 usa fixture de três itens para cálculo e fixture de 30 pares para decisão; ambas são sintéticas e podem receber allowlist explícita inicial pelo owner. Com menos de 30 pares, default é inconclusive. Não aceitar demo “fail” com três itens sem override de policy documentado.
+
+Regras críticas e policy selada fazem parte do contrato de comparação; workflow de curadoria/aprovação humana continua em F2. F1 pode usar critical_case_ids vazio e só análise descritiva; nunca simular revisão humana. Adversariais de ambiente/derivados, JSON não finito, histórico legado e mudança de policy são gates de F0/P3, não podem ser adiados para runner/MCP. Sem mudança de ordem de fases ou serviço novo; contratos estreitados tornam F0/F1 delegáveis.
 
 ## Verificação e rollback por fase
 

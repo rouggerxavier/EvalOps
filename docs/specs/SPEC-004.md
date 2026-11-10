@@ -21,10 +21,18 @@ Ampliar `ApiKey`, `actor_access`, `project_access`, ownership, rate limits e cli
 | save_case | POST `/v1/datasets/{d}/cases`: input/expected_output?, source_refs, fixture_refs, reference_status=draft. Não alterar automaticamente caso já revisado. |
 | run_evaluation | POST `/v1/projects/{p}/task-evaluations`; batch legado reutilizado para traces. |
 | run_comparison | POST `/v1/experiments/{id}/comparisons`, SPEC-007. |
-| get_experiment_result | GET `/v1/experiments/{id}/runs/{run_id}`; novos campos aditivos e kind. |
+| get_experiment_result | GET `/v1/experiments/{id}/runs/{run_id}?view=task_v1` para comparação nova; default legado preservado, conforme SPEC-007. |
 | get_evidence | GET `/v1/task-evaluations/{id}/samples` ou endpoint de trace existente, com links de artefatos autorizados. |
 
 Listas/detalhes adicionais da SPEC-002 também são programáticos. Publicar OpenAPI e exemplos completos sem exigir que agente componha consultas SQL ou interprete HTML. IDs/referências resolvidos em API com autorização em toda relação.
+
+### Autorização das operações completas
+
+Aplicar a [matriz de origem/ambiente da SPEC-009](SPEC-009.md#recursos-compartilhados-e-origem-dos-dados) também a capabilities, find_failures, get_case, get_evidence e recuperação de recibo idempotente. Models/snapshots podem ser usados em qualquer ambiente da sua allowlist, mas chave só lê/executa seu próprio ambiente e fontes acessíveis; nenhum filtro environment enviado pelo cliente amplia permissão.
+
+Criar modelo/dataset/snapshot/predições/caso requer write e read das fontes; avaliar/comparar requer evaluate e read de todas as entradas. Consultar recursos exige read. Principal não pode classificar origem neutra, ampliar ambiente ou aprovar crítico. Listas, DTOs aninhados, erros e links omitem recursos invisíveis, sem contagens vazadas. Serviço valida todas as referências na mesma transação; worker revalida principal, credencial original e versão da política ao iniciar/publicar. Revogação/expiração invalida também cache e Idempotency-Key retornado anteriormente, sem apagar o recurso de outros atores autorizados.
+
+Aceite adversarial: key dev com todos os scopes não lê snapshot prod-only via get_evidence, comparison ou error.details; 404 sem vazamento. Mesmo POST repetido com Idempotency-Key após revogar key retorna 401, não response salvo. Hoje ownership.py valida projeto, não isolamento geral por ambiente. Conforme SPEC-009, principal de serviço novo exige ambiente também nas rotas legadas acessíveis; chave antiga sem principal não acessa novas superfícies. Testar tentativa de bypass por GET trace/report/export antigo; sem esse gate F0 não está concluída. Os DTOs legados permanecem iguais.
 
 ## CLI/SDK/MCP e fluxos
 

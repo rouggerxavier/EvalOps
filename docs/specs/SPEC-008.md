@@ -47,6 +47,8 @@ Consumir endpoints SPEC-002/004/007/009; web nunca mantém banco paralelo ou cal
 | Criar caso/investigação | Editor | HTTP tipado |
 | Aprovar decisão crítica | UI autenticada e auditada | Solicita revisão, sem se passar por humano |
 
+DTOs de comparação usam `view=task_v1` (SPEC-007); UI nunca converte ausência de passed para reprovação. Exibir pass=“Aprovado pela política”, fail=“Reprovado pela política”, review=“Revisão necessária”, inconclusive=“Inconclusivo” com razões/cobertura. Estado não terminal null é “Aguardando decisão”; resultados antigos mostram passed histórico e marca “Legado”. Séries preservam lacunas por state/reason e matrizes preservam orientação de eixos (SPEC-002). Capabilities, listas e downloads respeitam labels de origem; filtro visual de ambiente não é fronteira de autorização. Aceite negativo: comparison inconclusive não ganha badge fail; snapshot prod-only não aparece nem por contagem/erro para credencial dev.
+
 ## Não funcionais e aceite
 
 Preservar pt-BR, teclado, foco, labels, contraste e status sem depender só de cor. Touch targets/tokens conforme DESIGN. Gráficos com tabelas equivalentes; suporte 375px e desktop 1280px sem scroll horizontal da página (tabelas podem rolar internamente). Empty/missing/error/inconclusive distintos; zero medido aparece como zero. Nenhum gráfico com dados fictícios em produção.

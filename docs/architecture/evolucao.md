@@ -47,9 +47,17 @@ No MVP, TaskEvaluation é síncrona e limitada; Queue continua atendendo operaç
 
 ## Compatibilidade e modularização
 
-Preservar `/v1/evaluations/run`, batch, experiment run, rerun, SDK tracer, rubricas e QualityGateConfig. Criar rotas aditivas com schema_version; não mudar silenciosamente experimentos existentes para executar modelo real. `Experiment.kind=legacy_synthetic|task_comparison` permite relaxar dataset/rubric somente para novo tipo, com constraints condicionais e serializer legado preservado. `ExperimentRun` continua execução de comparação, ligada a TaskEvaluations por variante. Não introduzir segundo catálogo de datasets ou feedback duplicado por trace.
+Preservar `/v1/evaluations/run`, batch, experiment run, rerun, SDK tracer, rubricas e QualityGateConfig. Criar rotas aditivas com schema_version; não mudar silenciosamente experimentos existentes para executar modelo real. `Experiment.kind=legacy_synthetic|task_comparison` mantém dataset obrigatório e permite rubric_id nullable somente para novo tipo, com constraints condicionais e serializer legado preservado. `ExperimentRun` continua execução de comparação, ligada a TaskEvaluations por variante. Não introduzir segundo catálogo de datasets ou feedback duplicado por trace.
 
 Proposta de módulos: `domain/task_evaluations`, `domain/metrics`, serviços de snapshots/comparação e runner; arquivos finais seguem convenção local. Migrations futuras usam expand/backfill/constraints, preservando IDs e revisão Alembic única. Rollback operacional desabilita escrita nova, preserva fatos, restaura leitor anterior; downgrade destrutivo não é plano de rollback.
+
+## Ajustes normativos após revisão do PR #46
+
+Revisão em 2026-11-10: SPEC-009 define access labels e herança de restrições; compartilhar namespace de modelo/snapshot não compartilha dados entre ambientes. Serviços e workers reautorizam origem e derivados. Não criar ACL humana nova ou serviço separado: estender ownership/principal existente, com deny-by-default quando origem desconhecida.
+
+SPEC-002 elimina denominator genérico: normalization_count é contagem, statistics.sst é quantidade estatística com unidade. Matrix/series têm schemas, finitude aninhada e validade explícita. SPEC-007 separa fixture de cálculo e gates de decisão; regras críticas versionadas antes de outputs e policy pós-observação identificada como exploratória.
+
+Para decisões, escolher coluna nullable e discriminante em ExperimentRun em vez de JSON sem contrato ou tabela paralela. passed legado permanece intacto; todos os runs novos usam passed=null. DTO task_v1 é opt-in; default das rotas atuais não inclui comparações novas. Custos: serializers explícitos e testes de compatibilidade. Benefício: inconclusive não vira false para consumidores antigos. Revisar opt-in somente em futura versão major da API com migração de clientes, nunca por troca silenciosa. F0/F1 devem implementar estes contratos antes de UI/CLI, sem reescrever EvaluationRun.
 
 ## Questões abertas com recomendação
 

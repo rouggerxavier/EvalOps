@@ -35,6 +35,12 @@ Eixos independentes: execution status `queued|running|succeeded|failed|cancelled
 
 Erro novo: `{error:{code,message,retryable,category,request_id,details}}`; categorias `data|model|evaluator|infrastructure|policy`. Códigos HTTP: 401 credencial, 403 escopo, 404 objeto invisível, 409 conflito/idempotência/estado, 413 limite, 422 contrato inválido, 429 cota, 503 infraestrutura indisponível. Não alterar envelope legado nesta entrega.
 
+## Decisão nova e compatibilidade (revisão PR #46)
+
+`decision` é enum persistido `pass|review|fail|inconclusive`, separado de status e de revisão humana. TaskEvaluation ainda não terminal usa null; ao terminar sem política de qualidade, persiste `inconclusive` com reason `no_quality_policy`, mesmo com métricas válidas. Uma execução tecnicamente falha não produz reprovação do modelo por inferência. Motivos estruturados acompanham a decisão.
+
+ExperimentRun de `kind=task_comparison` usa a mesma enum; `passed` permanece null em todos os resultados novos. Nunca converter inconclusive/review/null para false nem usar `bool(decision)` ou `decision != "pass"`. O legado mantém passed true/false/null, status e interpretação originais, sem backfill de decisão de qualidade. DTOs e opt-in de leitura estão definidos na [SPEC-007](SPEC-007.md#persistência-dtos-e-rotas-compatíveis). Aceite: serializar inconclusive mantém enum e passed null no storage; cliente legado não recebe comparações novas por default.
+
 ## Fluxos
 
 Humano cria dataset, importa predições, solicita avaliação e abre evidência. Agente descobre capabilities, solicita mesma avaliação e entrega link ao mesmo resultado. Revisor registra decisão e motivo. Nenhum cliente recalcula métricas para produzir decisão autoritativa.

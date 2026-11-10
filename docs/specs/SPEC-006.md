@@ -25,7 +25,7 @@ ModelVersion declara `model_family=neural`, architecture opcional, external_ref 
 
 Primeira ampliação DL: importar resultados de classificação/regressão neural e curvas opcionais. POST `/v1/projects/{p}/artifact-imports` declara owner/hash/media_type/bytes, upload autenticado por ID alocado e finalize verificando hash/tamanho; limite inicial 10 MiB por artefato, MIME allowlist JSON/PNG sem HTML/SVG executável. POST `/v1/task-evaluations/{id}/evidence-links` pode anexar evidência externa sem alterar métrica selada; revisão registra evento e digest. Artefato não verificável tem provenance partial. Leitura usa download autorizado SPEC-002.
 
-SPEC-008 renderiza curvas por split/step; dados faltantes viram lacunas. Comparar generalização exige splits e definições de loss equivalentes; loss de treino importada não prova qualidade em teste. Não misturar latência com warmup/hardware diferente. Métricas de recursos opcionais exibem not_measured; custo GPU depende de tarifa declarada/versionada e tempo, sem conversão implícita.
+SPEC-008 renderiza curvas por split/step; dados faltantes viram lacunas. Comparar generalização exige splits e definições de loss equivalentes; loss de treino importada não prova qualidade em teste. Não misturar latência com warmup/hardware diferente. Métricas de recursos opcionais usam state=missing/reason=not_measured (sem quinto estado); custo GPU depende de tarifa declarada/versionada e tempo, sem conversão implícita.
 
 ## Fluxos e não funcionais
 
