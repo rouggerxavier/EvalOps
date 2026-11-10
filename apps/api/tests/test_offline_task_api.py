@@ -184,6 +184,18 @@ def test_sdk_reads_identical_facts_over_real_http():
         revised = sdk.update_investigation(investigation["id"], {"title": "Next session", "next_steps": ["Review references"]}, revision=1, idempotency_key="sdk-revision")
         assert sdk.get_investigation(investigation["id"]) == revised
         assert len(sdk.investigation_history(investigation["id"])["data"]) == 2
+        from test_execution_budget import configure
+        from test_runner_control import create_runner
+        from test_execution_imports import payload as capture_payload
+        configure(headers, project)
+        runner = create_runner(headers, project)
+        manifest = capture_payload(sdk.get_snapshot(predictions["snapshot_id"]), sdk.get_model_version(predictions["model_version_id"]), predictions)["manifest"]
+        sealed = sdk.create_execution_plan(project, {"runner_id": runner["id"], "manifest": manifest}, idempotency_key="sdk-plan")
+        assert sdk.get_execution_plan(sealed["id"]) == sealed
+        execution = sdk.enqueue_execution(project, sealed["id"], idempotency_key="sdk-enqueue")
+        assert execution["status"] == "queued" and sdk.execution_budget(execution["id"])["held_usd"] == "1.00000000"
+        assert sdk.cancel_execution(execution["id"])["status"] == "cancelled"
+        assert sdk.execution_budget(execution["id"])["held_usd"] == "0.00000000"
     finally:
         http.shutdown()
         http.server_close()
@@ -241,14 +253,20 @@ def test_new_route_inventory_denies_missing_roles_without_mutation(role):
     from test_runner_control import create_runner, credential, runner_body
     runner = create_runner(headers, project)
     runner_key = credential(headers, runner)
+    from test_execution_budget import configure
+    configure(headers, project)
+    sealed_plan = post(f"/projects/{project}/execution-plans", {"runner_id": runner["id"], "manifest": execution_payload(snap, model, predictions)["manifest"]}, headers)
     with SessionLocal() as db:
         db.add(m.Trace(id="trace", project_id=project, organization_id=org, name="Trace", environment="dev", status="error", started_at=m.utcnow(), ended_at=m.utcnow(), duration_ms=0))
         db.commit()
     token = {"Authorization": "Bearer " + create_access_token(sub="actor", email="actor@example.com", name="Actor"), "Idempotency-Key": "denied"}
     ids = dict(project_id=project, dataset_id=dataset["id"], snapshot_id=snap["id"], model_id=model["id"],
                set_id=predictions["id"], evaluation_id=evaluation["id"], principal_id=principal["id"],
-               resource_id=snap["id"], kind="snapshot", experiment_id="missing", item_id=item_id, investigation_id=investigation["id"], trace_id="trace", execution_id=imported_execution["id"], runner_id=runner["id"], credential_id=runner_key["id"])
+               resource_id=snap["id"], kind="snapshot", experiment_id="missing", item_id=item_id, investigation_id=investigation["id"], trace_id="trace", execution_id=imported_execution["id"], runner_id=runner["id"], credential_id=runner_key["id"], plan_id=sealed_plan["id"])
     bodies = {
+        "/v1/projects/{project_id}/organization-execution-budget": {},
+        "/v1/projects/{project_id}/execution-plans": {"runner_id": runner["id"], "manifest": execution_payload(snap, model, predictions)["manifest"]},
+        "/v1/projects/{project_id}/executions": {"plan_id": sealed_plan["id"]},
         "/v1/projects/{project_id}/execution-policy": {},
         "/v1/projects/{project_id}/runners": runner_body(),
         "/v1/runners/{runner_id}/credentials": {"expires_at": (m.utcnow()+timedelta(hours=1)).isoformat()},
@@ -274,7 +292,7 @@ def test_new_route_inventory_denies_missing_roles_without_mutation(role):
     allowed = {"read"} if role == "viewer" else {"read", "write", "evaluate"} if role == "member" else set()
     with (Path(__file__).parent / "fixtures/task_route_permissions.tsv").open() as stream:
         for route in csv.DictReader(stream, delimiter="\t"):
-            if route["permission"] in allowed:
+            if set(route["permission"].split("+")) <= allowed:
                 continue
             kwargs = {"headers": token}
             if route["method"] != "GET": kwargs["json"] = bodies.get(route["path"], {})

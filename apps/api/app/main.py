@@ -21,6 +21,7 @@ from app.api.routes_tasks import router as tasks_router
 from app.api.routes_investigations import router as investigations_router
 from app.api.routes_executions import router as executions_router
 from app.api.routes_runner_control import router as runner_control_router
+from app.api.routes_execution_plans import router as execution_plans_router
 from app.config import max_body_bytes
 from app.db import Base, SessionLocal, engine, ensure_schema_compatibility
 from app.logging_config import access_logger, configure_logging
@@ -193,6 +194,7 @@ app.include_router(tasks_router)
 app.include_router(investigations_router)
 app.include_router(executions_router)
 app.include_router(runner_control_router)
+app.include_router(execution_plans_router)
 app.include_router(phase5_router)
 app.include_router(phase6_router)
 app.include_router(trace_actions_router)

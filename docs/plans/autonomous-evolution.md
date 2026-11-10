@@ -7,7 +7,7 @@ Modo standard. As SPECs continuam normativas; as fases abaixo representam implem
 | F0/F1 | Integradas em main pelo PR #47, merge 124aa18; CI do head verde | CI pós-merge 42888728647 verde; preservar gates existentes |
 | F2 | Integrada em main pelo PR #48, merge 9b25492; CI head verde | Investigações retomáveis com revisões/If-Match, casos revisados por humano, proveniência synthetic/replay e revisão do patch Grankasa local |
 | F3 | Integrada em main pelo PR #49, merge f852dfe; CI head verde | Classificação tipada, validade explícita, métricas e matriz/curvas na mesma API/SDK/web |
-| F4 | Importador integrado em main pelo PR #50 (672fb4a); policy/registro em fechamento | Harness importado primeiro; runner externo somente com ledger/leases/política e testes locais de interrupção/egress |
+| F4 | Importador e policy/registro integrados (#50/#51); ledger em fechamento | Harness importado primeiro; runner externo somente com ledger/leases/política e testes locais de interrupção/egress |
 | F5 | Depende de F3 e piloto escolhido | Curvas/recursos/artefatos importados; não escolher domínio de piloto sem evidência |
 | F6 | Condicional, sob demanda | Experimento de valor medido antes de cada expansão; não fabricar resultados de pilotos |
 
@@ -67,3 +67,13 @@ Policy owner-only com revisões/If-Match/recibos, Runner com capabilities/owner 
 Gates locais: API completa 806 passed/20 skips; SDK 89 passed; web 256, typecheck/build; E2E humano 375/1280 px, dois passed. Fechamento dirigido: 107 passaram, incluindo owner inativo, paginação/detalhe, matriz de rotas e CAS/migrations PostgreSQL. Migration 0017 aditiva; downgrade com registros recusa. [Operação](../ops/runner-policy-registry.md) e [fatias restantes](runner-control-slices.md).
 
 Importador F4 CI pós-merge 42899576779 verde. Dispatch/ledger/leases continuam pendentes e não são discoverable como entregues. F5 depende de artefatos/retention e piloto de tarefa; F6 segue condicional à demanda medida.
+
+## Controle F4 — planos e ledger (em fechamento)
+
+PR #51 integrado em main (7f1680c), CI pós-merge 42902773726 verde. Próxima fatia implementa budget explícito de organização, planos imutáveis e admissão atômica 202/queued com reserva por organização/projeto. Quotas em unidades inteiras de 10^-8 USD, ledger Decimal append-only, custo unknown não vira zero e retém slot mesmo na virada do mês. Cancelar antes do lease libera hold uma vez; importações não se convertem em autorização para execução.
+
+API/SDK/CLI/web compartilham planos, registros e ledger. Admissão requer read+write+evaluate, pois produzirá predições; avaliação offline existente continua read+evaluate. Headers/segredos originais não são persistidos. Recibos antigos de policy/runner são preservados com normalização dos novos defaults.
+
+Gates já observados: API completa 823 passed/22 skips; SDK 90; web 256/typecheck; E2E admissão/cancelamento 375/1280 px, dois passaram após corrigir interação do upload antes da hidratação. Compatibilidade de policy/registro e budget: 22 passaram; financeiro/concorrência PostgreSQL: 19 passaram; preservação de capturas SQLite/PostgreSQL: quatro passaram. Fechamento final: 124 passaram após revalidação de cancelamento e budget owner sob lock; build web passou. Downgrade bloqueado com evidência recebe prova explícita em SQLite/PostgreSQL.
+
+[Decisões de contabilidade](execution-ledger-design.md), [operação](../ops/execution-plans-ledger.md). Leases/heartbeat/ack/runtime ainda pendentes; dispatch permanece false. Nenhuma chamada paga, mensagem ou tráfego produtivo executado.

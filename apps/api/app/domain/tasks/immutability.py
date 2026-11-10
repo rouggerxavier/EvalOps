@@ -2,9 +2,13 @@
 from sqlalchemy import DDL, event
 
 PROTECTED = {
+    "organization_execution_budget_revisions": ("id", "organization_id", "version", "content", "content_hash", "created_by", "created_at"),
+    "execution_plans": ("id", "project_id", "environment", "runner_id", "policy_revision_id", "organization_budget_revision_id", "manifest_content", "manifest_hash", "created_by", "created_at"),
+    "execution_ledger_entries": ("id", "execution_id", "project_id", "organization_id", "attempt_id", "period", "kind", "event_key", "amount_usd", "measurement_source", "pricing_version", "actor_id", "created_at"),
     "execution_policy_revisions": ("id", "project_id", "version", "content", "content_hash", "created_by", "created_at"),
     "runners": ("id", "project_id", "name", "owner_user_id", "capabilities", "created_at"),
-    "executions": ("id", "project_id", "environment", "mode", "status", "manifest_hash", "manifest_content", "created_by", "created_at"),
+    "execution_schedules": ("execution_id", "project_id", "plan_id", "actor_context", "created_at"),
+    "executions": ("id", "project_id", "environment", "origin", "mode", "manifest_hash", "manifest_content", "created_by", "created_at"),
     "execution_attempts": ("id", "execution_id", "project_id", "environment", "attempt_number", "result_hash", "result_content", "created_at"),
     "investigation_revisions": ("id", "investigation_id", "project_id", "environment", "revision", "state", "access_label", "author_kind", "author_id", "created_at"),
     "model_versions": ("id", "project_id", "created_at", "name", "version_ref", "content_hash", "content"),
@@ -36,6 +40,16 @@ def statements(dialect):
             yield f"CREATE TRIGGER immutable_{table} BEFORE UPDATE OF {','.join(columns)} ON {table}{when} BEGIN SELECT RAISE(ABORT, 'immutable_task_resource'); END"
         elif dialect == "postgresql":
             yield f"CREATE TRIGGER immutable_{table} BEFORE UPDATE OF {','.join(columns)} ON {table} FOR EACH ROW{when} EXECUTE FUNCTION evalops_immutable_task_row()"
+
+    if dialect == "sqlite":
+        yield "CREATE TRIGGER immutable_execution_terminal_status BEFORE UPDATE OF status ON executions WHEN (OLD.status NOT IN ('queued','running')) BEGIN SELECT RAISE(ABORT, 'immutable_task_resource'); END"
+    elif dialect == "postgresql":
+        yield "CREATE TRIGGER immutable_execution_terminal_status BEFORE UPDATE OF status ON executions FOR EACH ROW WHEN (OLD.status NOT IN ('queued','running')) EXECUTE FUNCTION evalops_immutable_task_row()"
+
+    if dialect == "sqlite":
+        yield "CREATE TRIGGER immutable_execution_ledger_delete BEFORE DELETE ON execution_ledger_entries BEGIN SELECT RAISE(ABORT, 'immutable_task_resource'); END"
+    elif dialect == "postgresql":
+        yield "CREATE TRIGGER immutable_execution_ledger_delete BEFORE DELETE ON execution_ledger_entries FOR EACH ROW EXECUTE FUNCTION evalops_immutable_task_row()"
 
 
 def register(metadata):

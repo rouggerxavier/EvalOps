@@ -140,6 +140,21 @@ class Client(_HttpClient):
         return self._request("GET", f"/experiments/{_path_id(experiment_id)}/runs/{_path_id(run_id)}?view=task_v1")
 
 
+    def create_execution_plan(self, project_id: str, payload: dict, *, idempotency_key: str) -> dict[str, Any]:
+        return self._request("POST", f"/projects/{_path_id(project_id)}/execution-plans", payload=payload, idempotency_key=idempotency_key)
+
+    def get_execution_plan(self, plan_id: str) -> dict[str, Any]:
+        return self._request("GET", f"/execution-plans/{_path_id(plan_id)}")
+
+    def enqueue_execution(self, project_id: str, plan_id: str, *, idempotency_key: str) -> dict[str, Any]:
+        return self._request("POST", f"/projects/{_path_id(project_id)}/executions", payload={"plan_id": plan_id}, idempotency_key=idempotency_key)
+
+    def execution_budget(self, execution_id: str) -> dict[str, Any]:
+        return self._request("GET", f"/executions/{_path_id(execution_id)}/budget")
+
+    def cancel_execution(self, execution_id: str) -> dict[str, Any]:
+        return self._request("POST", f"/executions/{_path_id(execution_id)}/cancel", payload={})
+
     def import_execution(self, project_id: str, payload: dict, *, idempotency_key: str) -> dict[str, Any]:
         return self._request("POST", f"/projects/{_path_id(project_id)}/execution-imports", payload=payload, idempotency_key=idempotency_key)
 

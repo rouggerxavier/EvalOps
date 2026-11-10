@@ -106,3 +106,24 @@ def test_postgres_policy_revision_cas(postgres):
     from app.models import ExecutionPolicyRevision
     with postgres() as db:
         assert db.query(ExecutionPolicyRevision).count() == 1
+
+
+def test_postgres_organization_budget_is_atomic_across_projects(postgres):
+    from test_execution_budget import configure, plan, enqueue
+    headers, project, org = harness.bootstrap()
+    other = harness.post("/projects", {"organization_id": org, "name": "Other", "slug": "other"}, headers)["id"]
+    configure(headers, project, cost="0.75", monthly="1.00", parallel=2)
+    configure(headers, other, cost="0.75", monthly="1.00", parallel=2, organization=False)
+    first = plan(headers, project, cost="0.75")
+    second = plan(headers, other, cost="0.75")
+    def admit(pair):
+        identifier, sealed = pair
+        return harness.client.post(f"/v1/projects/{identifier}/executions", headers={**headers, "Idempotency-Key": "admission"}, json={"plan_id": sealed["id"]})
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        responses = list(pool.map(admit, [(project, first), (other, second)]))
+    assert sorted(row.status_code for row in responses) == [202, 402]
+    from app.models import ExecutionReservation, ExecutionLedgerEntry, OrganizationExecutionAccount
+    with postgres() as db:
+        assert db.query(ExecutionReservation).count() == db.query(ExecutionLedgerEntry).count() == 1
+        account = db.query(OrganizationExecutionAccount).one()
+        assert (account.reserved_units, account.spent_units) == (75000000, 0)

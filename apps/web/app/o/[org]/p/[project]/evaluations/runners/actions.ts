@@ -16,7 +16,9 @@ export async function controlRunner(previous: ControlState, form: FormData): Pro
     const operation = String(form.get("operation"));
     if (!/^[a-f0-9-]{36}$/.test(operation)) throw new Error("Operação inválida.");
     const id = String(form.get("runner_id"));
-    if (intent === "policy") {
+    if (intent === "organization-budget") {
+      await taskPut(`/projects/${resolved.project_id}/organization-execution-budget`, JSON.parse(String(form.get("policy"))), Number(form.get("revision")), operation);
+    } else if (intent === "policy") {
       await taskPut(`/projects/${resolved.project_id}/execution-policy`, JSON.parse(String(form.get("policy"))), Number(form.get("revision")), operation);
     } else if (intent === "register") {
       await taskWrite(`/projects/${resolved.project_id}/runners`, { name: String(form.get("name")), environments: JSON.parse(String(form.get("environments"))), adapter_versions: JSON.parse(String(form.get("adapters"))), isolation: "client_managed" }, operation);

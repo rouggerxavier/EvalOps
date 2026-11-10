@@ -26,6 +26,9 @@ class ExecutionPolicy(Contract):
     max_cost_per_run_usd: Money = Decimal("0")
     monthly_budget_usd: Money = Decimal("0")
     max_parallel: int = Field(default=1, ge=1, le=100, strict=True)
+    max_wall_time_s: int = Field(default=300, ge=1, le=86400, strict=True)
+    max_tool_calls: int = Field(default=20, ge=0, le=100000, strict=True)
+    max_tokens: int = Field(default=10000, ge=0, le=10000000, strict=True)
     effects_policy: Literal["fixtures_only"] = "fixtures_only"
 
     @model_validator(mode="after")
@@ -44,6 +47,7 @@ class RunnerRegistration(Contract):
     environments: tuple[Environment, ...] = Field(min_length=1, max_length=3)
     adapter_versions: tuple[AdapterVersion, ...] = Field(min_length=1, max_length=100)
     isolation: Literal["client_managed"] = "client_managed"
+    max_parallel: int = Field(default=1, ge=1, le=100, strict=True)
 
     @model_validator(mode="after")
     def unique_capabilities(self):

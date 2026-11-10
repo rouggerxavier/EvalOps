@@ -64,6 +64,7 @@ def project_access(db, actor, project_id, permission="read"):
 ADMIN_RESOURCE_KINDS = {"principal", "policy", "runner"}
 
 RESOURCE_MODELS = {
+    "plan": m.ExecutionPlan,
     "policy": m.ExecutionPolicyRevision, "runner": m.Runner,
     "dataset": m.Dataset, "item": m.DatasetItem, "snapshot": m.DatasetSnapshot,
     "model": m.ModelVersion, "predictions": m.PredictionSet, "evaluation": m.TaskEvaluation,
@@ -229,7 +230,9 @@ def write(db, actor, request, project_id, payload, operation):
                              response_snapshot=serialize(row) if kind == "item" and request.method == "PATCH" else None))
         audit(db, actor, project_id, f"task.{kind}.{'updated' if request.method == 'PATCH' else 'created'}", ref)
         db.expire_all()
-        project_access(db, actor, project_id, "admin" if kind in ADMIN_RESOURCE_KINDS else "evaluate" if kind in {"evaluation", "comparison"} else "write")
+        project_access(db, actor, project_id, "admin" if kind in ADMIN_RESOURCE_KINDS else "evaluate" if kind in {"evaluation", "comparison"} or kind == "execution" and row.origin == "controlled_runner" else "write")
+        if kind == "execution" and row.origin == "controlled_runner":
+            project_access(db, actor, project_id, "write")
         if actor.principal_id:
             revalidate_principal(db, request.state.api_key_id)
         db.commit()
@@ -417,6 +420,11 @@ def serialize(row):
                 "author_id": author.author_id,
                 "revision_id": author.id, "created_at": server_timestamp(current.created_at).isoformat(),
                 "updated_at": server_timestamp(author.created_at).isoformat()}
+    if isinstance(row, m.ExecutionPlan):
+        import json
+        return {**common, "kind": "execution_plan", "environment": row.environment, "runner_id": row.runner_id,
+                "policy_revision_id": row.policy_revision_id, "organization_budget_revision_id": row.organization_budget_revision_id,
+                "manifest_hash": row.manifest_hash, "manifest": json.loads(row.manifest_content)}
     if isinstance(row, m.ExecutionPolicyRevision):
         return {**common, "kind": "execution_policy", "version": row.version, "policy": row.content, "content_hash": row.content_hash}
     if isinstance(row, m.Runner):
@@ -426,9 +434,11 @@ def serialize(row):
         import json
         db = object_session(row)
         attempts = db.query(m.ExecutionAttempt).filter_by(execution_id=row.id).order_by(m.ExecutionAttempt.attempt_number).all()
+        schedule = db.get(m.ExecutionSchedule, row.id) if row.origin == "controlled_runner" else None
         return {**common, "schema_version": 1, "kind": "execution", "mode": row.mode, "environment": row.environment,
                 "status": row.status, "manifest_hash": row.manifest_hash, "manifest": json.loads(row.manifest_content),
-                "capture_origin": "external_import", "decision": None,
+                "capture_origin": row.origin, "decision": None,
+                **({"control": {"plan_id": schedule.plan_id, "cancel_requested_at": server_timestamp(schedule.cancel_requested_at).isoformat() if schedule.cancel_requested_at else None}} if schedule else {}),
                 "attempts": [{"id": attempt.id, "attempt_number": attempt.attempt_number, "result_hash": attempt.result_hash,
                               "result": json.loads(attempt.result_content)} for attempt in attempts]}
     if isinstance(row, m.ServicePrincipal):
