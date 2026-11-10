@@ -25,6 +25,8 @@ def experiment(db, actor, identifier, permission="read"):
 def create_experiment(db, actor, project_id, payload):
     s.project_access(db, actor, project_id, "write")
     snap = s.load(db, actor, "snapshot", payload.snapshot_id, project_id=project_id, environment=payload.environment)
+    if SnapshotContent.model_validate_json(snap.content).task_schema.task_type != "regression":
+        raise HTTPException(422, "regression_comparison_required")
     if snap.dataset_id != payload.dataset_id:
         raise HTTPException(404, "not_found")
     if (len({variant.name for variant in payload.variants}) != len(payload.variants)

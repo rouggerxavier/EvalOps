@@ -5,8 +5,8 @@ Modo standard. As SPECs continuam normativas; as fases abaixo representam implem
 | Fase | Estado | Próxima prova |
 | --- | --- | --- |
 | F0/F1 | Integradas em main pelo PR #47, merge 124aa18; CI do head verde | CI pós-merge 42888728647 verde; preservar gates existentes |
-| F2 | Implementada; gates locais em fechamento | Investigações retomáveis com revisões/If-Match, casos revisados por humano, proveniência synthetic/replay e revisão do patch Grankasa local |
-| F3 | A seguir, independente após F1 | Classificação tipada, validade explícita, métricas e matriz/curvas na mesma API/SDK/web |
+| F2 | Integrada em main pelo PR #48, merge 9b25492; CI head verde | Investigações retomáveis com revisões/If-Match, casos revisados por humano, proveniência synthetic/replay e revisão do patch Grankasa local |
+| F3 | Implementada; gates locais em fechamento | Classificação tipada, validade explícita, métricas e matriz/curvas na mesma API/SDK/web |
 | F4 | Depende de F2 e SPEC-009 | Harness importado primeiro; runner externo somente com ledger/leases/política e testes locais de interrupção/egress |
 | F5 | Depende de F3 e piloto escolhido | Curvas/recursos/artefatos importados; não escolher domínio de piloto sem evidência |
 | F6 | Condicional, sob demanda | Experimento de valor medido antes de cada expansão; não fabricar resultados de pilotos |
@@ -33,3 +33,15 @@ Patch local Grankasa revisado somente em leitura: worktree `EvalOps-grankasa-uso
 Rollback F2: reverter código mantém evidências no banco; downgrade 0015 recusa investigações ou recibos de revisão existentes. Não apagar histórico para liberar downgrade.
 
 Web: 256 testes passaram, typecheck e build passaram. Review integrada conferiu autorização transitiva humana/serviço, recibos, conflitos e isolamento. [Operação e contratos](../ops/investigations-curation.md).
+
+## Evidência F3 (2026-11-10)
+
+Classificação offline segue SPEC-003, com label_set ordenado, classe positiva binária, probabilidades opcionais, confusão/support, precision/recall/F1 class/macro/micro/weighted, ROC-AUC/AP binário e OvR, Brier/ECE/reliability binários. Referências rejeitadas e divisores zero são explícitos; ausência não vira zero. Correctness por amostra é persistida e reutilizada na descoberta de falhas. Comparação selada de tolerâncias permanece limitada à regressão; tentativa com classificação retorna 422.
+
+API completa: 786 passaram/18 skips; fechamento dirigido de domínio e migration/concorrência SQLite/PostgreSQL: 16 passaram, incluindo dois testes adicionais de multiclasses e referência rejeitada; SDK: 85 passaram; web: 256; typecheck/build; E2E classificação + regressão, 375/1280 px: quatro passaram. Validação de valor externo ainda pendente.
+
+Benchmark HTTP local (macOS, Python 3.12, SQLite dedicado, cinco execuções, classificação binária com 10 mil linhas e probabilidades): mediana 0.421s, p95 amostral 0.430s. Inclui autorização, lineage, cálculo, hashes e persistência; exclui setup e GET de métricas. Não é SLA produtivo nem medição de todos os limites combinados. Reproduzir com `scripts/benchmark_offline.py --task classification --api-url http://127.0.0.1:PORT/v1 --runs 5` em API descartável.
+
+[Contrato e operação F3](../ops/offline-classification.md). Nenhuma migration adicional: contratos de conteúdo versionados sobre tabelas existentes.
+
+F2 CI pós-merge 42895689264 verde. F3 E2E final de classificação após correctness: dois passaram.

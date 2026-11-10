@@ -6,7 +6,13 @@ import { getSession } from "@/lib/auth";
 import { resolveProject, taskWrite, taskRead } from "@/lib/api";
 import { sanitizeApiError } from "@/lib/safe-error";
 
-export async function importRegression(_previous: { error?: string }, form: FormData): Promise<{ error?: string }> {
+export async function importRegression(previous: { error?: string }, form: FormData): Promise<{ error?: string }> {
+  return importOffline(previous, form, "regression");
+}
+export async function importClassification(previous: { error?: string }, form: FormData): Promise<{ error?: string }> {
+  return importOffline(previous, form, "classification");
+}
+async function importOffline(_previous: { error?: string }, form: FormData, task: "regression" | "classification"): Promise<{ error?: string }> {
   const org = String(form.get("org") ?? "");
   const project = String(form.get("project") ?? "");
   const path = `/o/${encodeURIComponent(org)}/p/${encodeURIComponent(project)}/evaluations/tasks`;
@@ -29,26 +35,26 @@ export async function importRegression(_previous: { error?: string }, form: Form
       if ((snapshot as { project_id?: string }).project_id !== resolved.project_id) throw new Error("Snapshot não pertence ao projeto.");
     } else {
     const dataset = await taskWrite<{ id: string }>(`/projects/${resolved.project_id}/datasets`, {
-      slug: String(form.get("slug")), task_type: "regression",
-      task_schema: { task_type: "regression", target: { name: String(form.get("target")), unit: String(form.get("unit")) } }, access,
+      slug: String(form.get("slug")), task_type: task,
+      task_schema: task === "regression" ? { task_type: task, target: { name: String(form.get("target")), unit: String(form.get("unit")) } } : { task_type: task, label_set: JSON.parse(String(form.get("labels"))), positive_label: String(form.get("positive_label")) || null, segments: JSON.parse(String(form.get("segments") || "[]")) }, access,
       items: data.items,
     }, `${operation}:dataset`);
     snapshot = await taskWrite<{ id: string }>(`/datasets/${dataset.id}/snapshots`, { environment }, `${operation}:snapshot`);
     }
     const existingModel = String(form.get("model_version_id") ?? "");
     const model = existingModel ? { id: existingModel } : await taskWrite<{ id: string }>(`/projects/${resolved.project_id}/model-versions`, {
-      model: { name: String(form.get("model")), version_ref: String(form.get("version")) }, access,
+      model: { name: String(form.get("model")), version_ref: String(form.get("version")), task_type: task }, access,
     }, `${operation}:model`);
     const predictions = await taskWrite<{ id: string }>(`/projects/${resolved.project_id}/prediction-sets`, {
       snapshot_id: snapshot.id, model_version_id: model.id, environment, rows: data.rows,
     }, `${operation}:predictions`);
     const evaluation = await taskWrite<{ id: string }>(`/projects/${resolved.project_id}/task-evaluations`, {
-      prediction_set_id: predictions.id, evaluator: { id: "regression.standard", version: "1", config: {} },
+      prediction_set_id: predictions.id, evaluator: { id: `${task}.standard`, version: "1", config: {} },
     }, `${operation}:evaluation`);
     id = evaluation.id;
     revalidatePath(path);
   } catch (error) {
-    const message = sanitizeApiError(error instanceof Error ? error.message : "Falha ao importar regressão.");
+    const message = sanitizeApiError(error instanceof Error ? error.message : "Falha ao importar avaliação offline.");
     return { error: message };
   }
   redirect(`${path}/${encodeURIComponent(id)}`);

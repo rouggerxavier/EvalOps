@@ -14,9 +14,9 @@ Engenheiros de IA, ML e software que investigam falhas, comparam versões e deci
 
 EvalOps Studio evolui para uma plataforma de avaliação, experimentação, observabilidade e qualidade de sistemas de IA, operada por humanos e agentes sobre as mesmas entidades, métricas e evidências.
 
-**Hoje:** tracing e avaliação de aplicações generativas/agentes, rubricas, feedback, Quality Gate e workflows de prompts/datasets. Experimentos legados sintetizam respostas; replay repete uma chamada LLM. A primeira vertical tabular avalia predições numéricas importadas, com snapshots imutáveis, versões declaradas, métricas tipadas e comparação pareada descritiva. Investigações e curadoria preservam autoria e revisão humana. Não executa agente completo.
+**Hoje:** tracing e avaliação de aplicações generativas/agentes, rubricas, feedback, Quality Gate e workflows de prompts/datasets. Experimentos legados sintetizam respostas; replay repete uma chamada LLM. As verticais tabulares avaliam predições importadas de regressão e classificação, com snapshots imutáveis, versões declaradas, métricas tipadas e comparação pareada descritiva. Investigações e curadoria preservam autoria e revisão humana. Não executa agente completo.
 
-**Proposta restante:** classificação e outras tarefas de ML/DL, artefatos e runners de aplicações reais. As SPECs preservam os contratos de referência; o [registro de execução](docs/plans/autonomous-evolution.md) separa implementação de evidência externa pendente.
+**Proposta restante:** outras tarefas de ML/DL, artefatos e runners de aplicações reais. As SPECs preservam os contratos de referência; o [registro de execução](docs/plans/autonomous-evolution.md) separa implementação de evidência externa pendente.
 
 ## Positioning
 
@@ -61,4 +61,4 @@ Auditoria inicial em main `545149b`; F0/F1 integradas pelo PR #47 (`124aa18`). T
 
 Primeira vertical: predições numéricas importadas de regressão, snapshot, modelo/versão declarado, MAE/MSE/RMSE/R², resíduos, comparação descritiva e web/API/SDK/CLI equivalentes. Não treina, hospeda ou carrega modelo executável. Não promete equivalência estatística ou superioridade de produto.
 
-Depois: classificação, runner externo, piloto agêntico e DL por tarefa. Excluídos: treino distribuído, serving, GPU scheduler, registry completo, deploy automático e suporte simultâneo a todos os algoritmos.
+Depois: runner externo, piloto agêntico e DL por tarefa. Excluídos: treino distribuído, serving, GPU scheduler, registry completo, deploy automático e suporte simultâneo a todos os algoritmos.

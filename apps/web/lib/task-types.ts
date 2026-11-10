@@ -7,7 +7,8 @@ export type TaskEvaluation = {
 };
 export type MetricFact = {
   id: string; definition_id: string; definition_version: string; scope: string; scope_key: string;
-  value_type: "scalar" | "series" | "matrix"; value: number | { points: { key: string; x: number; y: number | null; state: string; reason: string | null }[] } | { row_axis: { labels: string[] }; cells: number[][] } | null;
+  value_type: "scalar" | "series" | "matrix"; value: number | { points: { key: string; x: number; y: number | null; state: string; reason: string | null }[] } | { row_axis: { labels: string[] }; column_axis: { labels: string[] }; cells: number[][] } | null;
+  averaging?: string | null; class_label?: string | null; statistics?: Record<string, { value: number; unit: string }>;
   unit: string; state: string; reason: string | null; n_total: number; n_valid: number; coverage: number | null;
 };
 

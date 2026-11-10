@@ -84,6 +84,45 @@ class RegressionSchema(Contract):
         return self
 
 
+class ClassificationSchema(Contract):
+    task_type: Literal["classification"] = "classification"
+    label_set: tuple[Annotated[str, Field(min_length=1, max_length=128)], ...] = Field(min_length=2, max_length=100)
+    positive_label: str | None = None
+    segments: tuple[str, ...] = Field(default=(), max_length=8)
+
+    @model_validator(mode="after")
+    def valid_labels(self):
+        if len(set(self.label_set)) != len(self.label_set):
+            raise ValueError("duplicate_class_label")
+        if (len(self.label_set) == 2 and self.positive_label not in self.label_set
+                or self.positive_label is not None and self.positive_label not in self.label_set):
+            raise ValueError("explicit_positive_label_required")
+        if any(not key or len(key) > 128 for key in self.segments) or len(set(self.segments)) != len(self.segments):
+            raise ValueError("invalid_segments")
+        return self
+
+
+class ClassLabel(Contract):
+    label: str | None = Field(default=None, max_length=128)
+
+
+class ClassPrediction(ClassLabel):
+    probabilities: tuple[Number, ...] | None = Field(default=None, max_length=100)
+    class_order: tuple[str, ...] | None = Field(default=None, max_length=100)
+
+    @model_validator(mode="after")
+    def valid_probabilities(self):
+        if self.probabilities is not None:
+            if (not self.class_order or len(self.probabilities) != len(self.class_order)
+                    or len(set(self.class_order)) != len(self.class_order)
+                    or any(value < 0 or value > 1 for value in self.probabilities)
+                    or not math.isclose(math.fsum(self.probabilities), 1, abs_tol=1e-9, rel_tol=0)):
+                raise ValueError("invalid_probability_vector")
+        elif self.class_order is not None:
+            raise ValueError("class_order_without_probabilities")
+        return self
+
+
 class Scalar(Contract):
     value: Number | None = None
 
@@ -92,7 +131,7 @@ class SnapshotItem(Contract):
     json_fields: ClassVar[tuple[str, ...]] = ('input', 'metadata')
     sample_id: str = Field(min_length=1, max_length=255)
     input: dict[str, Any]
-    expected_output: Scalar | None = None
+    expected_output: Scalar | ClassLabel | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
     reference_status: Literal["draft", "reviewed", "rejected"] = "draft"
 
@@ -100,13 +139,20 @@ class SnapshotItem(Contract):
 class SnapshotContent(Contract):
     schema_version: Literal[1] = 1
     canonicalizer_version: Literal[1] = 1
-    task_schema: RegressionSchema
+    task_schema: RegressionSchema | ClassificationSchema
     items: tuple[SnapshotItem, ...] = Field(max_length=10000)
 
     @model_validator(mode="after")
     def unique_samples(self):
         if len({item.sample_id for item in self.items}) != len(self.items):
             raise ValueError("duplicate_sample_id")
+        for item in self.items:
+            reference = item.expected_output
+            if isinstance(self.task_schema, ClassificationSchema):
+                if reference is not None and (not isinstance(reference, ClassLabel) or reference.label is not None and reference.label not in self.task_schema.label_set):
+                    raise ValueError("invalid_class_reference")
+            elif reference is not None and not isinstance(reference, Scalar):
+                raise ValueError("invalid_regression_reference")
         groups = set()
         for segment in self.task_schema.segments:
             for item in self.items:
@@ -116,6 +162,8 @@ class SnapshotContent(Contract):
                 groups.add((segment, canonical_json(value)))
                 if len(groups) > 1000:
                     raise ValueError("max_segment_groups_exceeded")
+        if self.task_schema.task_type == "classification" and (len(groups) + 1) * len(self.task_schema.label_set) > 2000:
+            raise ValueError("classification_group_limit")
         return self
 
     def canonical_content(self) -> dict:
@@ -134,7 +182,7 @@ class SnapshotContent(Contract):
 
 class PredictionRow(Contract):
     sample_id: str = Field(min_length=1, max_length=255)
-    prediction: Scalar | None = None
+    prediction: Scalar | ClassPrediction | None = None
     error: str | None = Field(default=None, min_length=1)
 
     @model_validator(mode="after")
@@ -215,7 +263,7 @@ class MetricFact(Contract):
     id: str | None = None
     task_evaluation_id: str | None = None
     schema_version: Literal[1] = 1
-    definition_id: Literal["regression.mae", "regression.mse", "regression.rmse", "regression.r2", "regression.residuals", "classification.confusion", "regression.residual_histogram"]
+    definition_id: Literal["regression.mae", "regression.mse", "regression.rmse", "regression.r2", "regression.residuals", "classification.confusion", "regression.residual_histogram", "classification.accuracy", "classification.precision", "classification.recall", "classification.f1", "classification.support", "classification.roc_auc", "classification.average_precision", "classification.brier", "classification.ece", "classification.reliability", "classification.correctness"]
     definition_version: Literal["1"] = "1"
     scope: Literal["sample", "dataset", "group", "model_version"] = "dataset"
     scope_key: str = "all"
@@ -232,6 +280,8 @@ class MetricFact(Contract):
     aggregation: Aggregation
     statistics: dict[str, Quantity] = Field(default_factory=dict)
     evidence_refs: tuple[str, ...] = ()
+    averaging: Literal["class", "macro", "micro", "weighted", "binary", "ovr_macro", "ovr_weighted"] | None = None
+    class_label: str | None = None
 
     @model_validator(mode="after")
     def definition_contract(self):
@@ -252,6 +302,10 @@ class MetricFact(Contract):
                     raise ValueError("invalid_confusion_population")
             elif self.value is not None or not self.reason:
                 raise ValueError("invalid_unmeasured_matrix")
+            return self
+        if self.definition_id.startswith("classification."):
+            from app.domain.tasks.classification import validate_fact
+            validate_fact(self)
             return self
         kind = self.definition_id.removeprefix("regression.")
         method = {"mae": "mean", "mse": "mean", "rmse": "root_mean", "r2": "r2", "residuals": "identity"}[kind]
@@ -305,7 +359,7 @@ class ModelVersionContent(Contract):
     json_fields: ClassVar[tuple[str, ...]] = ('config',)
     name: str = Field(min_length=1, max_length=255)
     version_ref: str = Field(min_length=1, max_length=255)
-    task_type: Literal["regression"] = "regression"
+    task_type: Literal["regression", "classification"] = "regression"
     source_kind: Literal["external"] = "external"
     external_ref: str | None = None
     artifact_digest: str | None = None
@@ -333,13 +387,25 @@ class EvaluatorManifest(Contract):
     config: RegressionConfig = Field(default_factory=RegressionConfig)
 
 
+class ClassificationManifest(Contract):
+    id: Literal["classification.standard"] = "classification.standard"
+    version: Literal["1"] = "1"
+    config: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def fixed_config(self):
+        if self.config:
+            raise ValueError("classification_v1_config_is_fixed")
+        return self
+
+
 class TaskResult(Contract):
     schema_version: Literal[1] = 1
     kind: Literal["task_evaluation"] = "task_evaluation"
     status: Literal["succeeded"] = "succeeded"
     decision: Literal["inconclusive"] = "inconclusive"
     decision_reasons: tuple[Literal["no_quality_policy"], ...] = ("no_quality_policy",)
-    evaluator_manifest: EvaluatorManifest = Field(default_factory=EvaluatorManifest)
+    evaluator_manifest: EvaluatorManifest | ClassificationManifest = Field(default_factory=EvaluatorManifest)
     snapshot_hash: str
     prediction_hash: str
     config_hash: str
@@ -353,7 +419,7 @@ class TaskResult(Contract):
         if not self.metrics:
             raise ValueError("missing_metrics")
         for fact in self.metrics:
-            if fact.scope == "dataset" and (fact.n_total, fact.n_valid, fact.coverage) != (
+            if fact.scope == "dataset" and not fact.definition_id.startswith("classification.") and (fact.n_total, fact.n_valid, fact.coverage) != (
                     self.n_total, self.n_valid, self.coverage):
                 raise ValueError("population_mismatch")
         if self.decision_reasons != ("no_quality_policy",):
@@ -383,8 +449,8 @@ class ModelCreate(Contract):
 class TaskDatasetCreate(Contract):
     slug: str = Field(min_length=2, max_length=255, pattern=r"^[a-z0-9-]+$")
     description: str | None = None
-    task_type: Literal["regression"]
-    task_schema: RegressionSchema
+    task_type: Literal["regression", "classification"]
+    task_schema: RegressionSchema | ClassificationSchema
     access: LabelDeclaration
     items: tuple[SnapshotItem, ...] = Field(default=(), max_length=10000)
 
@@ -400,7 +466,7 @@ class PredictionImport(Contract):
 
 class EvaluationCreate(Contract):
     prediction_set_id: str
-    evaluator: EvaluatorManifest = Field(default_factory=EvaluatorManifest)
+    evaluator: EvaluatorManifest | ClassificationManifest = Field(default_factory=EvaluatorManifest)
 
 
 class TaskVariant(Contract):
