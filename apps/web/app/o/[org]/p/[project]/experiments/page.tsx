@@ -62,7 +62,7 @@ function RunResultCard({
   const baseline = variants.find(([name]) => name === baselineName)?.[1];
   const highestScore = Math.max(...variants.map(([, metrics]) => metrics.avg_score));
   const highestVariant = variants.find(([, metrics]) => metrics.avg_score === highestScore);
-  const runIsSynthetic = run.run_metadata.synthetic === true;
+  const runIsSynthetic = true; // This page reads legacy_synthetic runs only.
   const runStatus = run.passed === true ? "Aprovado" : run.passed === false ? "Não aprovado" : "Sem dados";
 
   return (
@@ -90,7 +90,7 @@ function RunResultCard({
       </div>
       {runIsSynthetic ? (
         <p className="ops-note">
-          A resposta da variante é sintetizada. Um avaliador `llm_judge` ainda pode chamar um modelo e consumir orçamento.
+          Resultado legado sintético: a resposta da variante é sintetizada. A avaliação por modelo ainda pode consumir orçamento.
         </p>
       ) : null}
       <div className="table-wrap">

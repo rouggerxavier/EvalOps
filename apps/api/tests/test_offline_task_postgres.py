@@ -59,3 +59,19 @@ def test_postgres_vertical_and_concurrent_receipts(postgres):
 
 def test_postgres_transitive_access_restrictions(postgres):
     harness.test_neutral_owner_source_is_shared_only_explicitly_and_restriction_is_transitive()
+
+
+def test_postgres_investigation_revision_compare_and_swap(postgres):
+    headers, project, _ = harness.bootstrap()
+    first = harness.post(f"/projects/{project}/investigations", {
+        "environment": "dev", "state": {"title": "Concurrent investigation"}}, headers)
+    path = f"/v1/investigations/{first['id']}"
+    def patch(index):
+        return harness.client.patch(path, headers={**headers, "If-Match": "1", "Idempotency-Key": f"revision-{index}"},
+                                    json={"state": {"title": f"Writer {index}"}})
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        responses = list(pool.map(patch, range(2)))
+    assert sorted(response.status_code for response in responses) == [200, 409]
+    history = harness.client.get(path + "/revisions", headers=headers).json()["data"]
+    assert [row["revision"] for row in history] == [1, 2]
+    assert history[-1]["title"] == next(response.json()["title"] for response in responses if response.status_code == 200)

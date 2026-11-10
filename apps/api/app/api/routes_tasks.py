@@ -48,13 +48,15 @@ def capabilities(project_id: str, request: Request, db: Session = Depends(task_d
     if actor.user_id:
         membership = db.get(m.Membership, (actor.user_id, project.organization_id))
         permissions = ["read", "write", "evaluate"] if membership.role in {"owner", "member"} else ["read"]
+        if membership.role == "owner": permissions.append("admin")
     else:
         permissions = sorted(actor.scopes)
     return {"schema_version": 1, "task_types": ["regression"],
             "evaluator_versions": [{"id": "regression.standard", "version": "1"}],
             "limits": {"max_rows": 10000, "max_import_bytes": 10 * 1024 * 1024, "max_segments": 8, "max_segment_groups": 1000, "max_group_key_bytes": 2048},
             "permissions": permissions,
-            "links": {"evaluations": f"/v1/projects/{project_id}/task-evaluations"}}
+            "links": {"evaluations": f"/v1/projects/{project_id}/task-evaluations",
+                      "investigations": f"/v1/projects/{project_id}/investigations", "failures": f"/v1/projects/{project_id}/failures"}}
 
 
 @router.post("/projects/{project_id}/service-principals", status_code=201)
@@ -376,7 +378,8 @@ def get_run(experiment_id: str, run_id: str, request: Request, view: str | None 
     return legacy(experiment_id, run_id, get_current_user(request, request.headers.get("authorization"), db), db)
 
 
-from app.domain.tasks.contracts import SnapshotItem as CaseContent
+from app.domain.tasks.contracts import CaseContent, SnapshotItem
+from pydantic import ValidationError
 
 
 class CaseCreate(BaseModel):
@@ -391,8 +394,9 @@ def create_case(dataset_id: str, payload: CaseCreate, request: Request, db: Sess
     actor = s.authenticate(request, db, "write")
     dataset = s.load(db, actor, "dataset", dataset_id, environment=payload.environment, permission="write")
     def operation():
-        if dataset.task_type != "regression" or payload.case.reference_status != "draft":
-            raise HTTPException(422, "draft_regression_case_required")
+        validate_case_content(dataset, payload.case)
+        if payload.case.reference_status != "draft":
+            raise HTTPException(422, "draft_case_required")
         count = db.query(m.DatasetItem).filter_by(dataset_id=dataset_id).count()
         if count >= 10000:
             raise HTTPException(422, "dataset_row_limit")
@@ -402,9 +406,9 @@ def create_case(dataset_id: str, payload: CaseCreate, request: Request, db: Sess
         refs = [f"dataset:{dataset.id}", *payload.source_refs]
         label = s.derived_label(db, refs, dataset.project_id, payload.environment)
         metadata = {key: value for key, value in payload.case.metadata.items() if key not in {"evalops_case", "reference_review"}}
-        metadata["evalops_case"] = {"sample_id": payload.case.sample_id, "reference_status": "draft", "revision": 1}
+        metadata["evalops_case"] = {"schema_version": 1, "sample_id": payload.case.sample_id, "reference_status": "draft", "revision": 1, "source_refs": list(payload.source_refs)}
         row = m.DatasetItem(id=new_id("dti"), dataset_id=dataset_id, ord=count, input=payload.case.input,
-                            expected_output=payload.case.expected_output.model_dump() if payload.case.expected_output else None,
+                            expected_output=payload.case.expected_output,
                             metadata_json=metadata, access_label=label)
         db.add(row)
         return "item", row
@@ -434,32 +438,35 @@ def patch_case(dataset_id: str, item_id: str, payload: CasePatch, request: Reque
     row = s.load(db, actor, "item", item_id, project_id=dataset.project_id, permission="write")
     if row.dataset_id != dataset_id:
         raise HTTPException(404, "not_found")
-    db.query(m.Project).filter_by(id=dataset.project_id).update({m.Project.name: m.Project.name}, synchronize_session=False)
-    db.refresh(row)
-    case = row.metadata_json.get("evalops_case", {})
-    revision = case.get("revision", 1)
-    if request.headers.get("if-match") != str(revision):
-        raise HTTPException(409, "case_revision_conflict")
-    if case.get("reference_status", "draft") != "draft" and (not actor.user_id or not payload.review_reason):
-        raise HTTPException(403, "human_review_required")
-    if payload.case.sample_id != case.get("sample_id", row.id):
-        raise HTTPException(422, "sample_id_immutable")
-    if payload.case.reference_status != "draft" and (not actor.user_id or not payload.review_reason):
-        raise HTTPException(403, "human_review_required")
-    metadata = {key: value for key, value in payload.case.metadata.items() if key not in {"evalops_case", "reference_review"}}
-    metadata["evalops_case"] = {**case, "revision": revision + 1, "reference_status": payload.case.reference_status}
-    if payload.case.reference_status != "draft":
-        metadata["reference_review"] = {"actor_user_id": actor.user_id, "reason": payload.review_reason, "created_at": m.utcnow().isoformat()}
-    row.input = payload.case.input
-    row.expected_output = payload.case.expected_output.model_dump() if payload.case.expected_output else None
-    row.metadata_json = metadata
-    from app.domain.services.audit_service import record_audit
-    project = db.get(m.Project, dataset.project_id)
-    record_audit(db, "task.case.updated", organization_id=project.organization_id, actor_user_id=actor.user_id,
-                 target_type="item", target_id=row.id, payload={"project_id": project.id, "principal_id": actor.principal_id,
-                     "revision": revision + 1, "reference_status": payload.case.reference_status, "reason": payload.review_reason})
-    db.commit()
-    return s.serialize(row)
+    def operation():
+        db.refresh(row)
+        case = row.metadata_json.get("evalops_case", {})
+        revision = case.get("revision", 1)
+        if request.headers.get("if-match") != str(revision):
+            raise HTTPException(409, "case_revision_conflict")
+        if case.get("reference_status", "draft") != "draft" and (not actor.user_id or not payload.review_reason):
+            raise HTTPException(403, "human_review_required")
+        if payload.case.sample_id != case.get("sample_id", row.id):
+            raise HTTPException(422, "sample_id_immutable")
+        if payload.case.reference_status != "draft" and (not actor.user_id or not payload.review_reason):
+            raise HTTPException(403, "human_review_required")
+        metadata = {key: value for key, value in payload.case.metadata.items() if key not in {"evalops_case", "reference_review"}}
+        metadata["evalops_case"] = {**case, "revision": revision + 1, "reference_status": payload.case.reference_status}
+        if payload.case.reference_status != "draft":
+            metadata["reference_review"] = {"actor_user_id": actor.user_id, "reason": payload.review_reason, "created_at": m.utcnow().isoformat()}
+        validate_case_content(dataset, payload.case)
+        metadata["evalops_case"]["schema_version"] = 1
+        row.input = payload.case.input
+        row.expected_output = payload.case.expected_output
+        row.metadata_json = metadata
+        from app.domain.services.audit_service import record_audit
+        project = db.get(m.Project, dataset.project_id)
+        record_audit(db, "task.case.updated", organization_id=project.organization_id, actor_user_id=actor.user_id,
+                     target_type="item", target_id=row.id, payload={"project_id": project.id, "principal_id": actor.principal_id,
+                         "revision": revision + 1, "reference_status": payload.case.reference_status, "reason": payload.review_reason})
+        return "item", row
+    result = s.write(db, actor, request, dataset.project_id, payload.model_dump(mode="json"), operation)
+    return s.serialize(result)
 
 
 def default_task_actor(request, db):
@@ -469,3 +476,11 @@ def default_task_actor(request, db):
         if exc.status_code == 403 and exc.detail == "service_principal_required":
             raise HTTPException(401, "unauthorized") from None
         raise
+
+
+def validate_case_content(dataset, case):
+    if dataset.task_type == "regression":
+        try:
+            SnapshotItem.model_validate(case.model_dump(mode="json"))
+        except ValidationError:
+            raise HTTPException(422, "invalid_regression_reference") from None

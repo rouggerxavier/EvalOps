@@ -25,3 +25,23 @@ def test_cli_missing_credential_is_usage_error(monkeypatch, capsys):
     monkeypatch.delenv("EVALOPS_API_KEY", raising=False)
     assert cli.main(["discover", "--project", "p", "--json"]) == 2
     assert not capsys.readouterr().out
+
+
+def test_investigation_cli_preserves_revision_and_receipt(monkeypatch, tmp_path, capsys):
+    monkeypatch.setenv("EVALOPS_API_KEY", "test-secret")
+    state = {"title": "Continue", "next_steps": ["Review evidence"]}
+    source = tmp_path / "state.json"
+    source.write_text(json.dumps(state), encoding="utf-8")
+    class Client:
+        def __init__(self, **kwargs):
+            pass
+        def update_investigation(self, identifier, payload, **kwargs):
+            assert identifier == "inv" and payload == state
+            assert kwargs == {"revision": 3, "idempotency_key": "receipt"}
+            return {"id": identifier, "revision": 4, **payload}
+    monkeypatch.setattr(cli, "Client", Client)
+    assert cli.main(["investigation-update", "inv", "--revision", "3", "--file", str(source), "--idempotency-key", "receipt"]) == 0
+    assert json.loads(capsys.readouterr().out)["revision"] == 4
+    source.write_bytes(b"\xff")
+    assert cli.main(["investigation-update", "inv", "--revision", "3", "--file", str(source), "--idempotency-key", "receipt"]) == 2
+    assert not capsys.readouterr().out

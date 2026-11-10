@@ -168,6 +168,7 @@ def test_sdk_reads_identical_facts_over_real_http():
             self.wfile.write(response.content)
         do_GET = handle_request
         do_POST = handle_request
+        do_PATCH = handle_request
         def log_message(self, *args):
             pass
     http = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
@@ -179,6 +180,10 @@ def test_sdk_reads_identical_facts_over_real_http():
         direct = client.get(f"/v1/task-evaluations/{result['id']}", headers=headers).json()
         assert sdk.task_result(result["id"]) == direct == result
         assert sdk.task_metrics(result["id"]) == client.get(result["links"]["metrics"], headers=headers).json()
+        investigation = sdk.create_investigation(project, {"environment": "dev", "state": {"title": "SDK continuity", "run_ids": [result["id"]]}}, idempotency_key="sdk-investigation")
+        revised = sdk.update_investigation(investigation["id"], {"title": "Next session", "next_steps": ["Review references"]}, revision=1, idempotency_key="sdk-revision")
+        assert sdk.get_investigation(investigation["id"]) == revised
+        assert len(sdk.investigation_history(investigation["id"])["data"]) == 2
     finally:
         http.shutdown()
         http.server_close()
@@ -230,11 +235,18 @@ def test_new_route_inventory_denies_missing_roles_without_mutation(role):
         if role != "outsider":
             db.add(m.Membership(user_id="actor", organization_id=org, role=role))
         db.commit()
+    investigation = post(f"/projects/{project}/investigations", {"environment": "dev", "state": {"title": "Investigation"}}, headers)
+    with SessionLocal() as db:
+        db.add(m.Trace(id="trace", project_id=project, organization_id=org, name="Trace", environment="dev", status="error", started_at=m.utcnow(), ended_at=m.utcnow(), duration_ms=0))
+        db.commit()
     token = {"Authorization": "Bearer " + create_access_token(sub="actor", email="actor@example.com", name="Actor"), "Idempotency-Key": "denied"}
     ids = dict(project_id=project, dataset_id=dataset["id"], snapshot_id=snap["id"], model_id=model["id"],
                set_id=predictions["id"], evaluation_id=evaluation["id"], principal_id=principal["id"],
-               resource_id=snap["id"], kind="snapshot", experiment_id="missing", item_id=item_id)
+               resource_id=snap["id"], kind="snapshot", experiment_id="missing", item_id=item_id, investigation_id=investigation["id"], trace_id="trace")
     bodies = {
+        "/v1/projects/{project_id}/investigations": {"environment": "dev", "state": {"title": "Investigation"}},
+        "/v1/investigations/{investigation_id}": {"state": {"title": "Changed"}},
+        "/v1/task-resources/dataset/{dataset_id}/classify": {"environment": "dev"},
         "/v1/datasets/{dataset_id}/snapshots": {"environment": "dev"},
         "/v1/projects/{project_id}/model-versions": {"model": {"name": "x", "version_ref": "1"}, "access": {"environment": "dev"}},
         "/v1/projects/{project_id}/prediction-sets": {"snapshot_id": snap["id"], "model_version_id": model["id"], "environment": "dev", "rows": []},
@@ -291,10 +303,10 @@ def test_case_revision_human_review_and_snapshot_freeze():
     body = {"case": {"sample_id": "review-me", "input": {}, "expected_output": {"value": 100}, "reference_status": "reviewed"}, "review_reason": "Checked against the human reference"}
     key, _, _ = key_for(headers, project)
     path = f"/v1/datasets/{dataset['id']}/cases/{case['id']}"
-    assert client.patch(path, headers={**key, "If-Match": "1"}, json=body).status_code == 403
-    reviewed = client.patch(path, headers={**headers, "If-Match": "1"}, json=body)
+    assert client.patch(path, headers={**key, "If-Match": "1", "Idempotency-Key": "case-patch"}, json=body).status_code == 403
+    reviewed = client.patch(path, headers={**headers, "If-Match": "1", "Idempotency-Key": "case-patch"}, json=body)
     assert reviewed.status_code == 200 and reviewed.json()["revision"] == 2
-    assert client.patch(path, headers={**headers, "If-Match": "1"}, json=body).status_code == 409
+    assert client.patch(path, headers={**headers, "If-Match": "1", "Idempotency-Key": "stale-case"}, json=body).status_code == 409
     new_snap = post(f"/datasets/{dataset['id']}/snapshots", {"environment": "dev"}, headers)
     assert new_snap["item_count"] == old_snap["item_count"] + 1
     items = client.get(f"/v1/dataset-snapshots/{new_snap['id']}/items", headers=headers).json()["data"]

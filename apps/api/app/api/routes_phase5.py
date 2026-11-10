@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.db import get_db
 from app.deps import get_current_user
 from app.domain.services.audit_service import record_audit
+from app.domain.rubrics.resolver import build_trace_context
 from app.domain.services.eval_service import (
     judge_budget_status,
     rubric_uses_llm_judge,
@@ -401,12 +402,8 @@ def build_dataset_from_traces(
     current_count = db.query(DatasetItem).filter(DatasetItem.dataset_id == dataset.id).count()
     created = 0
     for idx, trace in enumerate(traces):
-        first_span = (
-            db.query(Span)
-            .filter(Span.trace_id == trace.id, Span.messages_in.isnot(None))
-            .order_by(Span.started_at.asc())
-            .first()
-        )
+        spans = db.query(Span).filter(Span.trace_id == trace.id).order_by(Span.started_at.asc()).all()
+        first_span = next((span for span in spans if span.messages_in), None)
         input_payload = {
             "messages": first_span.messages_in if first_span and first_span.messages_in else [],
             "trace": {
@@ -415,16 +412,17 @@ def build_dataset_from_traces(
                 "tags": trace.tags,
             },
         }
+        observed_output = build_trace_context(trace, spans)["trace"]["output"]["text"]
+        # Observed model output is evidence, never an automatically reviewed reference.
         expected_output = None
-        if first_span and first_span.messages_out:
-            expected_output = {"assistant_message": first_span.messages_out}
         row = DatasetItem(
             id=new_id("dsi"),
             dataset_id=dataset.id,
             ord=current_count + idx,
             input=input_payload,
             expected_output=expected_output,
-            metadata_json={"source_trace_id": trace.id, "source": "traces"},
+            metadata_json={"source_trace_id": trace.id, "source": "traces", "observed_output": observed_output,
+                           "evalops_case": {"schema_version": 1, "sample_id": trace.id, "reference_status": "draft", "revision": 1, "source_refs": [f"trace:{trace.id}"]}},
         )
         db.add(row)
         created += 1

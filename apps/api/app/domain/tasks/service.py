@@ -5,7 +5,7 @@ from app.timestamps import server_timestamp
 
 from fastapi import HTTPException, Request
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, object_session
 
 from app import models as m
 from app.deps import authenticate_api_key, get_current_user, ensure_org_membership
@@ -64,6 +64,7 @@ def project_access(db, actor, project_id, permission="read"):
 RESOURCE_MODELS = {
     "dataset": m.Dataset, "item": m.DatasetItem, "snapshot": m.DatasetSnapshot,
     "model": m.ModelVersion, "predictions": m.PredictionSet, "evaluation": m.TaskEvaluation,
+    "investigation": m.Investigation, "investigation_revision": m.InvestigationRevision, "trace": m.Trace,
     "principal": m.ServicePrincipal, "comparison": m.ExperimentRun, "experiment": m.Experiment,
 }
 
@@ -98,6 +99,10 @@ def source_for(db, ref):
                     for row in rows:
                         project_id = dataset_projects.get(row.dataset_id) if kind == "item" else row.project_id
                         raw = row.run_metadata.get("access_label") if kind == "comparison" else row.pass_criteria.get("access_label") if kind == "experiment" else getattr(row, "access_label", None)
+                        if kind == "trace":
+                            if row.deleted_at is not None or row.environment not in {"dev", "staging", "prod"}:
+                                continue
+                            raw = AccessLabel(origin_environments=(row.environment,), allowed_environments=(row.environment,)).model_dump(mode="json")
                         label = AccessLabel.model_validate(raw) if raw else None
                         environment = row.run_metadata.get("environment") if kind == "comparison" else row.pass_criteria.get("environment") if kind == "experiment" else getattr(row, "environment", None)
                         cache[f"{kind}:{row.id}"] = Source(project_id, label, environment)
@@ -117,13 +122,13 @@ def load(db, actor, kind, identifier, *, project_id=None, environment=None, perm
     if project_id and owning_project_id != project_id:
         raise HTTPException(404, "not_found")
     project_access(db, actor, owning_project_id, permission)
-    if actor.environment or environment:
+    if actor.environment or environment or getattr(row, "access_label", None) is not None or kind in {"comparison", "experiment", "trace"}:
         try:
             authorize_sources(source_for(db, f"{kind}:{identifier}"), project_id=owning_project_id,
                               environment=actor.environment or environment, resolve=lambda ref: source_for(db, ref))
         except AccessDenied:
             raise HTTPException(404, "not_found") from None
-    if permission == "read" and "prod" in (getattr(row, "access_label", None) or {}).get("origin_environments", []):
+    if permission == "read" and ("prod" in (getattr(row, "access_label", None) or {}).get("origin_environments", []) or (kind == "trace" and row.environment == "prod")):
         audit(db, actor, owning_project_id, "task.sensitive_read", f"{kind}:{row.id}")
     return row
 
@@ -207,14 +212,16 @@ def write(db, actor, request, project_id, payload, operation):
         if kind == "principal":
             project_access(db, actor, project_id, "admin")
             return db.get(m.ServicePrincipal, identifier)
-        return load(db, actor, kind, identifier, project_id=project_id)
+        authorized = load(db, actor, kind, identifier, project_id=project_id)
+        return receipt.response_snapshot if receipt.response_snapshot is not None else authorized
     try:
         kind, row = operation()
         db.flush()
         ref = f"{kind}:{row.id}"
         db.add(m.TaskReceipt(id=new_id("receipt"), project_id=project_id, actor_id=actor.id,
-                             method=request.method, path=request.url.path, key=key, body_hash=body_hash, resource_ref=ref))
-        audit(db, actor, project_id, f"task.{kind}.created", ref)
+                             method=request.method, path=request.url.path, key=key, body_hash=body_hash, resource_ref=ref,
+                             response_snapshot=serialize(row) if kind == "item" and request.method == "PATCH" else None))
+        audit(db, actor, project_id, f"task.{kind}.{'updated' if request.method == 'PATCH' else 'created'}", ref)
         db.expire_all()
         project_access(db, actor, project_id, "admin" if kind == "principal" else "evaluate" if kind in {"evaluation", "comparison"} else "write")
         if actor.principal_id:
@@ -226,7 +233,8 @@ def write(db, actor, request, project_id, payload, operation):
         receipt = query.one_or_none()
         if receipt and receipt.body_hash == body_hash:
             kind, identifier = receipt.resource_ref.split(":", 1)
-            return load(db, actor, kind, identifier, project_id=project_id)
+            authorized = load(db, actor, kind, identifier, project_id=project_id)
+            return receipt.response_snapshot if receipt.response_snapshot is not None else authorized
         raise HTTPException(409, "resource_conflict") from None
 
 
@@ -347,6 +355,8 @@ def create_evaluation(db, actor, project_id, payload):
 
 
 def serialize(row):
+    if isinstance(row, dict):
+        return row
     if isinstance(row, m.DatasetItem):
         case = row.metadata_json.get("evalops_case", {})
         return {"id": row.id, "dataset_id": row.dataset_id, "sample_id": case.get("sample_id", row.id),
@@ -368,7 +378,6 @@ def serialize(row):
                 "model_version_id": row.model_version_id, "environment": row.environment,
                 "content_hash": row.content_hash, "producer_manifest": row.producer_manifest, "provenance": row.provenance}
     if isinstance(row, m.TaskEvaluation):
-        from sqlalchemy.orm import object_session
         db = object_session(row)
         project = db.get(m.Project, row.project_id)
         org = db.get(m.Organization, project.organization_id)
@@ -379,6 +388,18 @@ def serialize(row):
                 "error": None, "evidence_refs": [], "completed_at": server_timestamp(row.created_at).isoformat(),
                 "links": {"metrics": f"/v1/task-evaluations/{row.id}/metrics",
                           "samples": f"/v1/task-evaluations/{row.id}/samples", "web": web_path}}
+    if isinstance(row, (m.Investigation, m.InvestigationRevision)):
+        revision = isinstance(row, m.InvestigationRevision)
+        identifier = row.investigation_id if revision else row.id
+        db = object_session(row)
+        current = db.get(m.Investigation, identifier) if revision else row
+        author = row if revision else db.query(m.InvestigationRevision).filter_by(investigation_id=identifier, revision=row.revision).one()
+        return {**common, "id": identifier, "kind": "investigation", "schema_version": 1,
+                "environment": row.environment, "revision": row.revision, **row.state,
+                "author_kind": author.author_kind,
+                "author_id": author.author_id,
+                "revision_id": author.id, "created_at": server_timestamp(current.created_at).isoformat(),
+                "updated_at": server_timestamp(author.created_at).isoformat()}
     if isinstance(row, m.ServicePrincipal):
         return {**common, "name": row.name, "owner_user_id": row.owner_user_id,
                 "disabled_at": server_timestamp(row.disabled_at).isoformat() if row.disabled_at else None}

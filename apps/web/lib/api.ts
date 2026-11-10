@@ -626,3 +626,7 @@ export async function taskWrite<T>(path: string, payload: unknown, idempotencyKe
 export async function taskRead<T>(path: string): Promise<T> {
   return requestJson<T>(path);
 }
+
+export async function taskPatch<T>(path: string, payload: unknown, revision: number, idempotencyKey: string): Promise<T> {
+  return requestJson<T>(path, { method: "PATCH", headers: { "Idempotency-Key": idempotencyKey, "If-Match": String(revision) }, body: JSON.stringify(payload) });
+}

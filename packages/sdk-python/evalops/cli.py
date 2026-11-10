@@ -23,7 +23,20 @@ def main(argv=None):
     result = commands.add_parser("result")
     result.add_argument("id")
     result.add_argument("--fail-on-decision", action="store_true")
-    for command in (discover, evaluate, result):
+    investigation = commands.add_parser("investigation")
+    investigation.add_argument("id")
+    investigation.add_argument("--history", action="store_true")
+    inv_create = commands.add_parser("investigation-create")
+    inv_create.add_argument("--project", required=True)
+    inv_create.add_argument("--environment", choices=["dev", "staging", "prod"], required=True)
+    inv_create.add_argument("--file", required=True)
+    inv_create.add_argument("--idempotency-key", required=True)
+    inv_update = commands.add_parser("investigation-update")
+    inv_update.add_argument("id")
+    inv_update.add_argument("--revision", type=int, required=True)
+    inv_update.add_argument("--file", required=True)
+    inv_update.add_argument("--idempotency-key", required=True)
+    for command in (discover, evaluate, result, investigation, inv_create, inv_update):
         command.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
     key = os.environ.get("EVALOPS_API_KEY")
@@ -36,6 +49,22 @@ def main(argv=None):
             output = client.discover(args.project)
         elif args.command == "evaluate":
             output = client.evaluate(args.project, args.prediction_set, idempotency_key=args.idempotency_key or str(uuid.uuid4()))
+        elif args.command == "investigation":
+            output = client.investigation_history(args.id) if args.history else client.get_investigation(args.id)
+        elif args.command in {"investigation-create", "investigation-update"}:
+            try:
+                with open(args.file, encoding="utf-8") as stream:
+                    state = json.load(stream)
+            except (OSError, UnicodeError, json.JSONDecodeError):
+                print("Cannot read the investigation JSON file", file=sys.stderr)
+                return 2
+            if not isinstance(state, dict):
+                print("Investigation state must be a JSON object", file=sys.stderr)
+                return 2
+            if args.command == "investigation-create":
+                output = client.create_investigation(args.project, {"environment": args.environment, "state": state}, idempotency_key=args.idempotency_key)
+            else:
+                output = client.update_investigation(args.id, state, revision=args.revision, idempotency_key=args.idempotency_key)
         else:
             output = client.task_result(args.id)
             output["metrics"] = client.task_metrics(args.id)["data"]

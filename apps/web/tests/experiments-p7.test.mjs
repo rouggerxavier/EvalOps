@@ -34,7 +34,9 @@ test("experiments: run result uses API variant data and marks unsupported p95", 
   assert.match(page, /run\.by_variant/);
   assert.match(page, /metrics\.avg_score/);
   assert.match(page, /Latência p95: Sem dados/);
-  assert.match(page, /run_metadata\.synthetic/);
+  assert.match(page, /const runIsSynthetic = true/);
+  assert.match(page, /Resultado legado sintético/);
+  assert.match(page, /avaliação por modelo ainda pode consumir orçamento/);
   assert.match(page, /criteria_failures/);
 });
 

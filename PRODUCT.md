@@ -4,7 +4,7 @@
 
 ## Platform
 
-Web SaaS, com API HTTP e SDK Python. CLI e MCP são evolução proposta, ainda não implementada.
+Web SaaS, com API HTTP, SDK Python e CLI para avaliação offline e investigações. MCP permanece proposto.
 
 ## Users
 
@@ -14,9 +14,9 @@ Engenheiros de IA, ML e software que investigam falhas, comparam versões e deci
 
 EvalOps Studio evolui para uma plataforma de avaliação, experimentação, observabilidade e qualidade de sistemas de IA, operada por humanos e agentes sobre as mesmas entidades, métricas e evidências.
 
-**Hoje:** tracing e avaliação de aplicações generativas/agentes, rubricas, feedback, Quality Gate e workflows de prompts/datasets. Experimentos atuais sintetizam respostas; replay repete uma chamada LLM. Não executa agente completo nem avalia ML tabular nativamente.
+**Hoje:** tracing e avaliação de aplicações generativas/agentes, rubricas, feedback, Quality Gate e workflows de prompts/datasets. Experimentos legados sintetizam respostas; replay repete uma chamada LLM. A primeira vertical tabular avalia predições numéricas importadas, com snapshots imutáveis, versões declaradas, métricas tipadas e comparação pareada descritiva. Investigações e curadoria preservam autoria e revisão humana. Não executa agente completo.
 
-**Proposta:** avaliação por tarefa para ML tradicional e DL, snapshots imutáveis, métricas tipadas, comparação reproduzível e runners de aplicações reais. Nenhum desses contratos novos está entregue por esta revisão documental.
+**Proposta restante:** classificação e outras tarefas de ML/DL, artefatos e runners de aplicações reais. As SPECs preservam os contratos de referência; o [registro de execução](docs/plans/autonomous-evolution.md) separa implementação de evidência externa pendente.
 
 ## Positioning
 
@@ -26,13 +26,13 @@ O diferencial entre famílias de tarefas é hipótese a validar, não vantagem c
 
 ## Operating Context
 
-Hoje: organização > projeto, ambientes dev/staging/prod, ingestão SDK/chaves, usuários com memberships organizacionais. Chaves têm ingest/read/evaluate, mas ainda não cobrem todas as operações. Rubricas YAML e avaliadores determinísticos/judge. Web usa Next.js, Server Components/Actions e API FastAPI; português brasileiro.
+Hoje: organização > projeto, ambientes dev/staging/prod, ingestão SDK/chaves, usuários com memberships organizacionais. Chaves legadas têm ingest/read/evaluate. Principais de serviço usam chaves com identidade, projeto, ambiente e read/write/evaluate nas novas superfícies; rotas legadas sem autorização equivalente permanecem restritas. Rubricas YAML e avaliadores determinísticos/judge. Web usa Next.js, Server Components/Actions e API FastAPI; português brasileiro.
 
-Futuro: mesmo núcleo atende web/API/SDK/CLI/MCP, sem regras paralelas. Modelos clássicos e redes são avaliados pela tarefa, não por simulação de mensagens LLM. Execução externa depende de manifest, fixtures, permissões e limites.
+Web/API/SDK/CLI compartilham resultados persistidos nas novas tarefas e investigações. MCP futuro deverá usar o mesmo núcleo. Modelos clássicos e redes são avaliados pela tarefa, não por simulação de mensagens LLM. Execução externa depende de manifest, fixtures, permissões e limites.
 
 ## Capabilities and Constraints
 
-Telas atuais: overview, traces/detalhe/compare, evaluations, prompts, rubrics, datasets, experiments, keys, exports, settings e conta. [Auditoria por capacidade](docs/audits/estado-real-2026-11-09.md) distingue implementado, parcial, documentação e proposta.
+Telas atuais: overview, traces/detalhe/compare, evaluations, regressão offline/comparação, investigações, falhas observadas, curadoria de casos, prompts, rubrics, datasets, experiments, keys, exports, settings e conta. [Auditoria por capacidade](docs/audits/estado-real-2026-11-09.md) distingue implementado, parcial, documentação e proposta.
 
 Stack preservada: Next.js App Router, CSS puro, lucide-react e motion; sem Tailwind/shadcn/CSS-in-JS. Fonte visual atual: [DESIGN.md](DESIGN.md). Preservar identidade e shell; novas tarefas precisam visualizações próprias, como resíduos e matriz de confusão.
 
@@ -44,7 +44,7 @@ Nome EvalOps Studio. Manter sistema visual atual quando adequado. Nenhum redesig
 
 ## Evidence on Hand
 
-Código auditado em main `545149b`, testes existentes e históricos datados. Grankasa fornece caso sintético integrado e relatório de modelo real em branch local separada; não é validação geral de qualidade nem dependência de domínio. Não há benchmark comercial, clientes/testemunhos ou preços públicos validados nesta etapa.
+Auditoria inicial em main `545149b`; F0/F1 integradas pelo PR #47 (`124aa18`). Testes de contrato, migrations SQLite/PostgreSQL, concorrência e E2E sustentam as entregas; consulte o registro de execução para resultados por fase. Grankasa fornece caso sintético integrado e relatório de modelo real em branch local separada; não é validação geral de qualidade nem dependência de domínio. Não há benchmark comercial, clientes/testemunhos ou preços públicos validados nesta etapa.
 
 ## Product Principles
 
@@ -61,4 +61,4 @@ Código auditado em main `545149b`, testes existentes e históricos datados. Gra
 
 Primeira vertical: predições numéricas importadas de regressão, snapshot, modelo/versão declarado, MAE/MSE/RMSE/R², resíduos, comparação descritiva e web/API/SDK/CLI equivalentes. Não treina, hospeda ou carrega modelo executável. Não promete equivalência estatística ou superioridade de produto.
 
-Depois: classificação, casos/investigações, runner externo, piloto agêntico e DL por tarefa. Excluídos: treino distribuído, serving, GPU scheduler, registry completo, deploy automático e suporte simultâneo a todos os algoritmos.
+Depois: classificação, runner externo, piloto agêntico e DL por tarefa. Excluídos: treino distribuído, serving, GPU scheduler, registry completo, deploy automático e suporte simultâneo a todos os algoritmos.

@@ -61,7 +61,7 @@ function DatasetStatus({ items }: { items: DatasetItem[] }) {
   }
   return (
     <span className="badge badge--ok">
-      <CheckCircle2 size={13} aria-hidden="true" /> Pronto
+      <CheckCircle2 size={13} aria-hidden="true" /> Com itens
     </span>
   );
 }
@@ -211,7 +211,7 @@ export default async function DatasetsPage({ params, searchParams }: Props) {
                         <td>
                           <Link className="t__name" href={`${basePath}?dataset=${encodeURIComponent(dataset.id)}`} aria-current={selectedDatasetId === dataset.id ? "page" : undefined}>
                             {dataset.slug}
-                          </Link>
+                          </Link> <Link href={`${basePath}/${dataset.id}/cases`}>Revisar casos</Link>
                         </td>
                         <td>{sourceLabel(dataset.source)}</td>
                         <td className="t__num" title={items.length >= 100 ? "A API retorna até 100 itens por consulta; total exato indisponível." : undefined}>{itemCount}</td>

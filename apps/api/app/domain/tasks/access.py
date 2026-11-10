@@ -17,17 +17,24 @@ class Source:
 
 
 def authorize_sources(
-    source: Source, *, project_id: str, environment: Environment,
+    source: Source, *, project_id: str, environment: Environment | None,
     resolve: Callable[[str], Source],
 ) -> None:
     """Check saved restrictions and current transitive sources, including result environment."""
     visiting: set[str] = set()
     checked: set[str] = set()
+    allowed = {environment} if environment else {"dev", "staging", "prod"}
 
-    def check(current: Source) -> None:
+    def check(current: Source, depth=0) -> None:
         if (current.project_id != project_id or current.label is None
-                or environment not in current.label.allowed_environments
-                or current.environment not in (None, environment)):
+                or depth > 64
+                or (environment is not None and environment not in current.label.allowed_environments)
+                or (environment is not None and current.environment not in (None, environment))):
+            raise AccessDenied("not_found")
+        allowed.intersection_update(current.label.allowed_environments)
+        if current.environment is not None:
+            allowed.intersection_update({current.environment})
+        if not allowed:
             raise AccessDenied("not_found")
         for ref in current.label.source_refs:
             if ref in visiting:
@@ -38,7 +45,7 @@ def authorize_sources(
                     referenced = resolve(ref)
                 except KeyError as exc:
                     raise AccessDenied("not_found") from exc
-                check(referenced)
+                check(referenced, depth + 1)
                 visiting.remove(ref)
                 checked.add(ref)
 
