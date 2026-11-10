@@ -18,6 +18,7 @@ from app.api.routes_trace_actions import router as trace_actions_router
 from app.api.routes_quality_gate import router as quality_gate_router
 from app.api.routes_sampling import router as sampling_router
 from app.api.routes_tasks import router as tasks_router
+from app.api.routes_investigations import router as investigations_router
 from app.config import max_body_bytes
 from app.db import Base, SessionLocal, engine, ensure_schema_compatibility
 from app.logging_config import access_logger, configure_logging
@@ -84,7 +85,7 @@ async def _validation_error(request: Request, exc: RequestValidationError):
             payload = {}
         if isinstance(payload, dict) and (payload.get("task_type") == "regression" or payload.get("kind") == "task_comparison"):
             return JSONResponse(status_code=422, content={"detail": "invalid_task_payload"})
-    if request.url.path.startswith("/v1/") and any(part in request.url.path for part in ("task-", "prediction-sets", "model-versions", "snapshots", "service-principals", "/cases")):
+    if request.url.path.startswith("/v1/") and any(part in request.url.path for part in ("task-", "prediction-sets", "model-versions", "snapshots", "service-principals", "/cases", "investigations", "/classify")):
         return JSONResponse(status_code=422, content={"detail": "invalid_task_payload"})
     return await request_validation_exception_handler(request, exc)
 
@@ -187,6 +188,7 @@ app.include_router(v1_router)
 app.include_router(rubrics_router)
 app.include_router(evaluations_router)
 app.include_router(tasks_router)
+app.include_router(investigations_router)
 app.include_router(phase5_router)
 app.include_router(phase6_router)
 app.include_router(trace_actions_router)

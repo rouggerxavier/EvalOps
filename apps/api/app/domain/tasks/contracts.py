@@ -433,3 +433,12 @@ class ComparisonCreate(Contract):
     baseline_evaluation_id: str
     candidate_evaluation_ids: tuple[str, ...] = Field(min_length=1)
     policy: ComparisonPolicy = Field(default_factory=ComparisonPolicy)
+
+
+class CaseContent(Contract):
+    json_fields: ClassVar[tuple[str, ...]] = ("input", "expected_output", "metadata")
+    sample_id: str = Field(min_length=1, max_length=255)
+    input: dict[str, Any]
+    expected_output: dict[str, Any] | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    reference_status: Literal["draft", "reviewed", "rejected"] = "draft"

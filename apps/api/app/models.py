@@ -677,6 +677,7 @@ class MetricFact(Base):
 
 class TaskReceipt(Base):
     __tablename__ = "task_receipts"
+    response_snapshot: Mapped[dict | None] = mapped_column(JSON(none_as_null=True), nullable=True)
     __table_args__ = (UniqueConstraint("project_id", "actor_id", "method", "path", "key", name="uq_task_receipt"),)
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"))
@@ -699,6 +700,44 @@ class ExperimentRunEvaluation(Base):
     run_id: Mapped[str] = mapped_column(String(64), primary_key=True)
     variant_name: Mapped[str] = mapped_column(String(255), primary_key=True)
     task_evaluation_id: Mapped[str] = mapped_column(String(64))
+
+
+
+
+
+class Investigation(Base):
+    __tablename__ = "investigations"
+    __table_args__ = (
+        UniqueConstraint("id", "project_id", name="uq_investigation_project"),
+        CheckConstraint("environment IN ('dev','staging','prod')", name="ck_investigation_environment"),
+        CheckConstraint("revision >= 1", name="ck_investigation_revision"),
+    )
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"), index=True)
+    environment: Mapped[str] = mapped_column(String(16))
+    revision: Mapped[int] = mapped_column(Integer)
+    state: Mapped[dict] = mapped_column(JSON)
+    access_label: Mapped[dict] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class InvestigationRevision(Base):
+    __tablename__ = "investigation_revisions"
+    __table_args__ = (
+        UniqueConstraint("investigation_id", "revision", name="uq_investigation_revision"),
+        ForeignKeyConstraint(["investigation_id", "project_id"], ["investigations.id", "investigations.project_id"]),
+    )
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    investigation_id: Mapped[str] = mapped_column(String(64))
+    project_id: Mapped[str] = mapped_column(String(64))
+    environment: Mapped[str] = mapped_column(String(16))
+    revision: Mapped[int] = mapped_column(Integer)
+    state: Mapped[dict] = mapped_column(JSON)
+    access_label: Mapped[dict] = mapped_column(JSON)
+    author_kind: Mapped[str] = mapped_column(String(16))
+    author_id: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
 from app.domain.tasks.immutability import register as _register_task_immutability

@@ -30,7 +30,7 @@ class Client:
             raise ValueError("timeout must be finite and positive")
         self._config = UploaderConfig(api_key=api_key, api_url=api_url.rstrip("/"), timeout=timeout)
 
-    def _request(self, method: str, path: str, *, payload: dict | None = None, idempotency_key: str | None = None) -> dict[str, Any]:
+    def _request(self, method: str, path: str, *, payload: dict | None = None, idempotency_key: str | None = None, if_match: str | None = None) -> dict[str, Any]:
         config = self._config
         # Feedback has no idempotency key: retrying a timed-out POST can duplicate it.
         attempts = config.max_retries + 1 if method == "GET" else 1
@@ -38,7 +38,7 @@ class Client:
             try:
                 with httpx.Client(timeout=config.timeout) as client:
                     response = client.request(
-                        method, f"{config.api_url}{path}", headers={"X-EvalOps-Key": config.api_key, **({"Idempotency-Key": idempotency_key} if idempotency_key else {})}, json=payload
+                        method, f"{config.api_url}{path}", headers={"X-EvalOps-Key": config.api_key, **({"Idempotency-Key": idempotency_key} if idempotency_key else {}), **({"If-Match": if_match} if if_match else {})}, json=payload
                     )
                 response.raise_for_status()
                 return response.json()
@@ -135,3 +135,33 @@ class Client:
 
     def comparison_result(self, experiment_id: str, run_id: str) -> dict[str, Any]:
         return self._request("GET", f"/experiments/{_path_id(experiment_id)}/runs/{_path_id(run_id)}?view=task_v1")
+
+
+    def create_investigation(self, project_id: str, payload: dict, *, idempotency_key: str) -> dict[str, Any]:
+        return self._request("POST", f"/projects/{_path_id(project_id)}/investigations", payload=payload, idempotency_key=idempotency_key)
+
+    def get_investigation(self, investigation_id: str) -> dict[str, Any]:
+        return self._request("GET", f"/investigations/{_path_id(investigation_id)}")
+
+    def investigation_history(self, investigation_id: str) -> dict[str, Any]:
+        return self._request("GET", f"/investigations/{_path_id(investigation_id)}/revisions")
+
+    def update_investigation(self, investigation_id: str, state: dict, *, revision: int, idempotency_key: str) -> dict[str, Any]:
+        return self._request("PATCH", f"/investigations/{_path_id(investigation_id)}", payload={"state": state}, idempotency_key=idempotency_key, if_match=str(revision))
+
+    def find_failures(self, project_id: str, *, kind: str = "trace") -> dict[str, Any]:
+        if kind not in {"trace", "sample"}:
+            raise ValueError("unknown failure kind")
+        return self._request("GET", f"/projects/{_path_id(project_id)}/failures?kind={kind}")
+
+    def get_trace_evidence(self, trace_id: str) -> dict[str, Any]:
+        return self._request("GET", f"/task-evidence/traces/{_path_id(trace_id)}")
+
+    def save_case(self, dataset_id: str, payload: dict, *, idempotency_key: str) -> dict[str, Any]:
+        return self._request("POST", f"/datasets/{_path_id(dataset_id)}/cases", payload=payload, idempotency_key=idempotency_key)
+
+    def get_case(self, dataset_id: str, item_id: str) -> dict[str, Any]:
+        return self._request("GET", f"/datasets/{_path_id(dataset_id)}/items/{_path_id(item_id)}")
+
+    def update_case(self, dataset_id: str, item_id: str, payload: dict, *, revision: int, idempotency_key: str) -> dict[str, Any]:
+        return self._request("PATCH", f"/datasets/{_path_id(dataset_id)}/cases/{_path_id(item_id)}", payload=payload, idempotency_key=idempotency_key, if_match=str(revision))
