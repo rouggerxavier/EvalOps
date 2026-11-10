@@ -59,3 +59,19 @@ def test_cli_classification_routes_explicit_version(monkeypatch, capsys):
     monkeypatch.setattr(cli, "Client", Client)
     assert cli.main(["evaluate", "--project", "p", "--prediction-set", "pred", "--evaluator", "classification.standard@1", "--idempotency-key", "op", "--fail-on-decision"]) == 4
     assert json.loads(capsys.readouterr().out)["id"] == "evaluation"
+
+
+def test_cli_imports_external_capture_without_dispatch(monkeypatch, tmp_path, capsys):
+    monkeypatch.setenv("EVALOPS_API_KEY", "test-secret")
+    payload = {"manifest": {}, "result": {"cost": {"state": "unknown"}}}
+    source = tmp_path / "capture.json"
+    source.write_text(json.dumps(payload), encoding="utf-8")
+    class Client:
+        def __init__(self, **kwargs):
+            pass
+        def import_execution(self, project, body, **kwargs):
+            assert project == "p" and body == payload and kwargs == {"idempotency_key": "capture"}
+            return {"id": "execution", "capture_origin": "external_import"}
+    monkeypatch.setattr(cli, "Client", Client)
+    assert cli.main(["execution-import", "--project", "p", "--file", str(source), "--idempotency-key", "capture"]) == 0
+    assert json.loads(capsys.readouterr().out)["capture_origin"] == "external_import"

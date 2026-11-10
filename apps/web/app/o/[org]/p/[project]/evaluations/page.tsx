@@ -214,7 +214,7 @@ export default async function EvaluationsPage({ params, searchParams }: Props) {
         <div className="ops-page-header__copy">
           <h1 className="ops-page-header__title">Avaliações</h1>
           <Link href={`/o/${org}/p/${project}/evaluations/tasks`}>Regressão offline / tarefas</Link>
-          <Link href={`/o/${org}/p/${project}/evaluations/investigations`}>Investigações</Link>
+          <Link href={`/o/${org}/p/${project}/evaluations/executions`}>Evidências de execução</Link> · <Link href={`/o/${org}/p/${project}/evaluations/investigations`}>Investigações</Link>
           <Link href={`/o/${org}/p/${project}/evaluations/failures`}>Falhas observadas</Link>
           <p className="ops-page-header__subtitle">
             {!summary

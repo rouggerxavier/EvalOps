@@ -19,6 +19,6 @@ export default async function InvestigationPage({ params }: { params: Promise<{ 
 
 function Evidence({ reference, org, project }: { reference: string; org: string; project: string }) {
   const [kind, id] = reference.split(":", 2);
-  const suffix = kind === "evaluation" ? `evaluations/tasks/${encodeURIComponent(id)}` : kind === "trace" ? `traces/${encodeURIComponent(id)}` : null;
+  const suffix = kind === "evaluation" ? `evaluations/tasks/${encodeURIComponent(id)}` : kind === "trace" ? `traces/${encodeURIComponent(id)}` : kind === "execution" ? `evaluations/executions/${encodeURIComponent(id)}` : null;
   return suffix ? <Link href={`/o/${org}/p/${project}/${suffix}`}>{reference}</Link> : <code style={{ overflowWrap: "anywhere" }}>{reference}</code>;
 }

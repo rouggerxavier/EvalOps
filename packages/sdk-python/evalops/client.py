@@ -137,6 +137,15 @@ class Client:
         return self._request("GET", f"/experiments/{_path_id(experiment_id)}/runs/{_path_id(run_id)}?view=task_v1")
 
 
+    def import_execution(self, project_id: str, payload: dict, *, idempotency_key: str) -> dict[str, Any]:
+        return self._request("POST", f"/projects/{_path_id(project_id)}/execution-imports", payload=payload, idempotency_key=idempotency_key)
+
+    def get_execution(self, execution_id: str) -> dict[str, Any]:
+        return self._request("GET", f"/executions/{_path_id(execution_id)}")
+
+    def list_executions(self, project_id: str) -> dict[str, Any]:
+        return self._request("GET", f"/projects/{_path_id(project_id)}/executions")
+
     def create_investigation(self, project_id: str, payload: dict, *, idempotency_key: str) -> dict[str, Any]:
         return self._request("POST", f"/projects/{_path_id(project_id)}/investigations", payload=payload, idempotency_key=idempotency_key)
 

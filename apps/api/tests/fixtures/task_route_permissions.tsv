@@ -5,12 +5,14 @@ GET	/v1/datasets/{dataset_id}	read
 GET	/v1/datasets/{dataset_id}/cases	read
 GET	/v1/datasets/{dataset_id}/items/{item_id}	read
 GET	/v1/datasets/{dataset_id}/snapshots	read
+GET	/v1/executions/{execution_id}	read
 GET	/v1/investigations/{investigation_id}	read
 GET	/v1/investigations/{investigation_id}/revisions	read
 GET	/v1/model-versions/{model_id}	read
 GET	/v1/prediction-sets/{set_id}	read
 GET	/v1/prediction-sets/{set_id}/rows	read
 GET	/v1/projects/{project_id}/capabilities	read
+GET	/v1/projects/{project_id}/executions	read
 GET	/v1/projects/{project_id}/failures	read
 GET	/v1/projects/{project_id}/investigations	read
 GET	/v1/projects/{project_id}/model-versions	read
@@ -25,6 +27,7 @@ PATCH	/v1/investigations/{investigation_id}	write
 POST	/v1/datasets/{dataset_id}/cases	write
 POST	/v1/datasets/{dataset_id}/snapshots	write
 POST	/v1/experiments/{experiment_id}/comparisons	evaluate
+POST	/v1/projects/{project_id}/execution-imports	write
 POST	/v1/projects/{project_id}/investigations	write
 POST	/v1/projects/{project_id}/model-versions	write
 POST	/v1/projects/{project_id}/prediction-sets	write

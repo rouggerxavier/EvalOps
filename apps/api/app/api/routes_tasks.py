@@ -55,7 +55,8 @@ def capabilities(project_id: str, request: Request, db: Session = Depends(task_d
             "evaluator_versions": [{"id": "regression.standard", "version": "1"}, {"id": "classification.standard", "version": "1"}],
             "limits": {"max_rows": 10000, "max_import_bytes": 10 * 1024 * 1024, "max_segments": 8, "max_segment_groups": 1000, "max_group_key_bytes": 2048, "max_classes": 100, "max_class_group_pairs": 2000},
             "permissions": permissions,
-            "links": {"evaluations": f"/v1/projects/{project_id}/task-evaluations",
+            "execution_capabilities": {"import": True, "dispatch": False, "managed_sandbox": False},
+            "links": {"executions": f"/v1/projects/{project_id}/executions", "evaluations": f"/v1/projects/{project_id}/task-evaluations",
                       "investigations": f"/v1/projects/{project_id}/investigations", "failures": f"/v1/projects/{project_id}/failures"}}
 
 

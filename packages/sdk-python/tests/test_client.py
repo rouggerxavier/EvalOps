@@ -172,3 +172,13 @@ def test_classification_evaluator_manifest_uses_same_result_contract(server):
     responses.append((201, result, 0))
     assert Client(api_key="task-key", api_url=url).evaluate("project", "predictions", evaluator="classification.standard", idempotency_key="operation") == result
     assert events[0][3] == {"prediction_set_id": "predictions", "evaluator": {"id": "classification.standard", "version": "1", "config": {}}}
+
+
+def test_external_execution_import_and_get_share_capture(server):
+    url, events, responses = server
+    capture = {"id": "execution", "capture_origin": "external_import", "decision": None}
+    responses.extend([(201, capture, 0), (200, capture, 0)])
+    client = Client(api_key="task-key", api_url=url)
+    payload = {"manifest": {"schema_version": 1}, "result": {"cost": {"state": "unknown"}}}
+    assert client.import_execution("project", payload, idempotency_key="operation") == client.get_execution("execution") == capture
+    assert events[0][1:4] == ("/v1/projects/project/execution-imports", "task-key", payload)
