@@ -10,7 +10,7 @@ export default async function FailuresPage({ params }: { params: Promise<{ org: 
   const capabilities = await taskRead<{ permissions: string[] }>(`/projects/${resolved.project_id}/capabilities`);
   const environment = await getActiveEnvironment(undefined);
   const failures = await taskRead<{ data: { id: string; name: string; environment: string; category: string }[] }>(`/projects/${resolved.project_id}/failures?kind=trace${environment ? `&environment=${environment}` : ""}`);
-  const datasets = (await getDatasets(resolved.project_id)).data.filter(row => row.task_type !== "regression");
+  const datasets = (await getDatasets(resolved.project_id)).data.filter(row => !row.task_type || row.task_type === "text");
   return <div className="page ops-page"><header className="ops-page-header"><h1>Falhas observadas</h1><Link href={`/o/${org}/p/${project}/evaluations/investigations`}>Investigações</Link></header>
     <section className="card"><h2>Evidências para curadoria</h2><p>Erro técnico não significa reprovação do modelo. Referências copiadas permanecem em rascunho até revisão humana.</p>
       {!failures.data.length && <p>Sem falhas registradas no projeto.</p>}

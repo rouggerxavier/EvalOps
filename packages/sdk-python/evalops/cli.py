@@ -17,7 +17,7 @@ def main(argv=None):
     evaluate = commands.add_parser("evaluate")
     evaluate.add_argument("--project", required=True)
     evaluate.add_argument("--prediction-set", required=True)
-    evaluate.add_argument("--evaluator", choices=["regression.standard@1"], default="regression.standard@1")
+    evaluate.add_argument("--evaluator", choices=["regression.standard@1", "classification.standard@1"], default="regression.standard@1")
     evaluate.add_argument("--idempotency-key", default=None)
     evaluate.add_argument("--fail-on-decision", action="store_true")
     result = commands.add_parser("result")
@@ -48,7 +48,7 @@ def main(argv=None):
         if args.command == "discover":
             output = client.discover(args.project)
         elif args.command == "evaluate":
-            output = client.evaluate(args.project, args.prediction_set, idempotency_key=args.idempotency_key or str(uuid.uuid4()))
+            output = client.evaluate(args.project, args.prediction_set, idempotency_key=args.idempotency_key or str(uuid.uuid4()), evaluator=args.evaluator.split("@")[0])
         elif args.command == "investigation":
             output = client.investigation_history(args.id) if args.history else client.get_investigation(args.id)
         elif args.command in {"investigation-create", "investigation-update"}:

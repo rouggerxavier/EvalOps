@@ -45,3 +45,17 @@ def test_investigation_cli_preserves_revision_and_receipt(monkeypatch, tmp_path,
     source.write_bytes(b"\xff")
     assert cli.main(["investigation-update", "inv", "--revision", "3", "--file", str(source), "--idempotency-key", "receipt"]) == 2
     assert not capsys.readouterr().out
+
+
+def test_cli_classification_routes_explicit_version(monkeypatch, capsys):
+    monkeypatch.setenv("EVALOPS_API_KEY", "test-secret")
+    class Client:
+        def __init__(self, **kwargs):
+            pass
+        def evaluate(self, project, predictions, **kwargs):
+            assert (project, predictions) == ("p", "pred")
+            assert kwargs == {"evaluator": "classification.standard", "idempotency_key": "op"}
+            return {"id": "evaluation", "decision": "inconclusive"}
+    monkeypatch.setattr(cli, "Client", Client)
+    assert cli.main(["evaluate", "--project", "p", "--prediction-set", "pred", "--evaluator", "classification.standard@1", "--idempotency-key", "op", "--fail-on-decision"]) == 4
+    assert json.loads(capsys.readouterr().out)["id"] == "evaluation"

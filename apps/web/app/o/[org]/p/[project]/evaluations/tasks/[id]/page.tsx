@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ClassificationResult } from "./ClassificationResult";
 import { AuthRequiredPanel } from "@/components/AuthRequiredPanel";
 import { hasAuthToken, resolveProject, taskRead } from "@/lib/api";
 import { taskDecisionLabels } from "@/lib/task-types";
@@ -12,6 +13,7 @@ export default async function TaskResultPage({ params, searchParams }: { params:
   if (result.project_id !== resolved.project_id) throw new Error("Avaliação não pertence ao projeto.");
   const { data: metrics } = await taskRead<{ data: MetricFact[] }>(`/task-evaluations/${encodeURIComponent(id)}/metrics`);
   const snapshot = await taskRead<{ dataset_id: string }>(`/dataset-snapshots/${result.snapshot_id}`);
+  if (result.evaluator_manifest.id === "classification.standard") return <ClassificationResult result={result} metrics={metrics} org={org} project={project} dataset={snapshot.dataset_id} />;
   const scalars = metrics.filter(fact => fact.value_type === "scalar");
   const residual = metrics.find(fact => fact.definition_id === "regression.residuals" && fact.scope === "dataset");
   const points = residual?.value && typeof residual.value === "object" && "points" in residual.value ? residual.value.points : [];

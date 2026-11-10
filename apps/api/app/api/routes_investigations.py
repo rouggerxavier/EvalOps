@@ -125,6 +125,9 @@ def failures(project_id: str, request: Request, kind: str = Query("trace", patte
                 if exc.status_code == 404: continue
                 raise
             fact = db.query(m.MetricFact).filter_by(task_evaluation_id=evaluation.id, definition_id="regression.residuals", scope="dataset").one_or_none()
+            classification = evaluation.result["evaluator_manifest"].get("id") == "classification.standard"
+            if classification:
+                fact = db.query(m.MetricFact).filter_by(task_evaluation_id=evaluation.id, definition_id="classification.correctness", scope="dataset").one_or_none()
             common = {"kind": "sample", "evaluation_id": evaluation.id, "environment": evaluation.environment,
                       "decision": None, "unit": fact.content["unit"] if fact else None,
                       "evidence_url": f"/v1/task-evaluations/{evaluation.id}/samples"}
@@ -134,9 +137,9 @@ def failures(project_id: str, request: Request, kind: str = Query("trace", patte
                              "reason": fact.content["reason"] if fact else "missing_metrics", "residual": None,
                              "category": "technical" if not fact or fact.content["state"] == "error" else "missing_evidence"})
             for point in points:
-                if point["state"] == "measured" and point["y"] == 0: continue
+                if point["state"] == "measured" and point["y"] == (1 if classification else 0): continue
                 data.append({**common, "sample_id": point["key"], "state": point["state"], "reason": point["reason"],
-                             "residual": point["y"], "category": "observed_error" if point["state"] == "measured" else "missing_evidence"})
+                             **({"correctness": point["y"]} if classification else {"residual": point["y"]}), "category": "observed_error" if point["state"] == "measured" else "missing_evidence"})
                 if len(data)>cursor+limit: break
             if len(data)>cursor+limit: break
         return {"data": data[cursor:cursor+limit], "next_cursor": cursor+limit if len(data)>cursor+limit else None}

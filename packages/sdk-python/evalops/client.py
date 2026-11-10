@@ -104,8 +104,8 @@ class Client:
     def import_predictions(self, project_id: str, payload: dict, *, idempotency_key: str) -> dict[str, Any]:
         return self._request("POST", f"/projects/{_path_id(project_id)}/prediction-sets", payload=payload, idempotency_key=idempotency_key)
 
-    def evaluate(self, project_id: str, prediction_set_id: str, *, idempotency_key: str) -> dict[str, Any]:
-        return self._request("POST", f"/projects/{_path_id(project_id)}/task-evaluations", payload={"prediction_set_id": prediction_set_id, "evaluator": {"id": "regression.standard", "version": "1", "config": {}}}, idempotency_key=idempotency_key)
+    def evaluate(self, project_id: str, prediction_set_id: str, *, idempotency_key: str, evaluator: str = "regression.standard") -> dict[str, Any]:
+        return self._request("POST", f"/projects/{_path_id(project_id)}/task-evaluations", payload={"prediction_set_id": prediction_set_id, "evaluator": {"id": evaluator, "version": "1", "config": {}}}, idempotency_key=idempotency_key)
 
     def task_result(self, evaluation_id: str) -> dict[str, Any]:
         return self._request("GET", f"/task-evaluations/{_path_id(evaluation_id)}")

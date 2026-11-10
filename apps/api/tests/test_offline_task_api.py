@@ -349,3 +349,33 @@ def test_nonfinite_case_json_is_a_structural_422():
     response = client.post(f"/v1/datasets/{dataset['id']}/cases", headers={**headers, "Content-Type": "application/json", "Idempotency-Key": "invalid"},
         content='{"environment":"dev","case":{"sample_id":"bad","input":{},"expected_output":{"value":NaN}}}')
     assert response.status_code == 422 and response.json()["detail"] == "invalid_task_payload"
+
+
+def test_classification_api_shares_facts_and_rejects_task_mismatch():
+    from test_classification import fixture as classification_fixture
+    headers, project, _ = bootstrap()
+    key, _, _ = key_for(headers, project)
+    snapshot, rows = classification_fixture()
+    dataset = post(f"/projects/{project}/datasets", {"slug": "classification", "task_type": "classification",
+        "task_schema": snapshot.task_schema.model_dump(mode="json"), "access": {"environment": "dev"},
+        "items": [item.model_dump(mode="json") for item in snapshot.items]}, key)
+    snap = post(f"/datasets/{dataset['id']}/snapshots", {"environment": "dev"}, key)
+    model = post(f"/projects/{project}/model-versions", {"model": {"name": "classifier", "version_ref": "v1", "task_type": "classification"}, "access": {"environment": "dev"}}, key)
+    payload = {"snapshot_id": snap["id"], "model_version_id": model["id"], "environment": "dev", "rows": [row.model_dump(mode="json") for row in rows]}
+    invalid = {**payload, "rows": [{"sample_id": "0", "prediction": {"label": "unknown"}}]}
+    post(f"/projects/{project}/prediction-sets", invalid, key, expected=422)
+    predictions = post(f"/projects/{project}/prediction-sets", payload, key)
+    post(f"/projects/{project}/task-evaluations", {"prediction_set_id": predictions["id"]}, key, expected=422)
+    result = post(f"/projects/{project}/task-evaluations", {"prediction_set_id": predictions["id"], "evaluator": {"id": "classification.standard"}}, key)
+    path = f"/v1/task-evaluations/{result['id']}"
+    assert client.get(path, headers=key).json() == client.get(path, headers=headers).json() == result
+    metrics = client.get(path+"/metrics", headers=key).json()["data"]
+    assert next(fact["value"] for fact in metrics if fact["definition_id"] == "classification.accuracy") == .5
+    assert len({(fact["definition_id"], fact["scope"], fact["scope_key"]) for fact in metrics}) == len(metrics)
+    samples = client.get(path+"/samples", headers=key).json()["data"]
+    assert len(samples) == 4 and samples[0]["expected_output"] == {"label": "no"}
+    assert [sample["correctness"]["y"] for sample in samples] == [1, 0, 1, 0]
+    failures = client.get(f"/v1/projects/{project}/failures?kind=sample", headers=key).json()["data"]
+    assert [sample["sample_id"] for sample in failures] == ["1", "3"]
+    assert all(sample["decision"] is None and sample["category"] == "observed_error" for sample in failures)
+    post(f"/projects/{project}/experiments", {"name": "Unsupported classification comparison", "dataset_id": dataset["id"], "snapshot_id": snap["id"], "environment": "dev", "variants": [{"name": "v1", "model_version_id": model["id"]}]}, key, expected=422)

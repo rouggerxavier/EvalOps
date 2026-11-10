@@ -14,7 +14,7 @@ from app.domain.tasks.access import AccessDenied, Source, authorize_sources
 from app.domain.tasks.contracts import (
     AccessLabel, SnapshotContent, SnapshotItem, PredictionRow, digest, canonical_json,
 )
-from app.domain.tasks.regression import evaluate_task
+from app.domain.tasks.evaluation import evaluate_task
 from app.ownership import load_project
 from app.security import new_id
 
@@ -241,9 +241,11 @@ def write(db, actor, request, project_id, payload, operation):
 def create_dataset(db, actor, project_id, payload):
     project = project_access(db, actor, project_id, "write")
     label = declare_label(db, actor, project, payload.access)
+    if payload.task_type != payload.task_schema.task_type:
+        raise HTTPException(422, "task_schema_mismatch")
     content = SnapshotContent(task_schema=payload.task_schema, items=payload.items)
     dataset = m.Dataset(id=new_id("dts"), project_id=project_id, slug=payload.slug,
-                        description=payload.description, task_type="regression",
+                        description=payload.description, task_type=payload.task_type,
                         task_schema=payload.task_schema.model_dump(mode="json"), access_label=label)
     db.add(dataset)
     db.flush()
@@ -260,8 +262,8 @@ def create_dataset(db, actor, project_id, payload):
 
 def create_snapshot(db, actor, dataset_id, environment, allowed_environments=None):
     dataset = load(db, actor, "dataset", dataset_id, environment=environment, permission="write")
-    if dataset.task_type != "regression":
-        raise HTTPException(422, "regression_dataset_required")
+    if dataset.task_type not in {"regression", "classification"}:
+        raise HTTPException(422, "offline_dataset_required")
     items = db.query(m.DatasetItem).filter_by(dataset_id=dataset.id).order_by(m.DatasetItem.id).all()
     refs = [f"dataset:{dataset.id}"] + [f"item:{item.id}" for item in items]
     if allowed_environments is not None and (not allowed_environments or environment not in allowed_environments or len(set(allowed_environments)) != len(allowed_environments)):
@@ -309,8 +311,15 @@ def create_predictions(db, actor, project_id, payload):
     if actor.environment and actor.environment != payload.environment:
         raise HTTPException(404, "not_found")
     snap = load(db, actor, "snapshot", payload.snapshot_id, project_id=project_id, environment=payload.environment)
-    load(db, actor, "model", payload.model_version_id, project_id=project_id, environment=payload.environment)
+    model = load(db, actor, "model", payload.model_version_id, project_id=project_id, environment=payload.environment)
     content = SnapshotContent.model_validate_json(snap.content)
+    if model.content.get("task_type", "regression") != content.task_schema.task_type:
+        raise HTTPException(422, "model_task_mismatch")
+    from app.domain.tasks.classification import validate_predictions
+    try:
+        validate_predictions(content, payload.rows)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from None
     # Validate the full import before writing any rows.
     identifiers = {item.sample_id for item in content.items}
     keys = [row.sample_id for row in payload.rows]

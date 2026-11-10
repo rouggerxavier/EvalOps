@@ -164,3 +164,11 @@ def test_client_trace_id_is_captured_only_in_active_trace():
     assert tracer.current_client_trace_id() is None
     tracer._sample_rate = 0
     assert reply() is None
+
+
+def test_classification_evaluator_manifest_uses_same_result_contract(server):
+    url, events, responses = server
+    result = {"id": "evaluation", "decision": "inconclusive"}
+    responses.append((201, result, 0))
+    assert Client(api_key="task-key", api_url=url).evaluate("project", "predictions", evaluator="classification.standard", idempotency_key="operation") == result
+    assert events[0][3] == {"prediction_set_id": "predictions", "evaluator": {"id": "classification.standard", "version": "1", "config": {}}}

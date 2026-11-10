@@ -51,9 +51,9 @@ def capabilities(project_id: str, request: Request, db: Session = Depends(task_d
         if membership.role == "owner": permissions.append("admin")
     else:
         permissions = sorted(actor.scopes)
-    return {"schema_version": 1, "task_types": ["regression"],
-            "evaluator_versions": [{"id": "regression.standard", "version": "1"}],
-            "limits": {"max_rows": 10000, "max_import_bytes": 10 * 1024 * 1024, "max_segments": 8, "max_segment_groups": 1000, "max_group_key_bytes": 2048},
+    return {"schema_version": 1, "task_types": ["regression", "classification"],
+            "evaluator_versions": [{"id": "regression.standard", "version": "1"}, {"id": "classification.standard", "version": "1"}],
+            "limits": {"max_rows": 10000, "max_import_bytes": 10 * 1024 * 1024, "max_segments": 8, "max_segment_groups": 1000, "max_group_key_bytes": 2048, "max_classes": 100, "max_class_group_pairs": 2000},
             "permissions": permissions,
             "links": {"evaluations": f"/v1/projects/{project_id}/task-evaluations",
                       "investigations": f"/v1/projects/{project_id}/investigations", "failures": f"/v1/projects/{project_id}/failures"}}
@@ -175,10 +175,12 @@ def samples(evaluation_id: str, request: Request, limit: int = Query(100, ge=1, 
         items.sort(key=lambda item: (residuals.get(item.sample_id, {}).get("y") is None,
                                     -abs(residuals[item.sample_id]["y"]) if residuals.get(item.sample_id, {}).get("y") is not None else 0,
                                     item.sample_id))
+    correct_fact = db.query(m.MetricFact).filter_by(task_evaluation_id=row.id, definition_id="classification.correctness", scope="dataset").one_or_none()
+    correctness = {point["key"]: point for point in (correct_fact.content.get("value") or {}).get("points", [])} if correct_fact else {}
     data = []
     for item in items[cursor:cursor + limit]:
         prediction = imported.get(item.sample_id)
-        data.append({**item.model_dump(mode="json"), "prediction_row": prediction, "residual": residuals.get(item.sample_id)})
+        data.append({**item.model_dump(mode="json"), "prediction_row": prediction, "residual": residuals.get(item.sample_id), **({"correctness": correctness.get(item.sample_id)} if correct_fact else {})})
     return {"data": data, "next_cursor": cursor + limit if cursor + limit < len(items) else None}
 
 
@@ -479,6 +481,11 @@ def default_task_actor(request, db):
 
 
 def validate_case_content(dataset, case):
+    if dataset.task_type == "classification":
+        try:
+            SnapshotContent(task_schema=dataset.task_schema, items=[case.model_dump(mode="json")])
+        except ValueError:
+            raise HTTPException(422, "invalid_classification_reference") from None
     if dataset.task_type == "regression":
         try:
             SnapshotItem.model_validate(case.model_dump(mode="json"))
