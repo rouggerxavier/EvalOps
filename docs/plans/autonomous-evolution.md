@@ -6,8 +6,8 @@ Modo standard. As SPECs continuam normativas; as fases abaixo representam implem
 | --- | --- | --- |
 | F0/F1 | Integradas em main pelo PR #47, merge 124aa18; CI do head verde | CI pós-merge 42888728647 verde; preservar gates existentes |
 | F2 | Integrada em main pelo PR #48, merge 9b25492; CI head verde | Investigações retomáveis com revisões/If-Match, casos revisados por humano, proveniência synthetic/replay e revisão do patch Grankasa local |
-| F3 | Implementada; gates locais em fechamento | Classificação tipada, validade explícita, métricas e matriz/curvas na mesma API/SDK/web |
-| F4 | Depende de F2 e SPEC-009 | Harness importado primeiro; runner externo somente com ledger/leases/política e testes locais de interrupção/egress |
+| F3 | Integrada em main pelo PR #49, merge f852dfe; CI head verde | Classificação tipada, validade explícita, métricas e matriz/curvas na mesma API/SDK/web |
+| F4 | Importador implementado; runner controlado pendente | Harness importado primeiro; runner externo somente com ledger/leases/política e testes locais de interrupção/egress |
 | F5 | Depende de F3 e piloto escolhido | Curvas/recursos/artefatos importados; não escolher domínio de piloto sem evidência |
 | F6 | Condicional, sob demanda | Experimento de valor medido antes de cada expansão; não fabricar resultados de pilotos |
 
@@ -45,3 +45,17 @@ Benchmark HTTP local (macOS, Python 3.12, SQLite dedicado, cinco execuções, cl
 [Contrato e operação F3](../ops/offline-classification.md). Nenhuma migration adicional: contratos de conteúdo versionados sobre tabelas existentes.
 
 F2 CI pós-merge 42895689264 verde. F3 E2E final de classificação após correctness: dois passaram.
+
+## Primeira entrega F4 — importação de harness
+
+Execution/ExecutionAttempt importados e imutáveis, manifests/hash, vínculos com snapshots/modelos/predições/traces, desfechos declarados, custo Decimal provided/unknown/not_measured sem zero implícito. API/SDK/CLI/web compartilham a captura e explicitam proveniência parcial; sem dispatch, orçamento reservado ou execução no processo API. Investigação aceita execution:ID. Contrato e rollback em [operação](../ops/external-harness-imports.md).
+
+Review encontrou divergência entre ambiente explícito e ambiente da chave na criação de snapshot sobre fonte compartilhada. Teste RED retornou 201 em destino incompatível; correção no load comum exige 404 e impede publicação por outras operações. Autorizações diretas de manifest também verificam o ambiente da chave.
+
+Gates dirigidos: 101 testes de autorização/contrato passaram; fechamento de importador e ambiente: 30 passaram; migration e concorrência PostgreSQL: seis passaram; E2E captura 375/1280 px: dois passaram. API completa: 798 passaram/19 skips; SDK: 87 passaram; web: 256; typecheck/build passaram. Fechamento de contratos estritos: 12 passaram. Nenhuma chamada externa paga, alteração de worktree Grankasa ou tráfego produtivo.
+
+### Próxima fatia F4
+
+Implementar controles antes de dispatch: policy versionada por projeto; registro/credencial de runner com escopo restrito; planos selados e reserva atômica Decimal; lease único/heartbeat; estado incerto após perda de worker iniciado; cancelamento só após ack; publicação terminal tardia vira evidência sem sobrescrever estado; retry incerto exige autorização/orçamento novos. Revalidar chave original, membership e fontes em início/publicação. Reusar padrões de reserva do replay sem duplicar UsageCounter. Provar corridas em PostgreSQL dedicado e Redis isolado; harness de dois turnos/tools fake com egress negado. Runner externo não é sandbox gerenciado.
+
+F3 CI pós-merge 42897661392 verde. F4 seed limitado a int64 e dirty boolean estrito; JSON inválido é recusado antes de publicar.

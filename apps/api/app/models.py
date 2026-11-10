@@ -740,5 +740,42 @@ class InvestigationRevision(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+
+class Execution(Base):
+    __tablename__ = "executions"
+    __table_args__ = (
+        UniqueConstraint("id", "project_id", name="uq_execution_project"),
+        CheckConstraint("environment IN ('dev','staging','prod')", name="ck_execution_environment"),
+        CheckConstraint("status IN ('succeeded','failed','cancelled','timed_out','uncertain')", name="ck_imported_execution_status"),
+    )
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"), index=True)
+    environment: Mapped[str] = mapped_column(String(16))
+    mode: Mapped[str] = mapped_column(String(32))
+    status: Mapped[str] = mapped_column(String(16))
+    manifest_hash: Mapped[str] = mapped_column(String(80))
+    manifest_content: Mapped[str] = mapped_column(Text)
+    access_label: Mapped[dict] = mapped_column(JSON)
+    created_by: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class ExecutionAttempt(Base):
+    __tablename__ = "execution_attempts"
+    __table_args__ = (
+        UniqueConstraint("execution_id", "attempt_number", name="uq_execution_attempt_number"),
+        ForeignKeyConstraint(["execution_id", "project_id"], ["executions.id", "executions.project_id"]),
+        CheckConstraint("attempt_number >= 1", name="ck_execution_attempt_number"),
+    )
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    execution_id: Mapped[str] = mapped_column(String(64))
+    project_id: Mapped[str] = mapped_column(String(64))
+    environment: Mapped[str] = mapped_column(String(16))
+    attempt_number: Mapped[int] = mapped_column(Integer)
+    result_hash: Mapped[str] = mapped_column(String(80))
+    result_content: Mapped[str] = mapped_column(Text)
+    access_label: Mapped[dict] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
 from app.domain.tasks.immutability import register as _register_task_immutability
 _register_task_immutability(Base.metadata)

@@ -64,6 +64,7 @@ def project_access(db, actor, project_id, permission="read"):
 RESOURCE_MODELS = {
     "dataset": m.Dataset, "item": m.DatasetItem, "snapshot": m.DatasetSnapshot,
     "model": m.ModelVersion, "predictions": m.PredictionSet, "evaluation": m.TaskEvaluation,
+    "execution": m.Execution, "execution_attempt": m.ExecutionAttempt,
     "investigation": m.Investigation, "investigation_revision": m.InvestigationRevision, "trace": m.Trace,
     "principal": m.ServicePrincipal, "comparison": m.ExperimentRun, "experiment": m.Experiment,
 }
@@ -114,6 +115,8 @@ def source_for(db, ref):
 
 
 def load(db, actor, kind, identifier, *, project_id=None, environment=None, permission="read"):
+    if actor.environment and environment and actor.environment != environment:
+        raise HTTPException(404, "not_found")
     model = RESOURCE_MODELS[kind]
     row = db.get(model, identifier)
     if row is None:
@@ -409,6 +412,15 @@ def serialize(row):
                 "author_id": author.author_id,
                 "revision_id": author.id, "created_at": server_timestamp(current.created_at).isoformat(),
                 "updated_at": server_timestamp(author.created_at).isoformat()}
+    if isinstance(row, m.Execution):
+        import json
+        db = object_session(row)
+        attempts = db.query(m.ExecutionAttempt).filter_by(execution_id=row.id).order_by(m.ExecutionAttempt.attempt_number).all()
+        return {**common, "schema_version": 1, "kind": "execution", "mode": row.mode, "environment": row.environment,
+                "status": row.status, "manifest_hash": row.manifest_hash, "manifest": json.loads(row.manifest_content),
+                "capture_origin": "external_import", "decision": None,
+                "attempts": [{"id": attempt.id, "attempt_number": attempt.attempt_number, "result_hash": attempt.result_hash,
+                              "result": json.loads(attempt.result_content)} for attempt in attempts]}
     if isinstance(row, m.ServicePrincipal):
         return {**common, "name": row.name, "owner_user_id": row.owner_user_id,
                 "disabled_at": server_timestamp(row.disabled_at).isoformat() if row.disabled_at else None}

@@ -236,14 +236,17 @@ def test_new_route_inventory_denies_missing_roles_without_mutation(role):
             db.add(m.Membership(user_id="actor", organization_id=org, role=role))
         db.commit()
     investigation = post(f"/projects/{project}/investigations", {"environment": "dev", "state": {"title": "Investigation"}}, headers)
+    from test_execution_imports import payload as execution_payload
+    imported_execution = post(f"/projects/{project}/execution-imports", execution_payload(snap, model, predictions), headers)
     with SessionLocal() as db:
         db.add(m.Trace(id="trace", project_id=project, organization_id=org, name="Trace", environment="dev", status="error", started_at=m.utcnow(), ended_at=m.utcnow(), duration_ms=0))
         db.commit()
     token = {"Authorization": "Bearer " + create_access_token(sub="actor", email="actor@example.com", name="Actor"), "Idempotency-Key": "denied"}
     ids = dict(project_id=project, dataset_id=dataset["id"], snapshot_id=snap["id"], model_id=model["id"],
                set_id=predictions["id"], evaluation_id=evaluation["id"], principal_id=principal["id"],
-               resource_id=snap["id"], kind="snapshot", experiment_id="missing", item_id=item_id, investigation_id=investigation["id"], trace_id="trace")
+               resource_id=snap["id"], kind="snapshot", experiment_id="missing", item_id=item_id, investigation_id=investigation["id"], trace_id="trace", execution_id=imported_execution["id"])
     bodies = {
+        "/v1/projects/{project_id}/execution-imports": execution_payload(snap, model, predictions),
         "/v1/projects/{project_id}/investigations": {"environment": "dev", "state": {"title": "Investigation"}},
         "/v1/investigations/{investigation_id}": {"state": {"title": "Changed"}},
         "/v1/task-resources/dataset/{dataset_id}/classify": {"environment": "dev"},

@@ -2,6 +2,8 @@
 from sqlalchemy import DDL, event
 
 PROTECTED = {
+    "executions": ("id", "project_id", "environment", "mode", "status", "manifest_hash", "manifest_content", "created_by", "created_at"),
+    "execution_attempts": ("id", "execution_id", "project_id", "environment", "attempt_number", "result_hash", "result_content", "created_at"),
     "investigation_revisions": ("id", "investigation_id", "project_id", "environment", "revision", "state", "access_label", "author_kind", "author_id", "created_at"),
     "model_versions": ("id", "project_id", "created_at", "name", "version_ref", "content_hash", "content"),
     "dataset_snapshots": ("id", "project_id", "created_at", "dataset_id", "content_hash", "item_count", "content", "created_by"),

@@ -75,3 +75,21 @@ def test_postgres_investigation_revision_compare_and_swap(postgres):
     history = harness.client.get(path + "/revisions", headers=headers).json()["data"]
     assert [row["revision"] for row in history] == [1, 2]
     assert history[-1]["title"] == next(response.json()["title"] for response in responses if response.status_code == 200)
+
+
+def test_postgres_external_capture_receipt_and_immutable_attempt(postgres):
+    from test_execution_imports import payload
+    from sqlalchemy.exc import DBAPIError
+    headers, project, _ = harness.bootstrap()
+    _, snapshot, model, predictions = harness.fixture(headers, project)
+    body = payload(snapshot, model, predictions)
+    def create():
+        return harness.post(f"/projects/{project}/execution-imports", body, headers, key="concurrent-import")
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first, second = list(pool.map(lambda _: create(), range(2)))
+    assert first == second
+    from app.models import Execution, ExecutionAttempt
+    with postgres() as db:
+        assert db.query(Execution).count() == db.query(ExecutionAttempt).count() == 1
+        with pytest.raises(DBAPIError, match="immutable_task_resource"):
+            db.execute(text("UPDATE execution_attempts SET result_content='{}'")); db.commit()

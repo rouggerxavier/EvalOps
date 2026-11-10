@@ -38,7 +38,7 @@ class InvestigationPatch(Contract):
 
 def references(db, state):
     refs = list(state.evidence_refs)
-    allowed = {"dataset", "item", "trace", "snapshot", "model", "predictions", "evaluation", "comparison"}
+    allowed = {"dataset", "item", "trace", "snapshot", "model", "predictions", "evaluation", "comparison", "execution"}
     for ref in refs:
         if ref.split(":", 1)[0] not in allowed or ":" not in ref:
             raise HTTPException(422, "invalid_evidence_reference")
