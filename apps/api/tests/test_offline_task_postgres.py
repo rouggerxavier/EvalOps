@@ -93,3 +93,16 @@ def test_postgres_external_capture_receipt_and_immutable_attempt(postgres):
         assert db.query(Execution).count() == db.query(ExecutionAttempt).count() == 1
         with pytest.raises(DBAPIError, match="immutable_task_resource"):
             db.execute(text("UPDATE execution_attempts SET result_content='{}'")); db.commit()
+
+
+def test_postgres_policy_revision_cas(postgres):
+    headers, project, _ = harness.bootstrap()
+    url = f"/v1/projects/{project}/execution-policy"
+    def update(index):
+        return harness.client.put(url, headers={**headers, "If-Match": "0", "Idempotency-Key": f"policy-{index}"}, json={"enabled": False})
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        responses = list(pool.map(update, range(2)))
+    assert sorted(row.status_code for row in responses) == [200, 409]
+    from app.models import ExecutionPolicyRevision
+    with postgres() as db:
+        assert db.query(ExecutionPolicyRevision).count() == 1

@@ -182,3 +182,15 @@ def test_external_execution_import_and_get_share_capture(server):
     payload = {"manifest": {"schema_version": 1}, "result": {"cost": {"state": "unknown"}}}
     assert client.import_execution("project", payload, idempotency_key="operation") == client.get_execution("execution") == capture
     assert events[0][1:4] == ("/v1/projects/project/execution-imports", "task-key", payload)
+
+
+def test_runner_client_sends_only_runner_header_and_has_no_general_read(monkeypatch):
+    from evalops import RunnerClient
+    calls = []
+    original = httpx.Client
+    transport = httpx.MockTransport(lambda request: (calls.append(request), httpx.Response(200, json={"dispatch_available": False}))[1])
+    monkeypatch.setattr(httpx, "Client", lambda **kwargs: original(transport=transport, **kwargs))
+    runner = RunnerClient(runner_key="runner-secret", api_url="https://api.example.test/v1")
+    assert runner.capabilities("runner")["dispatch_available"] is False
+    assert calls[0].headers["X-EvalOps-Runner-Key"] == "runner-secret"
+    assert "X-EvalOps-Key" not in calls[0].headers and not hasattr(runner, "task_result")

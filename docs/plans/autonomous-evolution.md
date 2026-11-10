@@ -7,7 +7,7 @@ Modo standard. As SPECs continuam normativas; as fases abaixo representam implem
 | F0/F1 | Integradas em main pelo PR #47, merge 124aa18; CI do head verde | CI pós-merge 42888728647 verde; preservar gates existentes |
 | F2 | Integrada em main pelo PR #48, merge 9b25492; CI head verde | Investigações retomáveis com revisões/If-Match, casos revisados por humano, proveniência synthetic/replay e revisão do patch Grankasa local |
 | F3 | Integrada em main pelo PR #49, merge f852dfe; CI head verde | Classificação tipada, validade explícita, métricas e matriz/curvas na mesma API/SDK/web |
-| F4 | Importador implementado; runner controlado pendente | Harness importado primeiro; runner externo somente com ledger/leases/política e testes locais de interrupção/egress |
+| F4 | Importador integrado em main pelo PR #50 (672fb4a); policy/registro em fechamento | Harness importado primeiro; runner externo somente com ledger/leases/política e testes locais de interrupção/egress |
 | F5 | Depende de F3 e piloto escolhido | Curvas/recursos/artefatos importados; não escolher domínio de piloto sem evidência |
 | F6 | Condicional, sob demanda | Experimento de valor medido antes de cada expansão; não fabricar resultados de pilotos |
 
@@ -59,3 +59,11 @@ Gates dirigidos: 101 testes de autorização/contrato passaram; fechamento de im
 Implementar controles antes de dispatch: policy versionada por projeto; registro/credencial de runner com escopo restrito; planos selados e reserva atômica Decimal; lease único/heartbeat; estado incerto após perda de worker iniciado; cancelamento só após ack; publicação terminal tardia vira evidência sem sobrescrever estado; retry incerto exige autorização/orçamento novos. Revalidar chave original, membership e fontes em início/publicação. Reusar padrões de reserva do replay sem duplicar UsageCounter. Provar corridas em PostgreSQL dedicado e Redis isolado; harness de dois turnos/tools fake com egress negado. Runner externo não é sandbox gerenciado.
 
 F3 CI pós-merge 42897661392 verde. F4 seed limitado a int64 e dirty boolean estrito; JSON inválido é recusado antes de publicar.
+
+## Controle F4 — policy e registro
+
+Policy owner-only com revisões/If-Match/recibos, Runner com capabilities/owner selados e credenciais hash separadas da API comum. Chaves expiram em até 90 dias, não têm read geral, não usam fallback de API key e são invalidadas por revogação, disable, expiry ou perda do owner responsável. SDK RunnerClient compartilha transporte e não herda métodos de leitura do Client; CLI exige EVALOPS_RUNNER_KEY. Web owner administra policy/registro, copia segredo uma vez e revoga/desabilita sem habilitar dispatch.
+
+Gates locais: API completa 806 passed/20 skips; SDK 89 passed; web 256, typecheck/build; E2E humano 375/1280 px, dois passed. Fechamento dirigido: 107 passaram, incluindo owner inativo, paginação/detalhe, matriz de rotas e CAS/migrations PostgreSQL. Migration 0017 aditiva; downgrade com registros recusa. [Operação](../ops/runner-policy-registry.md) e [fatias restantes](runner-control-slices.md).
+
+Importador F4 CI pós-merge 42899576779 verde. Dispatch/ledger/leases continuam pendentes e não são discoverable como entregues. F5 depende de artefatos/retention e piloto de tarefa; F6 segue condicional à demanda medida.

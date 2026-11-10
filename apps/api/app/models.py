@@ -777,5 +777,45 @@ class ExecutionAttempt(Base):
     access_label: Mapped[dict] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
+
+class ExecutionPolicyRevision(Base):
+    __tablename__ = "execution_policy_revisions"
+    __table_args__ = (UniqueConstraint("project_id", "version", name="uq_execution_policy_version"),
+                      CheckConstraint("version >= 1", name="ck_execution_policy_version"))
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"), index=True)
+    version: Mapped[int] = mapped_column(Integer)
+    content: Mapped[dict] = mapped_column(JSON)
+    content_hash: Mapped[str] = mapped_column(String(80))
+    access_label: Mapped[dict] = mapped_column(JSON)
+    created_by: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class Runner(Base):
+    __tablename__ = "runners"
+    __table_args__ = (UniqueConstraint("id", "project_id", name="uq_runner_project"),)
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"), index=True)
+    name: Mapped[str] = mapped_column(String(255))
+    owner_user_id: Mapped[str] = mapped_column(ForeignKey("users.id"))
+    capabilities: Mapped[dict] = mapped_column(JSON)
+    access_label: Mapped[dict] = mapped_column(JSON)
+    disabled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class RunnerCredential(Base):
+    __tablename__ = "runner_credentials"
+    __table_args__ = (ForeignKeyConstraint(["runner_id", "project_id"], ["runners.id", "runners.project_id"]),)
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    runner_id: Mapped[str] = mapped_column(String(64), index=True)
+    project_id: Mapped[str] = mapped_column(String(64))
+    prefix: Mapped[str] = mapped_column(String(32), index=True)
+    hash: Mapped[str] = mapped_column(String(512))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
 from app.domain.tasks.immutability import register as _register_task_immutability
 _register_task_immutability(Base.metadata)

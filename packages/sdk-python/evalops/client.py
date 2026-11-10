@@ -16,8 +16,8 @@ def _path_id(value: str) -> str:
     return quote(value, safe="")
 
 
-class Client:
-    """Synchronous feedback and prompt requests, independent of the background tracer."""
+class _HttpClient:
+    _key_header = "X-EvalOps-Key"
 
     def __init__(
         self,
@@ -38,7 +38,7 @@ class Client:
             try:
                 with httpx.Client(timeout=config.timeout) as client:
                     response = client.request(
-                        method, f"{config.api_url}{path}", headers={"X-EvalOps-Key": config.api_key, **({"Idempotency-Key": idempotency_key} if idempotency_key else {}), **({"If-Match": if_match} if if_match else {})}, json=payload
+                        method, f"{config.api_url}{path}", headers={self._key_header: config.api_key, **({"Idempotency-Key": idempotency_key} if idempotency_key else {}), **({"If-Match": if_match} if if_match else {})}, json=payload
                     )
                 response.raise_for_status()
                 return response.json()
@@ -53,6 +53,9 @@ class Client:
                     raise
             sleep(config.retry_backoff_s * (2**attempt))
         raise AssertionError("unreachable")
+
+class Client(_HttpClient):
+    """Synchronous feedback and prompt requests, independent of the background tracer."""
 
     def feedback(
         self,

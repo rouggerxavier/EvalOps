@@ -61,7 +61,10 @@ def project_access(db, actor, project_id, permission="read"):
     return load_project(db, actor.user_id, project_id, "write" if permission == "evaluate" else permission)
 
 
+ADMIN_RESOURCE_KINDS = {"principal", "policy", "runner"}
+
 RESOURCE_MODELS = {
+    "policy": m.ExecutionPolicyRevision, "runner": m.Runner,
     "dataset": m.Dataset, "item": m.DatasetItem, "snapshot": m.DatasetSnapshot,
     "model": m.ModelVersion, "predictions": m.PredictionSet, "evaluation": m.TaskEvaluation,
     "execution": m.Execution, "execution_attempt": m.ExecutionAttempt,
@@ -212,9 +215,9 @@ def write(db, actor, request, project_id, payload, operation):
         if receipt.body_hash != body_hash:
             raise HTTPException(409, "idempotency_conflict")
         kind, identifier = receipt.resource_ref.split(":", 1)
-        if kind == "principal":
+        if kind in ADMIN_RESOURCE_KINDS:
             project_access(db, actor, project_id, "admin")
-            return db.get(m.ServicePrincipal, identifier)
+            if kind == "principal": return db.get(m.ServicePrincipal, identifier)
         authorized = load(db, actor, kind, identifier, project_id=project_id)
         return receipt.response_snapshot if receipt.response_snapshot is not None else authorized
     try:
@@ -226,7 +229,7 @@ def write(db, actor, request, project_id, payload, operation):
                              response_snapshot=serialize(row) if kind == "item" and request.method == "PATCH" else None))
         audit(db, actor, project_id, f"task.{kind}.{'updated' if request.method == 'PATCH' else 'created'}", ref)
         db.expire_all()
-        project_access(db, actor, project_id, "admin" if kind == "principal" else "evaluate" if kind in {"evaluation", "comparison"} else "write")
+        project_access(db, actor, project_id, "admin" if kind in ADMIN_RESOURCE_KINDS else "evaluate" if kind in {"evaluation", "comparison"} else "write")
         if actor.principal_id:
             revalidate_principal(db, request.state.api_key_id)
         db.commit()
@@ -236,6 +239,8 @@ def write(db, actor, request, project_id, payload, operation):
         receipt = query.one_or_none()
         if receipt and receipt.body_hash == body_hash:
             kind, identifier = receipt.resource_ref.split(":", 1)
+            if kind in ADMIN_RESOURCE_KINDS:
+                project_access(db, actor, project_id, "admin")
             authorized = load(db, actor, kind, identifier, project_id=project_id)
             return receipt.response_snapshot if receipt.response_snapshot is not None else authorized
         raise HTTPException(409, "resource_conflict") from None
@@ -412,6 +417,11 @@ def serialize(row):
                 "author_id": author.author_id,
                 "revision_id": author.id, "created_at": server_timestamp(current.created_at).isoformat(),
                 "updated_at": server_timestamp(author.created_at).isoformat()}
+    if isinstance(row, m.ExecutionPolicyRevision):
+        return {**common, "kind": "execution_policy", "version": row.version, "policy": row.content, "content_hash": row.content_hash}
+    if isinstance(row, m.Runner):
+        return {**common, "kind": "runner", "name": row.name, "owner_user_id": row.owner_user_id, "capabilities": row.capabilities,
+                "disabled_at": server_timestamp(row.disabled_at).isoformat() if row.disabled_at else None}
     if isinstance(row, m.Execution):
         import json
         db = object_session(row)

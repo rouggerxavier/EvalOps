@@ -238,14 +238,20 @@ def test_new_route_inventory_denies_missing_roles_without_mutation(role):
     investigation = post(f"/projects/{project}/investigations", {"environment": "dev", "state": {"title": "Investigation"}}, headers)
     from test_execution_imports import payload as execution_payload
     imported_execution = post(f"/projects/{project}/execution-imports", execution_payload(snap, model, predictions), headers)
+    from test_runner_control import create_runner, credential, runner_body
+    runner = create_runner(headers, project)
+    runner_key = credential(headers, runner)
     with SessionLocal() as db:
         db.add(m.Trace(id="trace", project_id=project, organization_id=org, name="Trace", environment="dev", status="error", started_at=m.utcnow(), ended_at=m.utcnow(), duration_ms=0))
         db.commit()
     token = {"Authorization": "Bearer " + create_access_token(sub="actor", email="actor@example.com", name="Actor"), "Idempotency-Key": "denied"}
     ids = dict(project_id=project, dataset_id=dataset["id"], snapshot_id=snap["id"], model_id=model["id"],
                set_id=predictions["id"], evaluation_id=evaluation["id"], principal_id=principal["id"],
-               resource_id=snap["id"], kind="snapshot", experiment_id="missing", item_id=item_id, investigation_id=investigation["id"], trace_id="trace", execution_id=imported_execution["id"])
+               resource_id=snap["id"], kind="snapshot", experiment_id="missing", item_id=item_id, investigation_id=investigation["id"], trace_id="trace", execution_id=imported_execution["id"], runner_id=runner["id"], credential_id=runner_key["id"])
     bodies = {
+        "/v1/projects/{project_id}/execution-policy": {},
+        "/v1/projects/{project_id}/runners": runner_body(),
+        "/v1/runners/{runner_id}/credentials": {"expires_at": (m.utcnow()+timedelta(hours=1)).isoformat()},
         "/v1/projects/{project_id}/execution-imports": execution_payload(snap, model, predictions),
         "/v1/projects/{project_id}/investigations": {"environment": "dev", "state": {"title": "Investigation"}},
         "/v1/investigations/{investigation_id}": {"state": {"title": "Changed"}},
@@ -273,7 +279,7 @@ def test_new_route_inventory_denies_missing_roles_without_mutation(role):
             kwargs = {"headers": token}
             if route["method"] != "GET": kwargs["json"] = bodies.get(route["path"], {})
             response = client.request(route["method"], route["path"].format(**ids), **kwargs)
-            assert response.status_code in ({404} if role == "outsider" or "experiments" in route["path"] else {403}), (route, response.text)
+            assert response.status_code in ({401} if route["permission"] == "runner-only" else {404} if role == "outsider" or "experiments" in route["path"] else {403}), (route, response.text)
     assert state() == before
 
 

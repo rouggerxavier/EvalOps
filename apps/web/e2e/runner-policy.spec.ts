@@ -1,0 +1,41 @@
+import { test, expect } from "@playwright/test";
+const API = process.env.E2E_API_BASE_URL ?? "http://127.0.0.1:18007/v1";
+for (const width of [1280, 375]) {
+  test(`owner controls runner identity at ${width}px`, async ({ page, context, request, baseURL }) => {
+    test.setTimeout(120_000);
+    await page.setViewportSize({ width, height: 900 });
+    const stamp = `${Date.now()}-${width}`;
+    const registered = await request.post(`${API}/auth/register`, { data: { email: `runner-${stamp}@example.test`, name: "Runner owner", password: "Offline-test-123!", org_name: `Runner ${stamp}`, project_name: "Runner policy" } });
+    expect(registered.ok()).toBeTruthy();
+    const session = await registered.json();
+    const headers = { Authorization: `Bearer ${session.token}` };
+    await context.addCookies([{ name: "evalops_session", value: session.token, url: baseURL!, httpOnly: true, sameSite: "Lax" }]);
+    await page.goto(`/o/${session.workspace.org_slug}/p/${session.workspace.project_slug}/evaluations/runners`);
+    await expect(page.getByRole("heading", { name: "Runners externos", exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Salvar versão da política" }).click();
+    await expect(page.getByText("Revisão 1.", { exact: false })).toBeVisible();
+    await page.getByLabel("Nome do runner").fill("Local fixture runner");
+    await page.getByRole("button", { name: "Registrar runner", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "Local fixture runner", exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Criar credencial de runner" }).click();
+    const keyField = page.getByLabel("Chave exclusiva do runner");
+    await expect(keyField).toBeVisible();
+    const key = await keyField.inputValue();
+    const runners = await request.get(`${API}/projects/${session.workspace.project_id}/runners`, { headers });
+    const runner = (await runners.json()).data[0];
+    const capabilityPath = `${API}/runners/${runner.id}/capabilities`;
+    const accepted = await request.get(capabilityPath, { headers: { "X-EvalOps-Runner-Key": key } });
+    expect(accepted.ok()).toBeTruthy();
+    expect((await accepted.json()).dispatch_available).toBe(false);
+    const forbidden = await request.get(`${API}/projects/${session.workspace.project_id}/capabilities`, { headers: { "X-EvalOps-Key": key } });
+    expect(forbidden.status()).toBe(401);
+    await page.getByRole("button", { name: "Revogar credencial exibida" }).click();
+    await expect(page.getByText("Credencial revogada.", { exact: true })).toBeVisible();
+    expect((await request.get(capabilityPath, { headers: { "X-EvalOps-Runner-Key": key } })).status()).toBe(401);
+    await expect(keyField).toHaveCount(0);
+    await page.getByRole("button", { name: "Desabilitar runner", exact: true }).click();
+    await expect(page.getByText(`${runner.id} · Desabilitado`, { exact: true })).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
+    await page.screenshot({ path: `/tmp/evalops-f4-runner-${width}.png`, fullPage: true });
+  });
+}

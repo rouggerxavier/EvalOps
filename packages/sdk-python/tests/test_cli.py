@@ -75,3 +75,20 @@ def test_cli_imports_external_capture_without_dispatch(monkeypatch, tmp_path, ca
     monkeypatch.setattr(cli, "Client", Client)
     assert cli.main(["execution-import", "--project", "p", "--file", str(source), "--idempotency-key", "capture"]) == 0
     assert json.loads(capsys.readouterr().out)["capture_origin"] == "external_import"
+
+
+def test_runner_cli_requires_own_credential_without_api_fallback(monkeypatch, capsys):
+    monkeypatch.setenv("EVALOPS_API_KEY", "ordinary-key")
+    monkeypatch.delenv("EVALOPS_RUNNER_KEY", raising=False)
+    assert cli.main(["runner-capabilities", "runner"]) == 2
+    assert "EVALOPS_RUNNER_KEY" in capsys.readouterr().err
+    monkeypatch.setenv("EVALOPS_RUNNER_KEY", "runner-key")
+    class RunnerClient:
+        def __init__(self, **kwargs):
+            assert kwargs["runner_key"] == "runner-key"
+        def capabilities(self, identifier):
+            assert identifier == "runner"
+            return {"dispatch_available": False}
+    monkeypatch.setattr(cli, "RunnerClient", RunnerClient)
+    assert cli.main(["runner-capabilities", "runner", "--json"]) == 0
+    assert json.loads(capsys.readouterr().out) == {"dispatch_available": False}
