@@ -124,7 +124,7 @@ export default async function DatasetsPage({ params, searchParams }: Props) {
                 <label className="ops-form__field">
                   <span>Dataset</span>
                   <select name="dataset_id" defaultValue={selectedDatasetId ?? ""} required>
-                    {rows.map(({ dataset }) => <option key={dataset.id} value={dataset.id}>{dataset.slug}</option>)}
+                    {rows.filter(({ dataset }) => dataset.task_type !== "regression").map(({ dataset }) => <option key={dataset.id} value={dataset.id}>{dataset.slug}</option>)}
                   </select>
                 </label>
                 <label className="ops-form__field">
@@ -228,7 +228,7 @@ export default async function DatasetsPage({ params, searchParams }: Props) {
           <section className="card">
             <div className="card__header">
               <h2 className="card__title">Itens de {selectedRow?.dataset.slug ?? "Sem dados"}</h2>
-              {selectedRow ? (
+              {selectedRow && selectedRow.dataset.task_type !== "regression" ? (
                 <details className="ops-inline">
                   <summary className="btn">Adicionar item</summary>
                   <DatasetItemForm org={org} project={project} datasetId={selectedRow.dataset.id} action={addDatasetItemFromFormAction} />
@@ -240,14 +240,14 @@ export default async function DatasetsPage({ params, searchParams }: Props) {
                 {selectedItems.length >= 100 ? <p className="ops-note">A API retorna até 100 itens por consulta. Total exato: Sem dados.</p> : null}
                 <table className="t">
                   <thead>
-                    <tr><th>Nº</th><th>Pergunta</th><th>Resposta esperada</th><th className="t__num">Criado</th></tr>
+                    <tr><th>Nº</th><th>{selectedRow.dataset.task_type === "regression" ? "Input tabular" : "Pergunta"}</th><th>Referência esperada</th><th className="t__num">Criado</th></tr>
                   </thead>
                   <tbody>
                     {selectedItems.slice(0, 100).map((item) => (
                       <tr key={item.id}>
                         <td>{item.ord + 1}</td>
-                        <td>{itemQuestion(item)}</td>
-                        <td>{expectedAnswer(item)}</td>
+                        <td>{selectedRow.dataset.task_type === "regression" ? JSON.stringify(item.input) : itemQuestion(item)}</td>
+                        <td>{selectedRow.dataset.task_type === "regression" ? String(item.expected_output?.value ?? "Sem referência") : expectedAnswer(item)}</td>
                         <td className="t__num">{relativePt(item.created_at)}</td>
                       </tr>
                     ))}

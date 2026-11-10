@@ -213,6 +213,7 @@ export default async function EvaluationsPage({ params, searchParams }: Props) {
       <header className="ops-page-header">
         <div className="ops-page-header__copy">
           <h1 className="ops-page-header__title">Avaliações</h1>
+          <Link href={`/o/${org}/p/${project}/evaluations/tasks`}>Regressão offline / tarefas</Link>
           <p className="ops-page-header__subtitle">
             {!summary
               ? "Resumo de avaliações indisponível."
