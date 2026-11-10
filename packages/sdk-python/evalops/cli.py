@@ -7,6 +7,7 @@ import uuid
 
 import httpx
 from evalops.client import Client
+from evalops.runner import RunnerClient
 
 
 def main(argv=None):
@@ -42,16 +43,22 @@ def main(argv=None):
     execution_import.add_argument("--project", required=True)
     execution_import.add_argument("--file", required=True)
     execution_import.add_argument("--idempotency-key", required=True)
-    for command in (discover, evaluate, result, investigation, inv_create, inv_update, execution, execution_import):
+    runner_capabilities = commands.add_parser("runner-capabilities")
+    runner_capabilities.add_argument("id")
+    for command in (discover, evaluate, result, investigation, inv_create, inv_update, execution, execution_import, runner_capabilities):
         command.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
-    key = os.environ.get("EVALOPS_API_KEY")
+    credential_name = "EVALOPS_RUNNER_KEY" if args.command == "runner-capabilities" else "EVALOPS_API_KEY"
+    key = os.environ.get(credential_name)
     if not key:
-        print("EVALOPS_API_KEY is required", file=sys.stderr)
+        print(f"{credential_name} is required", file=sys.stderr)
         return 2
-    client = Client(api_key=key, api_url=os.environ.get("EVALOPS_API_URL", "http://localhost:8000/v1"))
+    api_url = os.environ.get("EVALOPS_API_URL", "http://localhost:8000/v1")
+    client = RunnerClient(runner_key=key, api_url=api_url) if args.command == "runner-capabilities" else Client(api_key=key, api_url=api_url)
     try:
-        if args.command == "discover":
+        if args.command == "runner-capabilities":
+            output = client.capabilities(args.id)
+        elif args.command == "discover":
             output = client.discover(args.project)
         elif args.command == "evaluate":
             output = client.evaluate(args.project, args.prediction_set, idempotency_key=args.idempotency_key or str(uuid.uuid4()), evaluator=args.evaluator.split("@")[0])
