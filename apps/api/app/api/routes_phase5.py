@@ -288,10 +288,10 @@ def list_datasets(
 ) -> dict:
     _project_or_404(project_id, user.id, db)
     rows = db.query(Dataset).filter(Dataset.project_id == project_id).order_by(Dataset.created_at.desc()).all()
-    return {"data": [DatasetOut.model_validate(row).model_dump() for row in rows]}
+    from app.domain.tasks.service import serialize
+    return {"data": [serialize(row) if row.task_type == "regression" else DatasetOut.model_validate(row).model_dump() for row in rows]}
 
 
-@router.post("/projects/{project_id}/datasets", status_code=status.HTTP_201_CREATED)
 def create_dataset(
     project_id: str,
     payload: DatasetCreate,
@@ -334,7 +334,9 @@ def create_dataset_items(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
-    _dataset_or_404(dataset_id, user.id, db, "write")
+    dataset = _dataset_or_404(dataset_id, user.id, db, "write")
+    if dataset.task_type != "text":
+        raise HTTPException(409, "task_dataset_requires_case_endpoint")
     if not payload.items:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="items_required")
     current_count = db.query(DatasetItem).filter(DatasetItem.dataset_id == dataset_id).count()
@@ -382,6 +384,8 @@ def build_dataset_from_traces(
     db: Session = Depends(get_db),
 ) -> dict:
     dataset = _dataset_or_404(dataset_id, user.id, db, "write")
+    if dataset.task_type != "text":
+        raise HTTPException(409, "trace_build_requires_text_dataset")
     query = db.query(Trace).filter(
         Trace.project_id == dataset.project_id,
         Trace.deleted_at.is_(None),
@@ -428,18 +432,16 @@ def build_dataset_from_traces(
     return {"created": created, "dataset_id": dataset.id}
 
 
-@router.get("/projects/{project_id}/experiments")
 def list_experiments(
     project_id: str,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
     _project_or_404(project_id, user.id, db)
-    rows = db.query(Experiment).filter(Experiment.project_id == project_id).order_by(Experiment.created_at.desc()).all()
+    rows = db.query(Experiment).filter(Experiment.project_id == project_id, Experiment.kind == "legacy_synthetic").order_by(Experiment.created_at.desc()).all()
     return {"data": [ExperimentOut.model_validate(row).model_dump() for row in rows]}
 
 
-@router.post("/projects/{project_id}/experiments", status_code=status.HTTP_201_CREATED)
 def create_experiment(
     project_id: str,
     payload: ExperimentCreate,
@@ -485,6 +487,8 @@ def run_experiment(
     db: Session = Depends(get_db),
 ) -> dict:
     experiment = _experiment_or_404(experiment_id, user.id, db, "write")
+    if experiment.kind != "legacy_synthetic":
+        raise HTTPException(409, "comparison_endpoint_required")
 
     # Fix-7B.5 (A-08): mirror the evaluation route's judge budget gate so an
     # experiment whose rubric uses llm_judge cannot bypass the plan budget.
@@ -561,7 +565,6 @@ def run_experiment(
     return {"run_id": run.id, "status": run.status, "passed": run.passed}
 
 
-@router.get("/experiments/{experiment_id}/runs")
 def list_experiment_runs(
     experiment_id: str,
     limit: int = Query(default=20, ge=1, le=100),
@@ -569,6 +572,8 @@ def list_experiment_runs(
     db: Session = Depends(get_db),
 ) -> dict:
     experiment = _experiment_or_404(experiment_id, user.id, db)
+    if experiment.kind != "legacy_synthetic":
+        raise HTTPException(409, "task_view_required")
     rows = (
         db.query(ExperimentRun)
         .filter(ExperimentRun.experiment_id == experiment.id)
@@ -579,7 +584,6 @@ def list_experiment_runs(
     return {"data": [ExperimentRunOut.model_validate(row).model_dump() for row in rows]}
 
 
-@router.get("/experiments/{experiment_id}/runs/{run_id}")
 def get_experiment_run(
     experiment_id: str,
     run_id: str,
@@ -587,6 +591,8 @@ def get_experiment_run(
     db: Session = Depends(get_db),
 ) -> dict:
     experiment = _experiment_or_404(experiment_id, user.id, db)
+    if experiment.kind != "legacy_synthetic":
+        raise HTTPException(409, "task_view_required")
     run = db.get(ExperimentRun, run_id)
     if not run or run.experiment_id != experiment.id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="not_found")

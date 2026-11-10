@@ -147,8 +147,10 @@ def test_every_http_route_has_a_reviewed_permission_and_auth_contract():
     script += "\nprint(json.dumps(sorted(_http_routes(app))))"
     result = subprocess.run([sys.executable, "-c", script], check=True, capture_output=True, text=True)
     actual = {tuple(route) for route in json.loads(result.stdout)}
-    expected = {(r["method"], r["path"]) for r in ROUTES}
-    assert len(expected) == len(ROUTES)
+    with (Path(__file__).parent / "fixtures/task_route_permissions.tsv").open() as fixture:
+        task_routes = list(csv.DictReader(fixture, delimiter="\t"))
+    expected = {(r["method"], r["path"]) for r in ROUTES + task_routes}
+    assert len(expected) == len(ROUTES) + len(task_routes)
     assert actual == expected, "Classify every added HTTP method/path in r1_route_permissions.tsv"
     assert {(r["method"], r["path"]) for r in ROUTES if r["permission"] == "own-contract"} == {
         ("POST", "/v1/auth/register"), ("POST", "/v1/auth/login"),

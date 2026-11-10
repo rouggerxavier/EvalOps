@@ -113,3 +113,9 @@ cd apps/web && npm run test
 | `G S` | Settings |
 | `⌘K` / `/` | Focar busca |
 | `?` | Lista de atalhos |
+
+### Regressão offline — F0 e primeira vertical F1
+
+A implementação de tarefas acrescenta snapshots imutáveis, modelos externos declarados, predições importadas e métricas tipadas. API, SDK/CLI e a página **Avaliações → Regressão offline** consultam os mesmos resultados persistidos. A comparação usa pares do mesmo snapshot e preserva a leitura legada por opt-in `view=task_v1`.
+
+Antes do rollout, aplique a migration 0014. Escopo, limites, testes e rollback estão em [F0/F1](docs/plans/f0-implementation-progress.md); as [SPECs](docs/specs/README.md) continuam como referência de evolução.

@@ -251,3 +251,31 @@ overrides it). GET retries transport failures, 408, 429, and 5xx twice with the
 uploader's exponential backoff. Feedback POSTs are sent once: a timeout can
 mean the server committed the feedback, so automatic retry could duplicate it.
 No feedback is queued or written to dead-letter files.
+
+### Avaliação de regressão offline
+
+Um owner cria um principal em `POST /v1/projects/{p}/service-principals` e associa uma chave ao principal na criação de API key. Declare expiração de até 90 dias e scopes `read,write,evaluate`. Chaves legadas não são promovidas automaticamente. Criações usam `Idempotency-Key`; guarde a chave da operação quando precisar repetir uma requisição cujo resultado foi perdido.
+
+```python
+import os
+from evalops import Client
+
+client = Client(api_key=os.environ["EVALOPS_API_KEY"], api_url=os.environ["EVALOPS_API_URL"])
+project = os.environ["EVALOPS_PROJECT_ID"]
+capabilities = client.discover(project)
+result = client.evaluate(project, prediction_set_id, idempotency_key=operation_id)
+metrics = client.task_metrics(result["id"])["data"]
+# result["links"]["web"] abre o mesmo resultado na interface.
+```
+
+O fluxo completo usa `create_task_dataset`, `create_snapshot`, `create_model_version`, `import_predictions` e `evaluate`. O modelo é declarado; o servidor avalia predições importadas e não executa o produtor. JSONs, unidades, precisão, null, eixos e razões são preservados pelo SDK.
+
+A CLI recebe `EVALOPS_API_KEY` e `EVALOPS_API_URL` pelo ambiente:
+
+```sh
+evalops discover --project PROJECT_ID --json
+evalops evaluate --project PROJECT_ID --prediction-set PREDICTION_SET_ID --idempotency-key OPERATION_ID --json
+evalops result EVALUATION_ID --json
+```
+
+`--fail-on-decision` usa exit 3 para fail e 4 para review/inconclusive; sem a opção, uma avaliação tecnicamente bem-sucedida retorna 0, mesmo sem política de qualidade. Erro técnico retorna 1; uso/contrato inválido, 2. Nunca passe credenciais como argumento.

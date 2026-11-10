@@ -30,7 +30,7 @@ class Client:
             raise ValueError("timeout must be finite and positive")
         self._config = UploaderConfig(api_key=api_key, api_url=api_url.rstrip("/"), timeout=timeout)
 
-    def _request(self, method: str, path: str, *, payload: dict | None = None) -> dict[str, Any]:
+    def _request(self, method: str, path: str, *, payload: dict | None = None, idempotency_key: str | None = None) -> dict[str, Any]:
         config = self._config
         # Feedback has no idempotency key: retrying a timed-out POST can duplicate it.
         attempts = config.max_retries + 1 if method == "GET" else 1
@@ -38,7 +38,7 @@ class Client:
             try:
                 with httpx.Client(timeout=config.timeout) as client:
                     response = client.request(
-                        method, f"{config.api_url}{path}", headers={"X-EvalOps-Key": config.api_key}, json=payload
+                        method, f"{config.api_url}{path}", headers={"X-EvalOps-Key": config.api_key, **({"Idempotency-Key": idempotency_key} if idempotency_key else {})}, json=payload
                     )
                 response.raise_for_status()
                 return response.json()
@@ -87,3 +87,51 @@ class Client:
             if row["version"] == version:
                 return row
         raise LookupError(f"prompt version {version} not found")
+
+
+    def discover(self, project_id: str) -> dict[str, Any]:
+        return self._request("GET", f"/projects/{_path_id(project_id)}/capabilities")
+
+    def create_task_dataset(self, project_id: str, payload: dict, *, idempotency_key: str) -> dict[str, Any]:
+        return self._request("POST", f"/projects/{_path_id(project_id)}/datasets", payload=payload, idempotency_key=idempotency_key)
+
+    def create_snapshot(self, dataset_id: str, *, environment: str, idempotency_key: str) -> dict[str, Any]:
+        return self._request("POST", f"/datasets/{_path_id(dataset_id)}/snapshots", payload={"environment": environment}, idempotency_key=idempotency_key)
+
+    def create_model_version(self, project_id: str, payload: dict, *, idempotency_key: str) -> dict[str, Any]:
+        return self._request("POST", f"/projects/{_path_id(project_id)}/model-versions", payload=payload, idempotency_key=idempotency_key)
+
+    def import_predictions(self, project_id: str, payload: dict, *, idempotency_key: str) -> dict[str, Any]:
+        return self._request("POST", f"/projects/{_path_id(project_id)}/prediction-sets", payload=payload, idempotency_key=idempotency_key)
+
+    def evaluate(self, project_id: str, prediction_set_id: str, *, idempotency_key: str) -> dict[str, Any]:
+        return self._request("POST", f"/projects/{_path_id(project_id)}/task-evaluations", payload={"prediction_set_id": prediction_set_id, "evaluator": {"id": "regression.standard", "version": "1", "config": {}}}, idempotency_key=idempotency_key)
+
+    def task_result(self, evaluation_id: str) -> dict[str, Any]:
+        return self._request("GET", f"/task-evaluations/{_path_id(evaluation_id)}")
+
+    def task_metrics(self, evaluation_id: str) -> dict[str, Any]:
+        return self._request("GET", f"/task-evaluations/{_path_id(evaluation_id)}/metrics")
+
+    def task_samples(self, evaluation_id: str, *, cursor: int = 0, limit: int = 100) -> dict[str, Any]:
+        if type(cursor) is not int or cursor < 0 or type(limit) is not int or not 1 <= limit <= 500:
+            raise ValueError("invalid pagination")
+        return self._request("GET", f"/task-evaluations/{_path_id(evaluation_id)}/samples?cursor={cursor}&limit={limit}")
+
+    def get_snapshot(self, snapshot_id: str) -> dict[str, Any]:
+        return self._request("GET", f"/dataset-snapshots/{_path_id(snapshot_id)}")
+
+    def get_model_version(self, model_id: str) -> dict[str, Any]:
+        return self._request("GET", f"/model-versions/{_path_id(model_id)}")
+
+    def list_task_evaluations(self, project_id: str) -> dict[str, Any]:
+        return self._request("GET", f"/projects/{_path_id(project_id)}/task-evaluations")
+
+    def create_task_experiment(self, project_id: str, payload: dict, *, idempotency_key: str) -> dict[str, Any]:
+        return self._request("POST", f"/projects/{_path_id(project_id)}/experiments", payload=payload, idempotency_key=idempotency_key)
+
+    def compare(self, experiment_id: str, payload: dict, *, idempotency_key: str) -> dict[str, Any]:
+        return self._request("POST", f"/experiments/{_path_id(experiment_id)}/comparisons", payload=payload, idempotency_key=idempotency_key)
+
+    def comparison_result(self, experiment_id: str, run_id: str) -> dict[str, Any]:
+        return self._request("GET", f"/experiments/{_path_id(experiment_id)}/runs/{_path_id(run_id)}?view=task_v1")
