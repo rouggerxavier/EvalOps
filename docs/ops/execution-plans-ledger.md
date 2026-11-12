@@ -32,7 +32,7 @@ execution-start significa admissão/queued, não confirmação de que código in
 
 ## Contabilidade e incerteza
 
-USD tem oito casas. Ledger append-only guarda Decimal; contas de quota usam unidades inteiras de 10^-8 USD, inclusive no SQLite. Limite v1 de 1 bilhão USD evita overflow. Não há cálculo monetário em float nem conversão cambial. Reserva registra limite autorizado; settlement registra custo reportado com fonte/versão. Ledger não é invoice verificada de provider.
+USD tem oito casas. Ledger append-only (`amount_units`) e contas de quota guardam unidades inteiras de 10^-8 USD, inclusive no SQLite; a API serializa `amount_usd` como string decimal derivada dessas unidades. Limite v1 de 1 bilhão USD evita overflow. Não há cálculo monetário em float nem conversão cambial. Reserva registra limite autorizado; settlement registra custo reportado com fonte/versão. Ledger não é invoice verificada de provider.
 
 Contas usam período da reserva. Settlement posterior continua nesse período. Slots ativos são somados em todos os períodos; mudar mês não reinicia paralelismo de execução incerta. max_parallel limita slots admitidos, incluindo queued e incerteza sem isolamento; paralelismo interno pesa na reserva.
 
@@ -45,3 +45,5 @@ Identidade original é selada por IDs, scopes, jti/expiry ou key ID e credential
 Migration 0018 é aditiva para budget/planos/ledger e amplia estados de Execution. Capturas existentes recebem origin=external_import; conteúdo/hash/status terminal permanecem intactos e imutáveis. Guards bloqueiam UPDATE e DELETE do ledger. Downgrade recusa planos, reservas, contas ou execuções controladas. Antes de rollback de código, desabilite admissão e cancele queued na versão compatível. Preserve banco e reservas incertas; código anterior não deve interpretar execuções controladas como capturas importadas. Restaure versão compatível para conciliação.
 
 Gates verificam frações de USD, concorrência entre projetos da mesma organização, hold unknown/paralelismo entre períodos, overspend, permissões/IDOR, recibos antigos e revogação original. Round-trip SQLite/PostgreSQL preserva capturas anteriores e seus guards. E2E 375/1280 px confere reserva/cancelamento contra API; nenhum processo externo ou chamada paga participa desses testes.
+
+SQLite local criado por `create_all` antes desta entrega não recebe `executions.origin` nem o CHECK de status ampliado (`ensure_schema_compatibility` não reconstrói tabelas). Recrie o banco local de dev (apague o arquivo SQLite); criar plano/execução em banco antigo falha.

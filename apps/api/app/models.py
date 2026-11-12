@@ -1,5 +1,4 @@
 from datetime import datetime, timezone
-from decimal import Decimal
 
 from sqlalchemy import BigInteger, Boolean, CheckConstraint, DateTime, Float, ForeignKey, ForeignKeyConstraint, Index, Integer, JSON, Numeric, String, Text, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -894,7 +893,7 @@ class ExecutionLedgerEntry(Base):
     __table_args__ = (
         ForeignKeyConstraint(["execution_id", "project_id"], ["executions.id", "executions.project_id"]),
         UniqueConstraint("execution_id", "event_key", name="uq_execution_ledger_event"),
-        CheckConstraint("kind IN ('reserve','settle','release','adjust') AND amount_usd >= 0 AND amount_usd <= 1000000000", name="ck_execution_ledger_kind"),
+        CheckConstraint("kind IN ('reserve','settle','release','adjust') AND amount_units >= 0 AND amount_units <= 100000000000000000", name="ck_execution_ledger_kind"),
     )
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     execution_id: Mapped[str] = mapped_column(String(64), index=True)
@@ -904,7 +903,7 @@ class ExecutionLedgerEntry(Base):
     period: Mapped[str] = mapped_column(String(7))
     kind: Mapped[str] = mapped_column(String(16))
     event_key: Mapped[str] = mapped_column(String(128))
-    amount_usd: Mapped[Decimal] = mapped_column(Numeric(18, 8))
+    amount_units: Mapped[int] = mapped_column(BigInteger)  # 10^-8 USD; never a float column
     measurement_source: Mapped[str] = mapped_column(String(255))
     pricing_version: Mapped[str] = mapped_column(String(128))
     actor_id: Mapped[str] = mapped_column(String(64))

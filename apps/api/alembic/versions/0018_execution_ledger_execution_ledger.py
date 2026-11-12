@@ -63,12 +63,12 @@ def upgrade() -> None:
     sa.Column('period', sa.String(length=7), nullable=False),
     sa.Column('kind', sa.String(length=16), nullable=False),
     sa.Column('event_key', sa.String(length=128), nullable=False),
-    sa.Column('amount_usd', sa.Numeric(precision=18, scale=8), nullable=False),
+    sa.Column('amount_units', sa.BigInteger(), nullable=False),
     sa.Column('measurement_source', sa.String(length=255), nullable=False),
     sa.Column('pricing_version', sa.String(length=128), nullable=False),
     sa.Column('actor_id', sa.String(length=64), nullable=False),
     sa.Column('created_at', sa.DateTime(timezone=True), nullable=False),
-    sa.CheckConstraint("kind IN ('reserve','settle','release','adjust') AND amount_usd >= 0 AND amount_usd <= 1000000000", name='ck_execution_ledger_kind'),
+    sa.CheckConstraint("kind IN ('reserve','settle','release','adjust') AND amount_units >= 0 AND amount_units <= 100000000000000000", name='ck_execution_ledger_kind'),
     sa.ForeignKeyConstraint(['execution_id', 'project_id'], ['executions.id', 'executions.project_id'], ),
     sa.ForeignKeyConstraint(['organization_id'], ['organizations.id'], ),
     sa.PrimaryKeyConstraint('id'),
@@ -142,7 +142,7 @@ def upgrade() -> None:
     columns = {
         "organization_execution_budget_revisions": "id,organization_id,version,content,content_hash,created_by,created_at",
         "execution_plans": "id,project_id,environment,runner_id,policy_revision_id,organization_budget_revision_id,manifest_content,manifest_hash,created_by,created_at",
-        "execution_ledger_entries": "id,execution_id,project_id,organization_id,attempt_id,period,kind,event_key,amount_usd,measurement_source,pricing_version,actor_id,created_at",
+        "execution_ledger_entries": "id,execution_id,project_id,organization_id,attempt_id,period,kind,event_key,amount_units,measurement_source,pricing_version,actor_id,created_at",
         "execution_schedules": "execution_id,project_id,plan_id,actor_context,created_at",
         "executions": "id,project_id,environment,origin,mode,manifest_hash,manifest_content,created_by,created_at",
     }

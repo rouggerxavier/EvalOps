@@ -72,5 +72,5 @@ def execution_budget(execution_id: str, request: Request, db: Session = Depends(
             "reserved_limit_usd": format(budget.usd(reservation.reserved_units), "f"),
             "known_spent_usd": format(budget.usd(reservation.spent_units), "f") if reservation.spent_units is not None else None,
             "held_usd": format(budget.usd(reservation.reserved_units if reservation.state != "settled" else 0), "f"),
-            "entries": [{"id": row.id, "kind": row.kind, "amount_usd": format(row.amount_usd, "f"), "measurement_source": row.measurement_source,
+            "entries": [{"id": row.id, "kind": row.kind, "amount_usd": format(budget.usd(row.amount_units), "f"), "measurement_source": row.measurement_source,
                          "pricing_version": row.pricing_version} for row in entries]}

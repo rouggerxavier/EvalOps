@@ -127,3 +127,51 @@ def test_postgres_organization_budget_is_atomic_across_projects(postgres):
         assert db.query(ExecutionReservation).count() == db.query(ExecutionLedgerEntry).count() == 1
         account = db.query(OrganizationExecutionAccount).one()
         assert (account.reserved_units, account.spent_units) == (75000000, 0)
+
+
+@pytest.mark.parametrize("value", ["987654321.98765431", "999999999.99999999"])
+def test_postgres_ledger_amounts_round_trip_exactly(postgres, value):
+    from test_execution_budget import assert_exact_ledger
+    headers, project, _ = harness.bootstrap()
+    assert_exact_ledger(headers, project, value)
+
+
+def test_postgres_cancel_and_admission_share_lock_order(postgres, monkeypatch):
+    """Cancel in A and admission in B (same org/owner) must not deadlock on organization vs identity rows."""
+    import threading
+    from fastapi.testclient import TestClient
+    from test_execution_budget import configure, plan, enqueue
+    from app.domain.tasks import execution_plans
+    headers, project, org = harness.bootstrap()
+    other = harness.post("/projects", {"organization_id": org, "name": "Other", "slug": "other"}, headers)["id"]
+    configure(headers, project, cost="0.25", monthly="1.00", parallel=4)
+    configure(headers, other, cost="0.25", monthly="1.00", parallel=4, organization=False)
+    queued = enqueue(headers, project, plan(headers, project, cost="0.25"))
+    sealed = plan(headers, other, cost="0.25")
+    barrier = threading.Barrier(2, timeout=3)
+    original = execution_plans.authorization
+    def meet():
+        try:
+            barrier.wait()
+        except threading.BrokenBarrierError:
+            pass  # the fixed order blocks the other side on the organization row, so it never arrives
+    def paced(db, actor, request, project_id):
+        # Widen the window: admission holds the organization, cancel holds user/membership.
+        cancelling = request.url.path.endswith("/cancel")
+        if not cancelling:
+            meet()
+        result = original(db, actor, request, project_id)
+        if cancelling:
+            meet()
+        return result
+    monkeypatch.setattr(execution_plans, "authorization", paced)
+    client = TestClient(app, raise_server_exceptions=False)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        cancel = pool.submit(client.post, f"/v1/executions/{queued['id']}/cancel", headers=headers)
+        admit = pool.submit(client.post, f"/v1/projects/{other}/executions", headers={**headers, "Idempotency-Key": "race"}, json={"plan_id": sealed["id"]})
+        statuses = (cancel.result().status_code, admit.result().status_code)
+    assert statuses == (200, 202)
+    from app.models import OrganizationExecutionAccount
+    with postgres() as db:
+        account = db.query(OrganizationExecutionAccount).one()
+        assert (account.reserved_units, account.spent_units) == (25000000, 0)

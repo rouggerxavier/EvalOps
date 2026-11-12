@@ -153,7 +153,9 @@ def cancel_execution(db, actor, identifier, request):
     if execution is None:
         raise HTTPException(404, "not_found")
     project = s.project_access(db, actor, execution.project_id, "evaluate")
+    # Lock order for every budget path: project -> organization -> identity (user/membership/key).
     budget.lock_project(db, execution.project_id)
+    budget.lock_organization(db, project.organization_id)
     db.expire_all()
     db.info.pop("task_sources", None)
     db.info.pop("task_dataset_projects", None)

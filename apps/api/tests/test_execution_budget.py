@@ -62,8 +62,8 @@ def test_exact_fractional_reservations_and_known_zero_cancellation():
         reservation.active = False
         db.commit()
         assert db.get(m.OrganizationExecutionAccount, (org, reservation.period)).reserved_units == 2
-        assert sum(row.amount_usd for row in db.query(m.ExecutionLedgerEntry).filter_by(kind="reserve")) == Decimal("0.00000003")
-        for statement in ("UPDATE execution_ledger_entries SET amount_usd=0", "DELETE FROM execution_ledger_entries"):
+        assert sum(row.amount_units for row in db.query(m.ExecutionLedgerEntry).filter_by(kind="reserve")) == 3
+        for statement in ("UPDATE execution_ledger_entries SET amount_units=0", "DELETE FROM execution_ledger_entries"):
             with pytest.raises(DBAPIError, match="immutable_task_resource"):
                 db.execute(text(statement)); db.commit()
             db.rollback()
@@ -172,3 +172,19 @@ def test_overspend_remains_evidence_and_blocks_next_admission():
         account = db.get(m.OrganizationExecutionAccount, (org, reservation.period))
         assert account.spent_units == 4000000 and account.reserved_units == 0
     enqueue(headers, project, sealed, expected=402)
+
+
+def assert_exact_ledger(headers, project, value):
+    configure(headers, project, cost=value, monthly="1000000000", parallel=1)
+    execution = enqueue(headers, project, plan(headers, project, cost=value))
+    path = f"/v1/executions/{execution['id']}"
+    assert h.client.post(path + "/cancel", headers=headers).status_code == 200
+    balance = h.client.get(path + "/budget", headers=headers).json()
+    assert balance["reserved_limit_usd"] == value
+    assert {entry["kind"]: entry["amount_usd"] for entry in balance["entries"]} == {"reserve": value, "settle": "0.00000000", "release": value}
+
+
+@pytest.mark.parametrize("value", ["987654321.98765431", "999999999.99999999"])
+def test_ledger_amounts_round_trip_exactly(value):
+    headers, project, _ = h.bootstrap()
+    assert_exact_ledger(headers, project, value)

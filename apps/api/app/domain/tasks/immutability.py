@@ -4,7 +4,7 @@ from sqlalchemy import DDL, event
 PROTECTED = {
     "organization_execution_budget_revisions": ("id", "organization_id", "version", "content", "content_hash", "created_by", "created_at"),
     "execution_plans": ("id", "project_id", "environment", "runner_id", "policy_revision_id", "organization_budget_revision_id", "manifest_content", "manifest_hash", "created_by", "created_at"),
-    "execution_ledger_entries": ("id", "execution_id", "project_id", "organization_id", "attempt_id", "period", "kind", "event_key", "amount_usd", "measurement_source", "pricing_version", "actor_id", "created_at"),
+    "execution_ledger_entries": ("id", "execution_id", "project_id", "organization_id", "attempt_id", "period", "kind", "event_key", "amount_units", "measurement_source", "pricing_version", "actor_id", "created_at"),
     "execution_policy_revisions": ("id", "project_id", "version", "content", "content_hash", "created_by", "created_at"),
     "runners": ("id", "project_id", "name", "owner_user_id", "capabilities", "created_at"),
     "execution_schedules": ("execution_id", "project_id", "plan_id", "actor_context", "created_at"),

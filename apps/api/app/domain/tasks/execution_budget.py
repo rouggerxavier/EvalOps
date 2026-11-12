@@ -1,4 +1,7 @@
-"""Decimal ledger with exact int64 quota accounts, serialized on project then organization."""
+"""Ledger and quota accounts in exact int64 units of 10^-8 USD.
+
+Lock order on every path: project -> organization -> identity rows (user/membership/key).
+"""
 from decimal import Decimal
 
 from fastapi import HTTPException
@@ -94,7 +97,7 @@ def accounts(db, project, period):
 def append(db, reservation, *, kind, event_key, amount, actor_id, measurement_source, attempt_id=None, pricing_version="execution-budget@1"):
     row = m.ExecutionLedgerEntry(id=new_id("ledger"), execution_id=reservation.execution_id, project_id=reservation.project_id,
         organization_id=reservation.organization_id, period=reservation.period, kind=kind, event_key=event_key,
-        amount_usd=Decimal(amount), actor_id=actor_id, measurement_source=measurement_source, attempt_id=attempt_id, pricing_version=pricing_version)
+        amount_units=units(amount), actor_id=actor_id, measurement_source=measurement_source, attempt_id=attempt_id, pricing_version=pricing_version)
     db.add(row)
     return row
 
