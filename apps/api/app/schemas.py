@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator
+from pydantic import model_validator, BaseModel, ConfigDict, Field, computed_field, field_validator
 
 from app.timestamps import ServerTimestamp
 
@@ -105,6 +105,7 @@ class OwnershipTransfer(BaseModel):
 class ApiKeyCreate(BaseModel):
     name: str = Field(min_length=2, max_length=255)
     environment: str = Field(pattern=r"^(dev|staging|prod)$")
+    service_principal_id: str | None = None
     # "evaluate" spends judge budget, so it is never a default.
     scopes: list[str] = Field(default_factory=lambda: ["ingest", "read"])
     expires_at: datetime | None = None
@@ -112,7 +113,7 @@ class ApiKeyCreate(BaseModel):
     @field_validator("scopes")
     @classmethod
     def validate_scopes(cls, value: list[str]) -> list[str]:
-        unknown = set(value) - {"ingest", "read", "evaluate"}
+        unknown = set(value) - {"ingest", "read", "evaluate", "write"}
         if unknown:
             raise ValueError(f"unknown scopes: {sorted(unknown)}")
         return value
@@ -128,6 +129,21 @@ class ApiKeyCreate(BaseModel):
         if value <= now:
             raise ValueError("expires_at_must_be_future")
         return value
+
+    @model_validator(mode="after")
+    def principal_expiry(self):
+        if "write" in self.scopes and not self.service_principal_id:
+            raise ValueError("service_principal_required")
+        if self.service_principal_id:
+            from datetime import timedelta
+            expiry = self.expires_at
+            if expiry is None:
+                raise ValueError("principal_key_expiry_required")
+            if expiry.tzinfo is None:
+                expiry = expiry.replace(tzinfo=timezone.utc)
+            if expiry > datetime.now(timezone.utc) + timedelta(days=90):
+                raise ValueError("principal_key_expiry_max_90_days")
+        return self
 
 
 class ApiKeyOut(BaseModel):
@@ -419,6 +435,7 @@ class PromptVersionOut(BaseModel):
 
 
 class DatasetCreate(BaseModel):
+    task_type: Literal["text"] = "text"
     slug: str = Field(min_length=2, max_length=255, pattern=r"^[a-z0-9-]+$")
     description: str | None = None
     source: str = Field(default="manual", min_length=2, max_length=64)
@@ -472,6 +489,7 @@ class ExperimentVariantIn(BaseModel):
 
 
 class ExperimentCreate(BaseModel):
+    kind: Literal["legacy_synthetic"] = "legacy_synthetic"
     name: str = Field(min_length=2, max_length=255)
     dataset_id: str
     rubric_id: str

@@ -6,7 +6,7 @@ from fastapi import FastAPI, Request, status
 from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
-from sqlalchemy import text
+from sqlalchemy import inspect, text
 
 from app.api.routes import router as v1_router
 from app.api.routes_auth import router as auth_router
@@ -18,6 +18,11 @@ from app.api.routes_phase6 import router as phase6_router
 from app.api.routes_trace_actions import router as trace_actions_router
 from app.api.routes_quality_gate import router as quality_gate_router
 from app.api.routes_sampling import router as sampling_router
+from app.api.routes_tasks import router as tasks_router
+from app.api.routes_investigations import router as investigations_router
+from app.api.routes_executions import router as executions_router
+from app.api.routes_runner_control import router as runner_control_router
+from app.api.routes_execution_plans import router as execution_plans_router
 from app.config import max_body_bytes
 from app.db import Base, SessionLocal, engine, ensure_schema_compatibility
 from app.logging_config import access_logger, configure_logging
@@ -54,6 +59,9 @@ async def lifespan(app: FastAPI):
     if _use_alembic():
         _run_alembic_upgrade()
     else:
+        existing = inspect(engine)
+        if existing.has_table("datasets") and "task_type" not in {column["name"] for column in existing.get_columns("datasets")}:
+            raise RuntimeError("task_schema_migration_required: back up and apply Alembic 0014 before starting this version; see docs/ops/database-migrations.md")
         Base.metadata.create_all(bind=engine)
         ensure_schema_compatibility()
     from app.workers.queue import create_arq_pool, close_arq_pool
@@ -93,6 +101,15 @@ async def _validation_error(request: Request, exc: RequestValidationError):
             return JSONResponse(status_code=400, content={"detail": "invalid_reset"})
         detail = "invalid_request" if _route_template(request) == "/v1/auth/forgot-password" else "invalid_password"
         return JSONResponse(status_code=422, content={"detail": detail})
+    if request.url.path.endswith(("/datasets", "/experiments")):
+        try:
+            payload = await request.json()
+        except Exception:
+            payload = {}
+        if isinstance(payload, dict) and (payload.get("task_type") == "regression" or payload.get("kind") == "task_comparison"):
+            return JSONResponse(status_code=422, content={"detail": "invalid_task_payload"})
+    if request.url.path.startswith("/v1/") and any(part in request.url.path for part in ("task-", "prediction-sets", "model-versions", "snapshots", "service-principals", "/cases", "investigations", "/classify")):
+        return JSONResponse(status_code=422, content={"detail": "invalid_task_payload"})
     return await request_validation_exception_handler(request, exc)
 
 
@@ -114,6 +131,8 @@ async def body_size_limit(request: Request, call_next):
     cap to avoid memory pressure on legitimately large chunked streams.
     """
     limit = max_body_bytes()
+    if request.method == "POST" and request.url.path.endswith(("/prediction-sets", "/datasets")):
+        limit = 10 * 1024 * 1024
     declared = request.headers.get("content-length")
     if declared is not None:
         try:
@@ -192,6 +211,11 @@ app.include_router(memberships_router)
 app.include_router(v1_router)
 app.include_router(rubrics_router)
 app.include_router(evaluations_router)
+app.include_router(tasks_router)
+app.include_router(investigations_router)
+app.include_router(executions_router)
+app.include_router(runner_control_router)
+app.include_router(execution_plans_router)
 app.include_router(phase5_router)
 app.include_router(phase6_router)
 app.include_router(trace_actions_router)

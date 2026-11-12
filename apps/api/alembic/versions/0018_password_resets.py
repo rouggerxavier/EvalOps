@@ -1,13 +1,13 @@
 """Single-use, hash-only password recovery requests.
 
-Revision ID: 0014_password_resets
-Revises: 0013_user_credential_version
+Revision ID: 0018_password_resets
+Revises: 0017_runner_policy
 """
 import sqlalchemy as sa
 from alembic import op
 
-revision = "0014_password_resets"
-down_revision = "0013_user_credential_version"
+revision = "0018_password_resets"
+down_revision = "0017_runner_policy"
 branch_labels = None
 depends_on = None
 
