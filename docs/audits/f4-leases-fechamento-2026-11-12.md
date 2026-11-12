@@ -30,6 +30,10 @@ terminalização, settlement idempotente, rollback e composição com D2.
   Incluem preservação de custo de trabalho já running e expiração persistida
   antes de recusar replay.
 - SDK: **2 passed** nos testes runner-only/token/claim/heartbeat/complete.
+- O primeiro CI identificou que a anotação `dict | None` de RunnerClient
+  impedia importar o SDK em Python 3.9. A avaliação de annotations foi adiada,
+  seguindo client.py. O import real em Python 3.9.6 reproduziu o TypeError antes
+  e passou após a correção; a matriz existente de SDK protege esse contrato.
 - Whitespace e diff conferidos; sem alteração de dependências ou segredos.
 
 Comando API, executado em apps/api com Python 3.12 e dependências existentes:

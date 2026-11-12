@@ -1,4 +1,6 @@
 """Runner-scoped HTTP identity. It cannot inherit ordinary API read/write methods."""
+from __future__ import annotations
+
 from evalops.client import _HttpClient, _path_id
 from evalops.uploader import DEFAULT_TIMEOUT_S
 
