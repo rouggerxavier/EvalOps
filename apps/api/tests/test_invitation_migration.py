@@ -1,4 +1,4 @@
-"""0014→0015→0014→0015/check, with existing A2 and membership data retained."""
+"""0019→0020→0019→0020/check, with existing A2 and membership data retained."""
 from pathlib import Path
 import uuid
 
@@ -40,7 +40,7 @@ def test_invitation_migration_roundtrip(monkeypatch):
         with monkeypatch.context() as patch:
             patch.setenv("DATABASE_URL", target)
             patch.setenv("PGOPTIONS", "-csearch_path=" + schema)
-            command.upgrade(cfg, "0014_password_resets")
+            command.upgrade(cfg, "0019_execution_ledger")
             with engine.begin() as conn:
                 conn.execute(text("INSERT INTO organizations (id,name,slug,created_at) VALUES ('old-org','Old','old',CURRENT_TIMESTAMP)"))
                 conn.execute(text("INSERT INTO users (id,email,name,credential_version,created_at) VALUES ('old-user','old@example.invalid','Old',7,CURRENT_TIMESTAMP)"))
@@ -60,7 +60,7 @@ def test_invitation_migration_roundtrip(monkeypatch):
                 with pytest.raises(IntegrityError), engine.begin() as conn:
                     conn.execute(text("INSERT INTO organization_invitations (id,organization_id,email,role,status,created_at,expires_at) VALUES ('bad','old-org','bad@example.invalid',:role,:status,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)"),
                                  {"role": bad_value if bad_column == "role" else "viewer", "status": bad_value if bad_column == "status" else "pending"})
-            command.downgrade(cfg, "0014_password_resets")
+            command.downgrade(cfg, "0019_execution_ledger")
             with engine.begin() as conn:
                 assert "organization_invitations" not in inspect(conn).get_table_names()
                 assert "membership_version" not in {c["name"] for c in inspect(conn).get_columns("organizations")}
