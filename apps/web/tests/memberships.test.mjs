@@ -75,6 +75,7 @@ test("accept transports only a valid token on explicit POST and uses server perm
     const error = (await harness({ failure }).acceptInvitationAction(form({ token: "a".repeat(43) }))).error;
     assert.match(error, /Abra o app para conferir se o acesso já existe/); assert.doesNotMatch(error, /envio|private/);
   }
+  assert.match((await harness({ failure: "API 409: membership_conflict" }).acceptInvitationAction(form({ token: "a".repeat(43) }))).error, /Tente aceitar novamente/);
   assert.match((await harness({ failure: "API 401: private" }).acceptInvitationAction(form({ token: "a".repeat(43) }))).error, /conta pessoal/);
 });
 

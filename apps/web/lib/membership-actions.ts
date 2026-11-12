@@ -64,6 +64,7 @@ export async function acceptInvitationAction(form: FormData): Promise<Membership
   catch (error) {
     if (error instanceof Error && error.message.startsWith("API 400")) return { error: "Este convite é inválido, expirou ou já foi usado. Peça um novo convite." };
     if (error instanceof Error && error.message.startsWith("API 401")) return failure(error);
+    if (error instanceof Error && error.message.startsWith("API 409")) return { error: "O convite está sendo processado. Tente aceitar novamente." };
     return { error: "Não foi possível confirmar o aceite. Abra o app para conferir se o acesso já existe antes de pedir novo convite." };
   }
   revalidatePath("/app");
