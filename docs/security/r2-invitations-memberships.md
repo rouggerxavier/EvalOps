@@ -61,12 +61,12 @@ Não autopromover, normalizar papéis nem recuperar organização sem owner; ess
 organizações precisam de tratamento deliberado. Papéis desconhecidos continuam
 sem capacidades, e organização sem owner não tem ator autorizado a administrá-la.
 
-A revisão 0020_organization_invitations segue 0019_execution_ledger; acrescenta tabela e versão sem alterar dados de R1/A2.
+A revisão 0022_organization_invitations segue 0021_runner_leases; acrescenta tabela e versão sem alterar dados de R1/A2 ou os leases e evidências de F4. A revisão de convites anteriormente proposta como 0020 não foi integrada; sua numeração foi ajustada antes do merge, preservando a migration 0021 já publicada.
 SQLite dev com create_all recebe a coluna pela compatibilidade idempotente já
 existente em app/db.py; ambientes Alembic usam a migração.
 Rollback operacional: desligar novos envios, pausar/remover somente jobs da função
 por ID antes de retirar seu código, conservar schema e R1 (incluindo viewer).
-A2+R1 continua seguro com os campos extras. Downgrade 0020 perde metadados de
+A2+R1 continua seguro com os campos extras. Downgrade de 0022 para 0021 perde metadados de
 convites e só pode ocorrer após parar consumidores e aceitar essa perda; não
 reverte papéis concedidos, credential_version ou resets. Nunca limpar fila global.
 

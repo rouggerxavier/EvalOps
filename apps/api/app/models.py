@@ -959,5 +959,46 @@ class ExecutionSchedule(Base):
     cancel_requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
+
+class ExecutionLease(Base):
+    """One lease per controlled execution; only a hash of the bearer token is stored."""
+    __tablename__ = "execution_leases"
+    __table_args__ = (
+        ForeignKeyConstraint(["execution_id", "project_id"], ["executions.id", "executions.project_id"]),
+        ForeignKeyConstraint(["runner_id", "project_id"], ["runners.id", "runners.project_id"]),
+        UniqueConstraint("runner_id", "claim_key", name="uq_execution_lease_claim"),
+        CheckConstraint("state IN ('active','completed','expired','lost')", name="ck_execution_lease_state"),
+    )
+    execution_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    project_id: Mapped[str] = mapped_column(String(64), index=True)
+    attempt_id: Mapped[str] = mapped_column(String(64), unique=True)
+    runner_id: Mapped[str] = mapped_column(String(64))
+    credential_id: Mapped[str] = mapped_column(ForeignKey("runner_credentials.id"))
+    claim_key: Mapped[str] = mapped_column(String(128))
+    token_hash: Mapped[str] = mapped_column(String(80))
+    state: Mapped[str] = mapped_column(String(16), default="active")
+    report_hash: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    claimed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class ExecutionLateReport(Base):
+    """Runner reports refused after the lease closed; evidence for audited reconciliation only."""
+    __tablename__ = "execution_late_reports"
+    __table_args__ = (
+        ForeignKeyConstraint(["execution_id", "project_id"], ["executions.id", "executions.project_id"]),
+        UniqueConstraint("attempt_id", "content_hash", name="uq_execution_late_report"),
+    )
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    execution_id: Mapped[str] = mapped_column(String(64), index=True)
+    project_id: Mapped[str] = mapped_column(String(64))
+    attempt_id: Mapped[str] = mapped_column(String(64))
+    reason: Mapped[str] = mapped_column(String(64))
+    content: Mapped[str] = mapped_column(Text)
+    content_hash: Mapped[str] = mapped_column(String(80))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
 from app.domain.tasks.immutability import register as _register_task_immutability
 _register_task_immutability(Base.metadata)

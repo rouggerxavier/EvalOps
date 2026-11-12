@@ -1,6 +1,6 @@
 # Planos selados e admissão de execução
 
-Esta entrega F4 prepara planos, reserva orçamento e permite cancelar antes do lease. Não inicia processos. Capabilities anunciam plan_sealing/budget_admission, mas dispatch continua false até entrega de leases e runtime.
+Esta entrega F4 prepara planos, reserva orçamento e permite cancelar antes do lease. O protocolo de [leases e terminalização](runner-leases.md) permite ao runner obter trabalho, renovar o lease e informar o desfecho. A API não inicia processos; dispatch continua false até a entrega do runtime de fixtures.
 
 ## Autoridade e orçamento
 
@@ -16,7 +16,7 @@ Novo plano exige read+write; admissão exige read+write+evaluate, pois a execuç
 2. GET `/v1/execution-plans/{id}` consulta manifest/hash, runner e revisões seladas. GET de lista em `/v1/projects/{p}/execution-plans` tem paginação autorizada. Criar plano não reserva nem executa.
 3. POST `/v1/projects/{p}/executions` com `{plan_id}` e Idempotency-Key retorna 202/queued. Policy/budget devem continuar nas versões seladas no momento da admissão. Reserva é atômica por organização/projeto, antes da fila. Mesma operação não duplica hold; quota excedida retorna 402 e paralelismo 429, sem linhas parciais.
 4. GET `/v1/executions/{id}/budget` mostra teto, hold, gasto conhecido/ausente, slots e ledger. Não inferir gasto zero de ausência. Importações externas não possuem essa reserva.
-5. POST `/v1/executions/{id}/cancel` é idempotente. Em queued, prova ausência de lease e libera hold/slot com settlement conhecido zero. Em running, apenas solicita cancelamento; terminalização depende de ack na entrega seguinte. Owner pode parar trabalho oculto sem receber manifest/fontes; principal continua sujeito às fontes. Execução importada não é cancelável por esse controle.
+5. POST `/v1/executions/{id}/cancel` é idempotente. Em queued, prova ausência de lease e libera hold/slot com settlement conhecido zero. Em running, apenas solicita cancelamento; terminalização depende de ack do runner via complete. Owner pode parar trabalho oculto sem receber manifest/fontes; principal continua sujeito às fontes. Execução importada não é cancelável por esse controle.
 
 SDK: `create_execution_plan`, `get_execution_plan`, `enqueue_execution`, `execution_budget`, `cancel_execution`. Web: Avaliações > Execuções e evidências, preparar plano por arquivo/editor JSON, conferir manifest, reservar/enfileirar e cancelar. Owner configura budget organizacional na página de runners.
 
@@ -36,9 +36,9 @@ USD tem oito casas. Ledger append-only (`amount_units`) e contas de quota guarda
 
 Contas usam período da reserva. Settlement posterior continua nesse período. Slots ativos são somados em todos os períodos; mudar mês não reinicia paralelismo de execução incerta. max_parallel limita slots admitidos, incluindo queued e incerteza sem isolamento; paralelismo interno pesa na reserva.
 
-Gasto unknown mantém hold e slots. Overspend conhecido fica registrado e impede próxima admissão pelo saldo; não truncar valor real reportado. Testes de settlement usam fixtures de custo, não chamadas pagas. Conciliação pública/leases ainda não estão disponíveis nesta entrega; não liberar hold incerto manualmente para habilitar retry.
+Gasto unknown mantém hold; slots ficam retidos enquanto não houver ack de isolamento conforme o protocolo de leases. Overspend conhecido fica registrado e impede próxima admissão e claim de trabalho ainda queued pelo saldo; não truncar valor real reportado. Testes de settlement usam fixtures de custo, não chamadas pagas. Conciliação pública ainda não está disponível; não liberar hold incerto manualmente para habilitar retry.
 
-Identidade original é selada por IDs, scopes, jti/expiry ou key ID e credential_version, sem guardar segredo. Worker futuro revalidará tudo em cada fronteira. Revogação não concede retry nem remove evidência; outro ator autorizado pode consultar/cancelar conforme papel e fontes.
+Identidade original é selada por IDs, scopes, jti/expiry ou key ID e credential_version, sem guardar segredo. Claim (inclusive replay), heartbeat e complete revalidam essa identidade e as autorizações vigentes. Revogação não concede retry nem remove evidência; outro ator autorizado pode consultar/cancelar conforme papel e fontes.
 
 ## Migração e evidência
 

@@ -194,3 +194,31 @@ def test_runner_client_sends_only_runner_header_and_has_no_general_read(monkeypa
     assert runner.capabilities("runner")["dispatch_available"] is False
     assert calls[0].headers["X-EvalOps-Runner-Key"] == "runner-secret"
     assert "X-EvalOps-Key" not in calls[0].headers and not hasattr(runner, "task_result")
+
+
+def test_runner_lease_protocol_sends_token_only_to_its_attempt(monkeypatch):
+    from evalops import RunnerClient
+    calls = []
+    original = httpx.Client
+    def respond(request):
+        calls.append(request)
+        if request.url.path.endswith("/leases") and request.headers.get("Idempotency-Key") == "idle":
+            return httpx.Response(200, json={"lease": None, "retry_after_s": 5})
+        body = {"lease": {"execution_id": "exec/1", "attempt_id": "att", "lease_token": "lease-secret"}} if request.url.path.endswith("/leases") else {"status": "succeeded", "cancel_requested": False}
+        return httpx.Response(200, json=body)
+    transport = httpx.MockTransport(respond)
+    monkeypatch.setattr(httpx, "Client", lambda **kwargs: original(transport=transport, **kwargs))
+    runner = RunnerClient(runner_key="runner-secret", api_url="https://api.example.test/v1")
+    assert runner.claim("runner", idempotency_key="idle") is None
+    lease = runner.claim("runner", idempotency_key="claim-1")
+    assert runner.heartbeat(lease)["cancel_requested"] is False
+    report = {"status": "succeeded", "exit_reason": "fixture", "capture_status": "complete", "cost": {"state": "unknown"}}
+    assert runner.complete(lease, report)["status"] == "succeeded"
+    idle_claim, claim, beat, done = calls
+    assert idle_claim.url.path == "/v1/runners/runner/leases" and idle_claim.headers["Idempotency-Key"] == "idle"
+    assert claim.url.path == "/v1/runners/runner/leases" and claim.headers["Idempotency-Key"] == "claim-1"
+    assert "X-EvalOps-Lease-Token" not in claim.headers
+    assert beat.url.raw_path == b"/v1/executions/exec%2F1/attempts/att/heartbeat"
+    assert beat.headers["X-EvalOps-Lease-Token"] == done.headers["X-EvalOps-Lease-Token"] == "lease-secret"
+    assert json.loads(done.content) == report
+    assert all(call.headers["X-EvalOps-Runner-Key"] == "runner-secret" and "X-EvalOps-Key" not in call.headers for call in calls)

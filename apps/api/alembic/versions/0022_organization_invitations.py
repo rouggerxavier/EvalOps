@@ -1,13 +1,13 @@
 """Organization invitations and serialized membership management.
 
-Revision ID: 0020_organization_invitations
-Revises: 0019_execution_ledger
+Revision ID: 0022_organization_invitations
+Revises: 0021_runner_leases
 """
 import sqlalchemy as sa
 from alembic import op
 
-revision = "0020_organization_invitations"
-down_revision = "0019_execution_ledger"
+revision = "0022_organization_invitations"
+down_revision = "0021_runner_leases"
 branch_labels = None
 depends_on = None
 

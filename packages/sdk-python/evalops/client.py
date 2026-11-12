@@ -30,7 +30,7 @@ class _HttpClient:
             raise ValueError("timeout must be finite and positive")
         self._config = UploaderConfig(api_key=api_key, api_url=api_url.rstrip("/"), timeout=timeout)
 
-    def _request(self, method: str, path: str, *, payload: dict | None = None, idempotency_key: str | None = None, if_match: str | None = None) -> dict[str, Any]:
+    def _request(self, method: str, path: str, *, payload: dict | None = None, idempotency_key: str | None = None, if_match: str | None = None, headers: dict[str, str] | None = None) -> dict[str, Any]:
         config = self._config
         # Feedback has no idempotency key: retrying a timed-out POST can duplicate it.
         attempts = config.max_retries + 1 if method == "GET" else 1
@@ -38,7 +38,7 @@ class _HttpClient:
             try:
                 with httpx.Client(timeout=config.timeout) as client:
                     response = client.request(
-                        method, f"{config.api_url}{path}", headers={self._key_header: config.api_key, **({"Idempotency-Key": idempotency_key} if idempotency_key else {}), **({"If-Match": if_match} if if_match else {})}, json=payload
+                        method, f"{config.api_url}{path}", headers={self._key_header: config.api_key, **({"Idempotency-Key": idempotency_key} if idempotency_key else {}), **({"If-Match": if_match} if if_match else {}), **(headers or {})}, json=payload
                     )
                 response.raise_for_status()
                 return response.json()
