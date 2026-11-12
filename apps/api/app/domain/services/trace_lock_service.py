@@ -9,6 +9,14 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 _sqlite_lock = Lock()
+# ARQ WorkerSettings.max_tries: busy jobs settle on this try instead of being silently dropped.
+JOB_MAX_TRIES = 5
+
+
+def busy_retry_delay(ctx: dict) -> int | None:
+    """Seconds before the next busy retry, or None on the last ARQ try."""
+    job_try = int(ctx.get("job_try") or 1)
+    return None if job_try >= JOB_MAX_TRIES else 5 * job_try
 
 
 @contextmanager

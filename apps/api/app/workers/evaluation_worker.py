@@ -8,7 +8,7 @@ from arq import Retry
 from fastapi import HTTPException
 
 from app.domain.services.eval_service import DuplicateEvaluation, JudgeBudgetExhausted, evaluate_trace
-from app.domain.services.trace_lock_service import trace_execution_lock
+from app.domain.services.trace_lock_service import busy_retry_delay, trace_execution_lock
 from app.models import Project, Rubric, RubricVersion, Trace
 
 logger = logging.getLogger("evalops.worker.evaluation")
@@ -60,6 +60,10 @@ async def evaluate_trace_job(
         _evaluate, ctx["db_session_factory"], trace_id, rubric_id, rubric_version, triggered_by
     )
     if result["status"] == "busy":
-        raise Retry(defer=5)
+        delay = busy_retry_delay(ctx)
+        if delay is not None:
+            raise Retry(defer=delay)
+        logger.warning("evaluation.busy_abandoned", extra={"trace_id": trace_id, "rubric_id": rubric_id})
+        return result
     logger.info("evaluation.job_done", extra={"trace_id": trace_id, "status": result["status"]})
     return result

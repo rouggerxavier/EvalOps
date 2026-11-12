@@ -70,7 +70,8 @@ def trigger_evaluation(
     db.rollback()
     with trace_execution_lock(db, payload.trace_id) as acquired:
         if not acquired:
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="trace_busy")
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="trace_busy",
+                                headers={"Retry-After": "5"})
         trace = load_trace(db, user_id, payload.trace_id, "write")
 
         rubric = load_rubric(db, user_id, payload.rubric_id, "write")

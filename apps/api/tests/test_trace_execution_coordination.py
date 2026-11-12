@@ -200,3 +200,98 @@ def test_redelivered_terminal_replay_keeps_status_without_provider(env, monkeypa
     assert result == {"status": "completed"}
     with env["factory"]() as db:
         assert db.get(Trace, destination_id).metadata_json["replay_status"] == "completed"
+
+
+def test_busy_replay_backs_off_then_returns_reservation_on_last_try(env, monkeypatch):
+    from decimal import Decimal
+    from app.domain.services.trace_lock_service import JOB_MAX_TRIES
+    from app.domain.services.usage_service import current_period, get_or_create_counter
+    from app.workers import replay_worker
+
+    configure(env)
+    original_id, destination_id = ingest(env, "original"), ingest(env, "destination")
+    with env["factory"]() as db:
+        destination = db.get(Trace, destination_id)
+        destination.metadata_json = {"replay_status": "queued", "replay_of": original_id,
+                                     "replay_reserved_usd": "0.5"}
+        replay_worker.book_replay_cost(db, env["org"], current_period(destination.created_at), Decimal("0.5"))
+        db.commit()
+        period = current_period(destination.created_at)
+
+    async def unexpected(*args, **kwargs):
+        pytest.fail("provider called while busy")
+
+    monkeypatch.setattr(replay_worker, "_call_provider", unexpected)
+    with env["factory"]() as holder, trace_execution_lock(holder, original_id) as acquired:
+        assert acquired
+        for job_try in range(1, JOB_MAX_TRIES):
+            with pytest.raises(Retry) as retry:
+                asyncio.run(replay_trace({"db_session_factory": env["factory"], "job_try": job_try},
+                                         original_id, destination_id))
+            assert retry.value.defer_score == 5000 * job_try
+        result = asyncio.run(replay_trace({"db_session_factory": env["factory"], "job_try": JOB_MAX_TRIES},
+                                          original_id, destination_id))
+        postgres = holder.get_bind().dialect.name == "postgresql"
+    with env["factory"]() as db:
+        metadata = db.get(Trace, destination_id).metadata_json
+        reserved = Decimal(str(get_or_create_counter(db, env["org"], period).replay_cost_usd or 0))
+    if postgres:
+        assert result == {"status": "failed", "reason": "trace_busy"}
+        assert metadata["replay_status"] == "failed" and "replay_reserved_usd" not in metadata
+        assert reserved == 0
+    else:
+        # shortcut limit: the SQLite process mutex also covers the destination, so the reservation stays held.
+        assert result == {"status": "busy"} and metadata["replay_status"] == "queued" and reserved == Decimal("0.5")
+
+
+def test_busy_replay_last_try_leaves_running_or_active_destination_alone(env):
+    from app.domain.services.trace_lock_service import JOB_MAX_TRIES
+    from app.workers.replay_worker import _fail_busy_replay
+
+    configure(env)
+    destination_id = ingest(env, "destination")
+    with env["factory"]() as db:
+        db.get(Trace, destination_id).metadata_json = {"replay_status": "running", "replay_reserved_usd": "0.5"}
+        db.commit()
+    assert _fail_busy_replay(env["factory"], destination_id) == {"status": "running"}
+    with env["factory"]() as holder, trace_execution_lock(holder, destination_id) as acquired:
+        assert acquired and JOB_MAX_TRIES > 1
+        assert _fail_busy_replay(env["factory"], destination_id) == {"status": "busy"}
+    with env["factory"]() as db:
+        assert db.get(Trace, destination_id).metadata_json["replay_reserved_usd"] == "0.5"
+
+
+def test_busy_batch_backs_off_then_logs_and_returns_busy_on_last_try(env, monkeypatch):
+    from unittest.mock import Mock
+    from app.domain.services.trace_lock_service import JOB_MAX_TRIES
+    from app.workers import evaluation_worker
+    from app.workers.evaluation_worker import evaluate_trace_job
+    # Logging config in earlier tests can hide records from caplog; assert on the module logger.
+    logger = Mock()
+    monkeypatch.setattr(evaluation_worker, "logger", logger)
+
+    configure(env)
+    trace_id = ingest(env)
+    with env["factory"]() as db, trace_execution_lock(db, trace_id) as acquired:
+        assert acquired
+        for job_try in range(1, JOB_MAX_TRIES):
+            with pytest.raises(Retry) as retry:
+                asyncio.run(evaluate_trace_job({"db_session_factory": env["factory"], "job_try": job_try},
+                                               trace_id, env["rubric"], 1))
+            assert retry.value.defer_score == 5000 * job_try
+        result = asyncio.run(evaluate_trace_job({"db_session_factory": env["factory"], "job_try": JOB_MAX_TRIES},
+                                                trace_id, env["rubric"], 1))
+    assert result == {"status": "busy"}
+    logger.warning.assert_called_once_with("evaluation.busy_abandoned",
+                                           extra={"trace_id": trace_id, "rubric_id": env["rubric"]})
+
+
+def test_manual_busy_sets_retry_after(env):
+    configure(env)
+    trace_id = ingest(env)
+    with env["factory"]() as db, trace_execution_lock(db, trace_id) as acquired:
+        assert acquired
+        response = env["client"].post("/v1/evaluations/run", headers=env["headers"],
+                                      json={"trace_id": trace_id, "rubric_id": env["rubric"]})
+    assert response.status_code == 409 and response.json()["detail"] == "trace_busy"
+    assert response.headers["Retry-After"] == "5"

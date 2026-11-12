@@ -25,7 +25,7 @@ from typing import Any
 from arq import Retry
 
 from app.domain.evaluators import llm_judge
-from app.domain.services.trace_lock_service import trace_execution_lock
+from app.domain.services.trace_lock_service import busy_retry_delay, trace_execution_lock
 from app.domain.services.usage_service import current_period, get_or_create_counter
 from app.infra.llm.pricing import estimate_judge_cost_usd, estimate_tokens, split_provider_model
 from app.models import Span, Trace
@@ -259,7 +259,35 @@ def _ingest_replay_result(
 
 
 async def replay_trace(ctx: dict, original_trace_id: str, new_trace_id: str) -> dict:
-    db_factory = ctx["db_session_factory"]
+    result = await _replay_trace(ctx["db_session_factory"], original_trace_id, new_trace_id)
+    if result["status"] != "busy":
+        return result
+    delay = busy_retry_delay(ctx)
+    if delay is not None:
+        raise Retry(defer=delay)
+    return _fail_busy_replay(ctx["db_session_factory"], new_trace_id)
+
+
+def _fail_busy_replay(db_factory, new_trace_id: str) -> dict:
+    """Last ARQ try: give a still-queued reservation back instead of leaving it held forever."""
+    with db_factory() as db, trace_execution_lock(db, new_trace_id) as acquired:
+        if not acquired:
+            # Another delivery owns the destination and settles it itself.
+            logger.warning("replay.busy_abandoned", extra={"trace_id": new_trace_id})
+            return {"status": "busy"}
+        placeholder = db.get(Trace, new_trace_id)
+        if placeholder is None:
+            return {"status": "failed", "reason": f"trace_not_found:{new_trace_id}"}
+        status = (placeholder.metadata_json or {}).get("replay_status")
+        if status != "queued":
+            # running may already have spent: keep its reservation (pre-existing gap, not settled here).
+            return {"status": status or "unknown"}
+        set_replay_status(db, placeholder, "failed", error="trace_busy")
+        logger.error("replay.failed", extra={"trace_id": new_trace_id, "reason": "trace_busy"})
+        return {"status": "failed", "reason": "trace_busy"}
+
+
+async def _replay_trace(db_factory, original_trace_id: str, new_trace_id: str) -> dict:
     logger.info(
         "replay.started",
         extra={"trace_id": new_trace_id, "original": original_trace_id},
@@ -267,7 +295,7 @@ async def replay_trace(ctx: dict, original_trace_id: str, new_trace_id: str) -> 
 
     with db_factory() as db, trace_execution_lock(db, [original_trace_id, new_trace_id]) as acquired:
         if not acquired:
-            raise Retry(defer=5)
+            return {"status": "busy"}
         try:
             placeholder = _load_trace_or_fail(db, new_trace_id)
         except ValueError as exc:
