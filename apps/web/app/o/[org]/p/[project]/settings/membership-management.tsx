@@ -22,9 +22,21 @@ export function MembershipManagement({ org, project, organizationId, currentUser
   const [list, setList] = useState(invitations);
   const [confirmation, setConfirmation] = useState<{ operation: "remove" | "transfer"; member: Member } | null>(null);
   const dialog = useRef<HTMLDialogElement>(null);
+  const opener = useRef<HTMLElement | null>(null);
+  const membersTitle = useRef<HTMLHeadingElement>(null);
   const busy = useRef(false);
   useEffect(() => { setList(invitations); }, [invitations]);
-  useEffect(() => { if (confirmation) dialog.current?.showModal(); }, [confirmation]);
+  useEffect(() => {
+    if (confirmation) { dialog.current?.showModal(); return; }
+    // The dialog unmounts instead of close(), so focus is restored by hand.
+    const target = opener.current;
+    opener.current = null;
+    if (target) (target.isConnected ? target : membersTitle.current)?.focus();
+  }, [confirmation]);
+  function openConfirmation(event: { currentTarget: HTMLElement }, operation: "remove" | "transfer", member: Member) {
+    opener.current = event.currentTarget;
+    setState({}); setConfirmation({ operation, member });
+  }
   function context(form: FormData) {
     form.set("org", org); form.set("project", project); form.set("organization_id", organizationId);
     return form;
@@ -36,7 +48,9 @@ export function MembershipManagement({ org, project, organizationId, currentUser
       const result = await manageMembershipAction(context(form));
       setState(result);
       if (!result.error) {
-        if (form.get("operation") === "transfer" || (form.get("operation") === "role" && form.get("target") === currentUserId)) setAdminRevoked(true);
+        if (form.get("operation") === "transfer") setAdminRevoked(true);
+        // The opener row or button disappears after remove/transfer; land on the list heading.
+        if (confirmation) opener.current = membersTitle.current;
         setConfirmation(null);
         if (result.leave) router.replace("/app");
         router.refresh();
@@ -72,7 +86,7 @@ export function MembershipManagement({ org, project, organizationId, currentUser
       <p className="ops-note">O convite expira em 24 horas. Emitir novamente invalida os links anteriores para o mesmo email.</p>
     </section> : <p className="ops-note">Acesso de {admin ? "administração" : "consulta"}. Somente um owner pode administrar membros, convites e configurações.</p>}
     <section className="card">
-      <div className="card__header"><h2 className="card__title">Membros</h2></div>
+      <div className="card__header"><h2 className="card__title" ref={membersTitle} tabIndex={-1}>Membros</h2></div>
       {membersError ? <p role="alert" className="ops-empty">{membersError}</p> : <div className="table-wrap"><table className="t">
         <thead><tr><th>Nome e email</th><th>Papel</th><th>Entrou</th>{admin ? <th>Ações</th> : null}</tr></thead>
         <tbody>{members.length === 0 ? <tr><td colSpan={admin ? 4 : 3}>Sem membros nesta página.</td></tr> : members.map((member) => <tr key={member.user_id}>
@@ -80,13 +94,17 @@ export function MembershipManagement({ org, project, organizationId, currentUser
           <td>{member.role}</td>
           <td><time dateTime={member.joined_at}>{new Date(member.joined_at).toLocaleDateString("pt-BR", { timeZone: "UTC" })}</time></td>
           {admin ? <td><div className={styles.actions}>
-            <form onSubmit={submit} className={styles.actions}>
+            {member.role !== "owner" ? <form onSubmit={submit} className={styles.actions}>
               <input type="hidden" name="operation" value="role" /><input type="hidden" name="target" value={member.user_id} />
-              <select name="role" defaultValue={member.role === "member" ? "member" : "viewer"} aria-label={`Novo papel de ${member.email}`} disabled={pending}><option value="viewer">Viewer</option><option value="member">Member</option></select>
+              {/* Owners change only through transfer; unknown roles never get an implicit PATCH. */}
+              <select name="role" required defaultValue={member.role === "member" || member.role === "viewer" ? member.role : ""} aria-label={`Novo papel de ${member.email}`} disabled={pending}>
+                {member.role !== "member" && member.role !== "viewer" ? <option value="" disabled>Manter papel atual ({member.role})</option> : null}
+                <option value="viewer">Viewer</option><option value="member">Member</option>
+              </select>
               <button type="submit" className="btn btn--sm" disabled={pending}>Salvar papel</button>
-            </form>
-            <button type="button" className="btn btn--sm" disabled={pending} aria-label={`Remover ${member.email}`} onClick={() => { setState({}); setConfirmation({ operation: "remove", member }); }}>Remover</button>
-            {member.user_id !== currentUserId && (member.role === "member" || member.role === "viewer") ? <button type="button" className="btn btn--sm" disabled={pending} aria-label={`Transferir para ${member.email}`} onClick={() => { setState({}); setConfirmation({ operation: "transfer", member }); }}>Transferir propriedade</button> : null}
+            </form> : null}
+            <button type="button" className="btn btn--sm" disabled={pending} aria-label={`Remover ${member.email}`} onClick={(event) => openConfirmation(event, "remove", member)}>Remover</button>
+            {member.user_id !== currentUserId && (member.role === "member" || member.role === "viewer") ? <button type="button" className="btn btn--sm" disabled={pending} aria-label={`Transferir para ${member.email}`} onClick={(event) => openConfirmation(event, "transfer", member)}>Transferir propriedade</button> : null}
           </div></td> : null}
         </tr>)}</tbody>
       </table></div>}

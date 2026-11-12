@@ -12,6 +12,7 @@ function reset() {
     { user_id: "owner", name: "Owner QA", email: "owner@example.invalid", role: "owner", joined_at: date },
     { user_id: "member", name: "Member QA", email: "member@example.invalid", role: "member", joined_at: date },
     { user_id: "viewer", name: "Viewer QA", email: "viewer@example.invalid", role: "viewer", joined_at: date },
+    { user_id: "legacy", name: "Legacy QA", email: "legacy@example.invalid", role: "legacy", joined_at: date },
   ];
   invitations = []; calls = []; failure = null;
 }

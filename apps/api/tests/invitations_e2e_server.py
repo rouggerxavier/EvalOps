@@ -6,6 +6,8 @@ Run Next dev on 3136 with EVALOPS_API_BASE_URL=http://127.0.0.1:18146/v1.
 Test controls are loopback-only and exist solely in this opt-in process.
 """
 import os
+import signal
+import sys
 import uuid
 from datetime import datetime, timedelta, timezone
 
@@ -130,6 +132,8 @@ def main():
             memberships = {m.user_id: m.role for m in db.query(Membership).all()}
         return {"calls": calls, "jobs": jobs, "memberships": memberships}
 
+    # uvicorn re-raises SIGTERM after shutdown; turn it into SystemExit so the schema drop runs.
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
     try:
         uvicorn.run(app, host="127.0.0.1", port=18146, access_log=False, proxy_headers=False)
     finally:

@@ -192,34 +192,56 @@ test.describe("R2 real API + PG16 + Redis + in-memory SMTP", () => {
     expect(denied.status()).toBe(403);
 
   });
-  for (const operation of ["role", "remove"]) {
-    test(`self ${operation} immediately refreshes personal permissions`, async ({ page, context, request, baseURL }) => {
+  for (const width of [1280, 390]) {
+    test(`owner rows and unknown role never change implicitly; dialogs restore focus ${width}px`, async ({ page, context, request, baseURL }) => {
+      await page.setViewportSize({ width, height: 900 });
       expect((await request.post(`${control}/_test/membership/recipient/owner`)).ok()).toBe(true);
       await login(context, request, "owner", baseURL!);
       await page.goto(settings);
-      if (operation === "role") {
-        const row = page.getByRole("row").filter({ hasText: "owner@example.invalid" });
-        await row.getByLabel("Novo papel de owner@example.invalid").selectOption("viewer");
-        await row.getByRole("button", { name: "Salvar papel", exact: true }).click();
-        await expect(page.getByText("Somente um owner pode administrar", { exact: false })).toBeVisible();
-        await expect(page.getByRole("link", { name: "Chaves de API", exact: true })).toHaveCount(0);
-        await expect(page.getByRole("button", { name: "Enviar convite", exact: true })).toHaveCount(0);
-        await expect(page.getByRole("heading", { name: "Plano e uso", exact: true })).toHaveCount(0);
-        await page.goto(`${workspace}/traces/trace`);
-        await expect(page.getByRole("heading", { level: 1 })).toContainText("QA Trace");
-        await expect(page.getByRole("button", { name: "Repetir chamada LLM", exact: true })).toHaveCount(0);
-      } else {
-        await page.getByRole("button", { name: "Remover owner@example.invalid", exact: true }).click();
-        await page.getByRole("button", { name: "Confirmar remoção" }).click();
-        await expect(page).toHaveURL(`${baseURL}/app`);
-        await expect(page.getByRole("heading", { name: "Nenhum workspace ainda" })).toBeVisible();
-      }
+      // Owner demotion exists only through transfer, including the current owner's own row.
+      await expect(page.getByLabel("Novo papel de owner@example.invalid")).toHaveCount(0);
+      await expect(page.getByLabel("Novo papel de recipient@example.invalid")).toHaveCount(0);
+      const unknown = page.getByRole("row").filter({ hasText: "unknown@example.invalid" });
+      await expect(unknown.getByLabel("Novo papel de unknown@example.invalid")).toHaveValue("");
+      await expect(unknown.getByRole("option", { name: "Manter papel atual (legacy)" })).toBeDisabled();
+      await unknown.getByRole("button", { name: "Salvar papel", exact: true }).click();
+      const member = page.getByRole("row").filter({ hasText: "member@example.invalid" });
+      await member.getByLabel("Novo papel de member@example.invalid").selectOption("viewer");
+      await member.getByRole("button", { name: "Salvar papel", exact: true }).click();
+      await expect(page.getByRole("status")).toContainText("Alteração concluída");
+      const remove = page.getByRole("button", { name: "Remover viewer@example.invalid", exact: true });
+      await remove.click();
+      await expect(page.getByRole("dialog").getByRole("button", { name: "Cancelar" })).toBeFocused();
+      await page.keyboard.press("Escape");
+      await expect(remove).toBeFocused();
+      await remove.click();
+      await page.getByRole("dialog").getByRole("button", { name: "Cancelar" }).click();
+      await expect(remove).toBeFocused();
+      await remove.click();
+      await page.getByRole("button", { name: "Confirmar remoção" }).click();
+      await expect(page.getByRole("heading", { name: "Membros", exact: true })).toBeFocused();
+      await expect(page.getByRole("row").filter({ hasText: "viewer@example.invalid" })).toHaveCount(0);
       const state = await (await request.get(`${control}/_test/state`)).json();
-      expect(state.memberships.owner).toBe(operation === "role" ? "viewer" : undefined);
-      expect(state.memberships.recipient).toBe("owner");
-      await screenshot(page, `real-self-${operation}`);
+      expect(state.memberships).toMatchObject({ owner: "owner", recipient: "owner", unknown: "legacy", member: "viewer" });
+      expect(state.memberships.viewer).toBeUndefined();
+      expect(state.calls.filter((c: any) => c.method === "PATCH").map((c: any) => c.path)).toEqual([expect.stringMatching(/\/members\/member$/)]);
+      await screenshot(page, `real-owner-unknown-rows-${width}`);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
     });
   }
+  test("self remove immediately refreshes personal permissions", async ({ page, context, request, baseURL }) => {
+    expect((await request.post(`${control}/_test/membership/recipient/owner`)).ok()).toBe(true);
+    await login(context, request, "owner", baseURL!);
+    await page.goto(settings);
+    await page.getByRole("button", { name: "Remover owner@example.invalid", exact: true }).click();
+    await page.getByRole("button", { name: "Confirmar remoção" }).click();
+    await expect(page).toHaveURL(`${baseURL}/app`);
+    await expect(page.getByRole("heading", { name: "Nenhum workspace ainda" })).toBeVisible();
+    const state = await (await request.get(`${control}/_test/state`)).json();
+    expect(state.memberships.owner).toBeUndefined();
+    expect(state.memberships.recipient).toBe("owner");
+    await screenshot(page, "real-self-remove");
+  });
   for (const role of ["viewer", "member"]) {
     test(`${role} has coherent menus and no admin fetch on real API`, async ({ page, context, request, baseURL }) => {
       await login(context, request, role, baseURL!);

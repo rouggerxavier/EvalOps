@@ -12,7 +12,7 @@ const settings = "/o/org/p/project/settings";
 test.describe("invitation UI with local contract fixture", () => {
   test.skip(process.env.E2E_INVITATIONS !== "1", "requires invitations-fake-api.mjs and isolated web server");
   test.beforeEach(async ({ request }) => { expect((await request.post(`${control}/_test/reset`)).ok()).toBe(true); });
-  for (const width of [1280, 375]) {
+  for (const width of [1280, 390]) {
     test(`owner invitation, errors, keyboard confirmation and transfer at ${width}px`, async ({ page, context, baseURL, request }) => {
       await context.addCookies([{ name: "evalops_session", value: "fixture-owner", url: baseURL! }]);
       await page.setViewportSize({ width, height: 900 });
@@ -24,16 +24,31 @@ test.describe("invitation UI with local contract fixture", () => {
       await expect(page.getByRole("cell", { name: "Revogado", exact: true })).toBeVisible();
       await page.getByRole("button", { name: "Emitir novamente para invite@example.invalid" }).click();
       await expect(page.getByRole("cell", { name: "Enviado", exact: true })).toBeVisible();
+      // Owners change only by transfer; an unknown role is never PATCHed implicitly.
+      await expect(page.getByLabel("Novo papel de owner@example.invalid")).toHaveCount(0);
+      const legacy = page.getByRole("row").filter({ hasText: "legacy@example.invalid" });
+      await expect(legacy.getByLabel("Novo papel de legacy@example.invalid")).toHaveValue("");
+      await expect(legacy.getByRole("option", { name: "Manter papel atual (legacy)" })).toBeDisabled();
+      await legacy.getByRole("button", { name: "Salvar papel", exact: true }).click();
+      const afterSave = await (await request.get(`${control}/_test/state`)).json();
+      expect(afterSave.calls.filter((call: { method: string }) => call.method === "PATCH")).toEqual([]);
+      expect(afterSave.members.find((m: { user_id: string }) => m.user_id === "legacy").role).toBe("legacy");
       await request.post(`${control}/_test/failure`, { data: { detail: "membership_conflict" } });
-      await page.getByRole("button", { name: "Remover member@example.invalid", exact: true }).click();
+      const removeMember = page.getByRole("button", { name: "Remover member@example.invalid", exact: true });
+      await removeMember.click();
       const dialog = page.getByRole("dialog", { name: "Remover membro?" });
       await expect(dialog.getByRole("button", { name: "Cancelar" })).toBeFocused();
       await page.keyboard.press("Tab"); await page.keyboard.press("Enter");
       await expect(dialog.getByRole("alert")).toContainText("Atualize a lista");
       await page.keyboard.press("Escape"); await expect(dialog).not.toBeVisible();
-      await page.getByRole("button", { name: "Remover member@example.invalid", exact: true }).click();
+      await expect(removeMember).toBeFocused();
+      await removeMember.click();
+      await dialog.getByRole("button", { name: "Cancelar" }).click();
+      await expect(removeMember).toBeFocused();
+      await removeMember.click();
       await page.getByRole("button", { name: "Confirmar remoção" }).click();
       await expect(page.getByRole("row", { name: /Member QA/ })).toHaveCount(0);
+      await expect(page.getByRole("heading", { name: "Membros", exact: true })).toBeFocused();
       if (artifacts) await page.screenshot({ path: path.join(artifacts, `memberships-owner-${width}.png`), fullPage: true });
       await page.getByRole("button", { name: "Transferir para viewer@example.invalid", exact: true }).click();
       await page.getByRole("button", { name: "Confirmar transferência" }).click();

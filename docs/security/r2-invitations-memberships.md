@@ -29,6 +29,16 @@ se sending/sent/accepted/revoked estiver confirmado, retorna 202. Caso contrári
 Tokens ficam só em memória, no corpo POST de aceite e no fragmento do email.
 Respostas, auditoria, jobs e logs não incluem raw, hash ou link.
 
+Na UI, linhas de owner não têm formulário de papel: rebaixar owner só acontece
+por transferência. Papel desconhecido começa em "Manter papel atual (<papel>)",
+opção desabilitada e obrigatória, então salvar sem escolha não envia PATCH.
+Falha não reconhecida no aceite pede conferir o app antes de novo convite, sem
+prometer acesso.
+
+Lacuna conhecida: Ajustes mostra avaliação automática (sampling) somente com
+`admin`. A API permite a member ler config/jobs (`read`) e repetir job
+(`write`), mas a UI não oferece isso a member. Alinhar exige decisão fora de R2.
+
 ## Operação e rollback
 
 `EVALOPS_INVITATIONS_ENABLED=false` é o default. Manter assim nesta rodada; não

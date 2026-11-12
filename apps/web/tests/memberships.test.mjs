@@ -1,5 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import React from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { loadTs } from "./helpers/load-ts.mjs";
 
 const accepted = { organization_id: "org_id", organization_slug: "team", role: "viewer", permissions: ["read"], already_member: false };
@@ -69,6 +71,11 @@ test("accept transports only a valid token on explicit POST and uses server perm
   assert.equal(restricted.acceptance.role, "legacy"); assert.equal(restricted.href, undefined); assert.equal(unknown.calls.length, 1);
   assert.equal((await harness({ projects: [] }).acceptInvitationAction(form({ token: "a".repeat(43) }))).href, undefined);
   assert.match((await harness({ failure: "API 400: private" }).acceptInvitationAction(form({ token: "a".repeat(43) }))).error, /expirou ou já foi usado/);
+  for (const failure of ["API 503: private", "API 500: private", "boom"]) {
+    const error = (await harness({ failure }).acceptInvitationAction(form({ token: "a".repeat(43) }))).error;
+    assert.match(error, /Abra o app para conferir se o acesso já existe/); assert.doesNotMatch(error, /envio|private/);
+  }
+  assert.match((await harness({ failure: "API 401: private" }).acceptInvitationAction(form({ token: "a".repeat(43) }))).error, /conta pessoal/);
 });
 
 test("personal membership transport never uses fallback and sanitizes HTTP errors", async (t) => {
@@ -84,4 +91,26 @@ test("personal membership transport never uses fallback and sanitizes HTTP error
   assert.equal(calls[0][1].headers.Authorization, "Bearer fresh-personal"); assert.equal(calls[0][1].cache, "no-store");
   response = new Response(JSON.stringify({ detail: "private-token-or-smtp" }), { status: 503 });
   await assert.rejects(api.membershipRequest("/invitations/accept", "POST"), /^Error: API 503: $/);
+});
+
+test("owner rows have no role form and unknown roles need an explicit choice", () => {
+  const { MembershipManagement } = loadTs("app/o/[org]/p/[project]/settings/membership-management.tsx", {
+    "next/navigation": { useRouter: () => ({ refresh() {}, replace() {} }) },
+    "@/lib/membership-actions": { manageMembershipAction: async () => ({}), loadInvitationsAction: async () => ({}) },
+    "./membership-management.module.css": {},
+  });
+  const member = (user_id, role) => ({ user_id, role, name: user_id, email: `${user_id}@example.invalid`, joined_at: "2026-11-09T12:00:00Z" });
+  const html = renderToStaticMarkup(React.createElement(MembershipManagement, {
+    org: "org", project: "project", organizationId: "org_id", currentUserId: "self", canAdmin: true, memberCursor: null, membersError: null,
+    invitations: { data: [], next_cursor: null }, invitationsError: null,
+    members: [member("self", "owner"), member("other-owner", "owner"), member("legacy", "legacy"), member("viewer", "viewer"), member("member", "member")],
+  }));
+  for (const owner of ["self", "other-owner"]) assert.doesNotMatch(html, new RegExp(`Novo papel de ${owner}@`));
+  assert.equal(html.match(/Salvar papel/g).length, 3);
+  const legacy = html.match(/<select[^>]*Novo papel de legacy@[^>]*>(.*?)<\/select>/)[0];
+  assert.match(legacy, /required/);
+  assert.match(legacy, /<option value="" disabled="" selected="">Manter papel atual \(legacy\)<\/option>/);
+  assert.doesNotMatch(legacy, /value="(viewer|member)" selected/);
+  assert.match(html.match(/<select[^>]*Novo papel de viewer@[^>]*>(.*?)<\/select>/)[0], /value="viewer" selected/);
+  assert.match(html.match(/<select[^>]*Novo papel de member@[^>]*>(.*?)<\/select>/)[0], /value="member" selected/);
 });
