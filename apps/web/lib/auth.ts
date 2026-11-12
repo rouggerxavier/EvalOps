@@ -179,3 +179,12 @@ export async function changePasswordWithApi(token: string, payload: {
   });
   if (!res.ok) throw new AuthError("password_change_failed", res.status);
 }
+
+
+export async function recoverPasswordWithApi(path: "forgot-password" | "reset-password", payload: unknown): Promise<void> {
+  const res = await fetch(`${getApiBaseUrl()}/auth/${path}`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload), cache: "no-store",
+  });
+  if (!res.ok) throw new AuthError("recovery_failed", res.status);
+}

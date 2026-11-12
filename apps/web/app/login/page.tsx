@@ -61,6 +61,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Search
               <div className="auth-field">
                 <div className="auth-field__row">
                   <label htmlFor="password">Senha</label>
+                  <Link href="/forgot-password" className="subtle">Esqueci minha senha</Link>
                 </div>
                 <input
                   id="password"

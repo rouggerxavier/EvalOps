@@ -43,14 +43,15 @@ from pathlib import Path
 from sqlalchemy.orm import Session
 
 from app.config import exports_dir
-from app.models import ExportJob, RevokedToken
+from app.models import ExportJob, PasswordReset, RevokedToken
 
 logger = logging.getLogger("evalops.maintenance")
 
 TARGET_ALL = "all"
 TARGET_REVOKED_TOKENS = "revoked-tokens"
 TARGET_EXPORTS = "exports"
-TARGET_CHOICES = (TARGET_ALL, TARGET_REVOKED_TOKENS, TARGET_EXPORTS)
+TARGET_PASSWORD_RESETS = "password-resets"
+TARGET_CHOICES = (TARGET_ALL, TARGET_REVOKED_TOKENS, TARGET_EXPORTS, TARGET_PASSWORD_RESETS)
 
 
 def _now(now: datetime | None) -> datetime:
@@ -276,6 +277,27 @@ def cleanup_expired_export_jobs(
     return summary
 
 
+def cleanup_expired_password_resets(session: Session, *, now: datetime | None = None,
+                                   dry_run: bool = True, limit: int | None = None) -> CleanupSummary:
+    moment = _now(now)
+    summary = CleanupSummary(target="password_resets", dry_run=dry_run)
+    query = session.query(PasswordReset).filter(PasswordReset.expires_at <= moment).order_by(PasswordReset.expires_at)
+    if limit is not None:
+        query = query.limit(limit)
+    rows = query.all()
+    summary.scanned = len(rows)
+    if dry_run:
+        summary.deleted_rows = len(rows)
+    else:
+        # Conditional delete cannot remove a replacement created after the SELECT.
+        for row in rows:
+            summary.deleted_rows += session.query(PasswordReset).filter(
+                PasswordReset.user_id == row.user_id, PasswordReset.request_id == row.request_id,
+                PasswordReset.expires_at <= moment).delete(synchronize_session=False)
+        session.commit()
+    return summary
+
+
 def run_all(
     session: Session,
     *,
@@ -285,6 +307,7 @@ def run_all(
 ) -> list[CleanupSummary]:
     moment = _now(now)
     return [
+        cleanup_expired_password_resets(session, now=moment, dry_run=dry_run, limit=limit),
         cleanup_expired_revoked_tokens(
             session,
             now=moment,
@@ -311,6 +334,8 @@ def run_target(
     moment = _now(now)
     if target == TARGET_ALL:
         return run_all(session, now=moment, dry_run=dry_run, limit=limit)
+    if target == TARGET_PASSWORD_RESETS:
+        return [cleanup_expired_password_resets(session, now=moment, dry_run=dry_run, limit=limit)]
     if target == TARGET_REVOKED_TOKENS:
         return [
             cleanup_expired_revoked_tokens(

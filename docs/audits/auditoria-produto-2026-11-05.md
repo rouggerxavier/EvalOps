@@ -307,6 +307,34 @@ Não foi necessário PG para filtros por coluna/NULL/JOIN, sem mudança de JSON,
 índice ou migration. A [evidência D1](../ocultar-trace-2026-11-09.md) descreve
 limites e reprodução. Revisão e CI continuam gates antes do merge.
 
+### Atualização em 2026-11-09: recuperação de senha
+
+O login oferece recuperação por email. Forgot responde 202 sem revelar se a
+conta existe; reset consome token de uso único, altera a senha e invalida sessões
+pessoais anteriores pelo verificador de versão. API keys permanecem válidas.
+Configuração SMTP/origem/Redis ausente retorna indisponibilidade global antes do
+lookup. O recurso fica desabilitado por padrão e nenhum email real foi enviado.
+
+O worker gera o token bruto; banco guarda somente hash e a fila recebe IDs
+opacos. O link usa fragmento, removido da URL e do estado JSON do histórico após
+captura. Reabertura no mesmo documento e StrictMode foram exercitados. Redis
+limita IP observado e conta; visitantes via Next podem compartilhar o bucket do
+servidor. Crash após claim durável pode perder a mensagem e exigir novo pedido.
+
+A revisão independente encontrou e orientou correções para claim concorrente
+no SQLite, consumo de cota de conta por IP bloqueado, timezone PG, token no
+histórico Next, reabertura por hash e mensagem de indisponibilidade. As regressões
+foram reproduzidas e corrigidas. Evidência: FULL API anterior ao delta com 696
+passes e 14 skips; composição final com R1/D1 em 166 testes API e 36 Node, além de
+typecheck/build e quatro E2E em produção local e quatro em dev/StrictMode.
+PostgreSQL 16, Redis e caixa de entrada falsa foram isolados. Revisão final e CI
+continuam obrigatórios antes do merge.
+
+Aplique a migration 0014 antes de API/worker e preserve 0013/verificador de
+versão no rollback. [Operação e limites](../ops/recuperacao-senha.md) e
+[evidências](recuperacao-senha.md). Retenção, exclusão física, convites e gestão
+de membros continuam pendentes.
+
 ## Segurança
 
 | # | Achado | Onde | Evidência |
@@ -360,8 +388,8 @@ limites e reprodução. Revisão e CI continuam gates antes do merge.
 
 | Área | Falta | Evidência |
 |---|---|---|
-| Conta | **Parcial:** troca autenticada de senha e encerramento das sessões pessoais disponíveis em Conta. Recuperar senha, editar perfil e excluir conta continuam pendentes; senha esquecida ainda exige intervenção. | Troca implementada e testada; recuperação pública não existe |
-| Organização | Convidar membro, remover, papéis. Criar e trocar de organização tem API (`/v1/organizations`), sem tela. | Provado (sem rota) |
+| Conta | **Parcial:** troca autenticada, encerramento das sessões e recuperação por email implementados. Recuperação exige SMTP/origem/Redis configurados; editar perfil e excluir conta continuam pendentes. | Gates isolados com mailer falso; entrega real não verificada |
+| Organização | Backend verifica owner/member/viewer no banco; member não administra. Convites, remoção, transferência e controles de UI por papel continuam pendentes. Criar e trocar de organização tem API (`/v1/organizations`), sem tela. | Inventário de permissões R1 e testes de negação |
 | Exclusão | **Parcial:** o detalhe permite ocultar trace com sessão pessoal e confirmação. É exclusão lógica: avaliações históricas, datasets, exports, auditoria e backups permanecem independentes. Exclusão física e DELETE de rubrica/prompt/dataset/experimento/projeto/organização continuam pendentes. | Ocultação implementada; purge fora desta fatia |
 | Edição | Rubrica sem reverter versão; item de dataset e experimento não editam. | Provado (sem rota) |
 | Dataset | "Adicionar este trace ao dataset" a partir do trace, e correção humana virando exemplo. | Leitura |
