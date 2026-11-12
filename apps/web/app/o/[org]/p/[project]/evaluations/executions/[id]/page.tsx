@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ControlledResult } from "./ControlledResult";
 import { AuthRequiredPanel } from "@/components/AuthRequiredPanel";
 import { hasAuthToken, resolveProject, taskRead } from "@/lib/api";
 import type { ImportedExecution } from "@/lib/execution-types";
@@ -8,6 +9,10 @@ export default async function ExecutionPage({ params }: { params: Promise<{ org:
   const resolved = await resolveProject(org, project);
   const result = await taskRead<ImportedExecution>(`/executions/${encodeURIComponent(id)}`);
   if (result.project_id !== resolved.project_id) throw new Error("Execução não pertence ao projeto.");
+  if (result.capture_origin === "controlled_runner") {
+    const capabilities = await taskRead<{ permissions: string[] }>(`/projects/${resolved.project_id}/capabilities`);
+    return <ControlledResult result={result} org={org} project={project} canCancel={capabilities.permissions.includes("evaluate")} />;
+  }
   const base = `/o/${org}/p/${project}`;
   return <div className="page ops-page"><header className="ops-page-header"><div><h1>Captura externa de execução</h1><p style={{ overflowWrap: "anywhere" }}>{result.id} · {result.environment} · {result.mode}</p></div><Link href={`${base}/evaluations/executions`}>Todas as capturas</Link></header>
     <section className="card"><h2>Status declarado: {result.status}</h2><p>Proveniência parcial. A API verifica vínculos e integridade, mas não verifica o processo externo. Status de execução não aprova qualidade.</p><p>Limites do manifest são declarados pelo produtor. Esta importação não reserva orçamento nem autoriza repetir chamadas.</p><p style={{ overflowWrap: "anywhere" }}>Manifest: {result.manifest_hash}</p></section>

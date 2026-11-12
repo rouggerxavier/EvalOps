@@ -107,3 +107,22 @@ def test_registry_pagination_and_detail_preserve_scope_and_never_return_secret()
     with SessionLocal() as db:
         with pytest.raises(DBAPIError, match="immutable_task_resource"):
             db.execute(text("UPDATE runners SET capabilities='{}'")); db.commit()
+
+
+def test_old_policy_and_registration_receipts_survive_new_default_limits():
+    from app.domain.tasks.contracts import digest
+    headers, project, _ = h.bootstrap()
+    policy_path = f"/v1/projects/{project}/execution-policy"
+    policy_headers = {**headers, "If-Match": "0", "Idempotency-Key": "legacy-policy"}
+    first = h.client.put(policy_path, headers=policy_headers, json={})
+    assert first.status_code == 200
+    runner = h.post(f"/projects/{project}/runners", runner_body(), headers, key="legacy-runner")
+    with SessionLocal() as db:
+        policy_receipt = db.query(m.TaskReceipt).filter_by(key="legacy-policy").one()
+        policy_receipt.body_hash = digest({"enabled": False, "environments": ["dev"], "allowed_adapters": [],
+            "max_cost_per_run_usd": "0", "monthly_budget_usd": "0", "max_parallel": 1, "effects_policy": "fixtures_only"})
+        runner_receipt = db.query(m.TaskReceipt).filter_by(key="legacy-runner").one()
+        runner_receipt.body_hash = digest({**runner_body(), "isolation": "client_managed"})
+        db.commit()
+    assert h.client.put(policy_path, headers=policy_headers, json={}).json() == first.json()
+    assert h.post(f"/projects/{project}/runners", runner_body(), headers, key="legacy-runner") == runner
