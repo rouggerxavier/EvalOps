@@ -272,7 +272,8 @@ def _fail_busy_replay(db_factory, new_trace_id: str) -> dict:
     """Last ARQ try: give a still-queued reservation back instead of leaving it held forever."""
     with db_factory() as db, trace_execution_lock(db, new_trace_id) as acquired:
         if not acquired:
-            # Another delivery owns the destination and settles it itself.
+            # On Postgres another delivery owns the destination and settles it itself.
+            # shortcut: SQLite's global mutex also blocks here, so a busy replay keeps its reservation; use Postgres for workers.
             logger.warning("replay.busy_abandoned", extra={"trace_id": new_trace_id})
             return {"status": "busy"}
         placeholder = db.get(Trace, new_trace_id)
