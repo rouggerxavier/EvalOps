@@ -1,7 +1,7 @@
 """execution_ledger
 
-Revision ID: 0018_execution_ledger
-Revises: 0017_runner_policy
+Revision ID: 0019_execution_ledger
+Revises: 0018_password_resets
 Create Date: 2026-11-10 18:25:22.238701
 
 """
@@ -13,8 +13,8 @@ from alembic import op
 import sqlalchemy as sa
 
 
-revision: str = '0018_execution_ledger'
-down_revision: Union[str, Sequence[str], None] = '0017_runner_policy'
+revision: str = '0019_execution_ledger'
+down_revision: Union[str, Sequence[str], None] = '0018_password_resets'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

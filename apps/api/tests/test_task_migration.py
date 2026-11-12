@@ -134,7 +134,7 @@ def test_execution_admission_migration_preserves_imported_capture(dialect, tmp_p
             with pytest.raises(DBAPIError, match="immutable_task_resource"):
                 with engine.begin() as conn:
                     conn.execute(text(statement))
-        alembic("downgrade", "0017_runner_policy")
+        alembic("downgrade", "0018_password_resets")
         assert values() == expected
         alembic("upgrade", "head")
         assert values() == expected
@@ -144,11 +144,11 @@ def test_execution_admission_migration_preserves_imported_capture(dialect, tmp_p
                 id="budget", organization_id="org", version=1,
                 content={"enabled": False, "monthly_budget_usd": "0", "max_parallel": 1},
                 content_hash="sha256:" + "0" * 64, created_by="fixture", created_at=now))
-        refused = subprocess.run([sys.executable, "-m", "alembic", "downgrade", "0017_runner_policy"], cwd=API_ROOT, env=env, capture_output=True, text=True)
+        refused = subprocess.run([sys.executable, "-m", "alembic", "downgrade", "0018_password_resets"], cwd=API_ROOT, env=env, capture_output=True, text=True)
         assert refused.returncode != 0 and "execution_ledger_downgrade_requires_empty_tables" in refused.stderr
         assert values() == expected
         with engine.connect() as conn:
-            assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == "0018_execution_ledger"
+            assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == "0019_execution_ledger"
     finally:
         engine.dispose()
         if schema:

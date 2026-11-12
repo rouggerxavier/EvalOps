@@ -42,7 +42,7 @@ Identidade original é selada por IDs, scopes, jti/expiry ou key ID e credential
 
 ## Migração e evidência
 
-Migration 0018 é aditiva para budget/planos/ledger e amplia estados de Execution. Capturas existentes recebem origin=external_import; conteúdo/hash/status terminal permanecem intactos e imutáveis. Guards bloqueiam UPDATE e DELETE do ledger. Downgrade recusa planos, reservas, contas ou execuções controladas. Antes de rollback de código, desabilite admissão e cancele queued na versão compatível. Preserve banco e reservas incertas; código anterior não deve interpretar execuções controladas como capturas importadas. Restaure versão compatível para conciliação.
+Migration 0019 (após `0018_password_resets`) é aditiva para budget/planos/ledger e amplia estados de Execution. Capturas existentes recebem origin=external_import; conteúdo/hash/status terminal permanecem intactos e imutáveis. Guards bloqueiam UPDATE e DELETE do ledger. Downgrade recusa planos, reservas, contas ou execuções controladas. Antes de rollback de código, desabilite admissão e cancele queued na versão compatível. Preserve banco e reservas incertas; código anterior não deve interpretar execuções controladas como capturas importadas. Restaure versão compatível para conciliação.
 
 Gates verificam frações de USD, concorrência entre projetos da mesma organização, hold unknown/paralelismo entre períodos, overspend, permissões/IDOR, recibos antigos e revogação original. Round-trip SQLite/PostgreSQL preserva capturas anteriores e seus guards. E2E 375/1280 px confere reserva/cancelamento contra API; nenhum processo externo ou chamada paga participa desses testes.
 
