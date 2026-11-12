@@ -435,10 +435,15 @@ def serialize(row):
         db = object_session(row)
         attempts = db.query(m.ExecutionAttempt).filter_by(execution_id=row.id).order_by(m.ExecutionAttempt.attempt_number).all()
         schedule = db.get(m.ExecutionSchedule, row.id) if row.origin == "controlled_runner" else None
+        lease = db.get(m.ExecutionLease, row.id) if schedule else None
+        moment = lambda value: server_timestamp(value).isoformat() if value else None
         return {**common, "schema_version": 1, "kind": "execution", "mode": row.mode, "environment": row.environment,
                 "status": row.status, "manifest_hash": row.manifest_hash, "manifest": json.loads(row.manifest_content),
                 "capture_origin": row.origin, "decision": None,
-                **({"control": {"plan_id": schedule.plan_id, "cancel_requested_at": server_timestamp(schedule.cancel_requested_at).isoformat() if schedule.cancel_requested_at else None}} if schedule else {}),
+                **({"control": {"plan_id": schedule.plan_id, "cancel_requested_at": moment(schedule.cancel_requested_at),
+                                 "lease": {"attempt_id": lease.attempt_id, "runner_id": lease.runner_id, "state": lease.state,
+                                           "claimed_at": moment(lease.claimed_at), "heartbeat_at": moment(lease.heartbeat_at),
+                                           "expires_at": moment(lease.expires_at), "ended_at": moment(lease.ended_at)} if lease else None}} if schedule else {}),
                 "attempts": [{"id": attempt.id, "attempt_number": attempt.attempt_number, "result_hash": attempt.result_hash,
                               "result": json.loads(attempt.result_content)} for attempt in attempts]}
     if isinstance(row, m.ServicePrincipal):

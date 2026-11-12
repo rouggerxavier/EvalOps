@@ -262,12 +262,13 @@ def test_new_route_inventory_denies_missing_roles_without_mutation(role):
     token = {"Authorization": "Bearer " + create_access_token(sub="actor", email="actor@example.com", name="Actor"), "Idempotency-Key": "denied"}
     ids = dict(project_id=project, dataset_id=dataset["id"], snapshot_id=snap["id"], model_id=model["id"],
                set_id=predictions["id"], evaluation_id=evaluation["id"], principal_id=principal["id"],
-               resource_id=snap["id"], kind="snapshot", experiment_id="missing", item_id=item_id, investigation_id=investigation["id"], trace_id="trace", execution_id=imported_execution["id"], runner_id=runner["id"], credential_id=runner_key["id"], plan_id=sealed_plan["id"])
+               resource_id=snap["id"], kind="snapshot", experiment_id="missing", item_id=item_id, investigation_id=investigation["id"], trace_id="trace", execution_id=imported_execution["id"], runner_id=runner["id"], credential_id=runner_key["id"], plan_id=sealed_plan["id"], attempt_id="missing")
     bodies = {
         "/v1/projects/{project_id}/organization-execution-budget": {},
         "/v1/projects/{project_id}/execution-plans": {"runner_id": runner["id"], "manifest": execution_payload(snap, model, predictions)["manifest"]},
         "/v1/projects/{project_id}/executions": {"plan_id": sealed_plan["id"]},
         "/v1/projects/{project_id}/execution-policy": {},
+        "/v1/executions/{execution_id}/attempts/{attempt_id}/complete": {"status": "failed", "exit_reason": "denied", "capture_status": "uncertain", "cost": {"state": "unknown"}},
         "/v1/projects/{project_id}/runners": runner_body(),
         "/v1/runners/{runner_id}/credentials": {"expires_at": (m.utcnow()+timedelta(hours=1)).isoformat()},
         "/v1/projects/{project_id}/execution-imports": execution_payload(snap, model, predictions),

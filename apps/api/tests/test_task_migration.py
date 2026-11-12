@@ -148,7 +148,7 @@ def test_execution_admission_migration_preserves_imported_capture(dialect, tmp_p
         assert refused.returncode != 0 and "execution_ledger_downgrade_requires_empty_tables" in refused.stderr
         assert values() == expected
         with engine.connect() as conn:
-            assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == "0019_execution_ledger"
+            assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one() in {"0019_execution_ledger", "0021_runner_leases"}  # PG rolls back the whole refused downgrade
     finally:
         engine.dispose()
         if schema:

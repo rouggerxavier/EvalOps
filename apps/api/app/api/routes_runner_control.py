@@ -7,6 +7,8 @@ from sqlalchemy.orm import Session
 
 from app import models as m
 from app.api.routes_tasks import task_db
+from app.domain.tasks import execution_budget as budget
+from app.domain.tasks import runner_leases as leases
 from app.domain.tasks import service as s
 from app.domain.tasks.contracts import Contract
 from app.domain.tasks.runner_control import ExecutionPolicy, RunnerRegistration, authenticate_runner, policy_revision, register_runner
@@ -69,6 +71,7 @@ def disable_runner(runner_id: str, request: Request, db: Session = Depends(task_
         if runner.disabled_at is None:
             runner.disabled_at = m.utcnow()
             s.audit(db, actor, runner.project_id, "runner.disabled", f"runner:{runner.id}")
+            leases.drop_runner_leases(db, runner.project_id, "runner_disabled", runner_id=runner.id)
         return "runner", runner
     return s.serialize(s.write(db, actor, request, runner.project_id, {}, disable))
 
@@ -110,9 +113,12 @@ def revoke_credential(runner_id: str, credential_id: str, request: Request, db: 
     if credential is None or credential.runner_id != runner_id:
         raise HTTPException(404, "not_found")
     s.project_access(db, actor, credential.project_id, "admin")
+    budget.lock_project(db, credential.project_id)
+    db.refresh(credential)
     if credential.revoked_at is None:
         credential.revoked_at = m.utcnow()
         s.audit(db, actor, credential.project_id, "runner.credential.revoked", f"runner:{credential.runner_id}")
+        leases.drop_runner_leases(db, credential.project_id, "runner_credential_revoked", credential_id=credential.id)
     return {"id": credential.id, "revoked_at": server_timestamp(credential.revoked_at).isoformat()}
 
 
@@ -120,4 +126,20 @@ def revoke_credential(runner_id: str, credential_id: str, request: Request, db: 
 def runner_capabilities(runner_id: str, request: Request, db: Session = Depends(task_db)):
     runner, _ = authenticate_runner(db, runner_id, request.headers.get("x-evalops-runner-key"))
     return {"runner_id": runner.id, "project_id": runner.project_id, "capabilities": runner.capabilities,
-            "dispatch_available": False, "managed_sandbox": False}
+            "leases_available": True, "dispatch_available": False, "managed_sandbox": False}
+
+
+@router.post("/runners/{runner_id}/leases")
+def claim_lease(runner_id: str, request: Request, response: Response, db: Session = Depends(task_db)):
+    response.headers["Cache-Control"] = "no-store"
+    return leases.claim(db, runner_id, request.headers.get("x-evalops-runner-key"), request.headers.get("idempotency-key", ""))
+
+
+@router.post("/executions/{execution_id}/attempts/{attempt_id}/heartbeat")
+def heartbeat(execution_id: str, attempt_id: str, request: Request, db: Session = Depends(task_db)):
+    return leases.heartbeat(db, execution_id, attempt_id, request.headers.get("x-evalops-runner-key"), request.headers.get("x-evalops-lease-token"))
+
+
+@router.post("/executions/{execution_id}/attempts/{attempt_id}/complete")
+def complete(execution_id: str, attempt_id: str, payload: leases.RunnerReport, request: Request, db: Session = Depends(task_db)):
+    return leases.complete(db, execution_id, attempt_id, request.headers.get("x-evalops-runner-key"), request.headers.get("x-evalops-lease-token"), payload)

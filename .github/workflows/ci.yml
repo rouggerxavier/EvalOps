@@ -75,7 +75,7 @@ jobs:
       - name: Verify task migrations and PostgreSQL concurrency
         run: |
           alembic check
-          pytest -q tests/test_task_migration.py tests/test_offline_task_postgres.py
+          pytest -q tests/test_task_migration.py tests/test_offline_task_postgres.py tests/test_runner_leases_postgres.py
 
   test-sdk:
     runs-on: mac-ci

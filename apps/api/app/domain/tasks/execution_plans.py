@@ -49,7 +49,9 @@ def approved(db, actor, project_id, manifest, runner_id):
     if manifest.mode not in {"local_model", "application_adapter", "agent_behavioral"}:
         raise HTTPException(422, "execution_mode_not_dispatchable")
     limits = manifest.limits
-    if (limits.max_cost_usd > policy.max_cost_per_run_usd or limits.max_parallel > policy.max_parallel
+    if (limits.max_cost_usd > policy.max_cost_per_run_usd
+            or limits.max_cost_usd > organization_policy.monthly_budget_usd
+            or limits.max_parallel > policy.max_parallel
             or limits.max_parallel > organization_policy.max_parallel
             or limits.max_parallel > runner.capabilities.get("max_parallel", 1)
             or limits.wall_time_s > policy.max_wall_time_s or limits.max_tool_calls > policy.max_tool_calls
@@ -159,6 +161,8 @@ def cancel_execution(db, actor, identifier, request):
     db.expire_all()
     db.info.pop("task_sources", None)
     db.info.pop("task_dataset_projects", None)
+    from app.domain.tasks.runner_leases import expire_lapsed
+    expire_lapsed(db, execution.project_id)
     s.project_access(db, actor, execution.project_id, "evaluate")
     if actor.principal_id:
         s.revalidate_principal(db, request.state.api_key_id)
