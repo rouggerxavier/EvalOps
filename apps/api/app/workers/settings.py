@@ -8,6 +8,7 @@ import logging
 from typing import Any
 
 from app.config import redis_url, worker_concurrency
+from app.domain.services.trace_lock_service import JOB_MAX_TRIES
 from app.workers.evaluation_worker import evaluate_trace_job
 from app.workers.maintenance_worker import maintenance_cleanup_job, maintenance_hour, maintenance_timezone
 from app.workers.password_recovery_worker import send_password_reset_job
@@ -55,5 +56,6 @@ class WorkerSettings:
     timezone = maintenance_timezone()
     redis_settings = _redis_settings()
     max_jobs = worker_concurrency()
+    max_tries = JOB_MAX_TRIES
     on_startup = startup
     on_shutdown = shutdown
