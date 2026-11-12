@@ -70,7 +70,7 @@ no-referrer, noindex/nofollow e resposta no-store. Senha/token não retornam nos
 
 ## Persistência, concorrência e falhas
 
-Migration `0014_password_resets`, após0013: uma linha por usuário, request_id único,
+Migration `0018_password_resets`, após `0017_runner_policy`: uma linha por usuário, request_id único,
 versão esperada, status, timestamps e somente hashSHA256 único do token. A API
 substitui o pedido anterior sob lock do usuário. ARQ recebe somente ID opaco do
 usuário (aleatório no no-op), versão esperada, ID do pedido e instante do pedido.
@@ -103,10 +103,10 @@ ou `python -m app.maintenance.cleanup --target password-resets --dry-run` / `--a
 
 ## Publicação e rollback
 
-Aplique0014 antes das rotas/workers. Preserve o corte seguro de instâncias que
+Aplique0018 antes das rotas/workers. Preserve o corte seguro de instâncias que
 revalidam `credential_version` descrito em [Conta](conta-senha.md). Para desabilitar,
 esvazie SMTP/origem; para remover código, drene jobs de recuperação primeiro.
-Downgrade de0014 remove somente pedidos e links; não remova0013 nem o verificador de
+Downgrade de0018 remove somente pedidos e links; não remova0013 nem o verificador de
 versão após troca/reset real. Não rotacione/remova segredos de produção nesta sessão.
 
 ## Verificação isolada

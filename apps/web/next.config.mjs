@@ -1,5 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  experimental: { serverActions: { bodySizeLimit: "12mb" } },
   async headers() {
     return ["/forgot-password", "/reset-password"].map((source) => ({ source, headers: [
       { key: "Referrer-Policy", value: "no-referrer" },

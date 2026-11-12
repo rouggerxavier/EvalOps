@@ -107,7 +107,7 @@ export function TraceHeaderActions({ org, project, traceId, rubrics, compareCand
         </button>
       )}
       <button type="button" className="btn" onClick={() => setOpen("rerun")}>
-        <Play size={12} /> Reexecutar
+        <Play size={12} /> Repetir chamada LLM
       </button>
       <button type="button" className="btn btn--primary" onClick={() => setOpen("evaluate")}>
         <Target size={12} /> Avaliar
@@ -135,7 +135,7 @@ export function TraceHeaderActions({ org, project, traceId, rubrics, compareCand
         </form>
       </Modal>
 
-      <Modal open={open === "rerun"} onClose={close} title="Reexecutar trace" subtitle="POST /v1/traces/{id}/rerun">
+      <Modal open={open === "rerun"} onClose={close} title="Repetir chamada LLM" subtitle="Repete uma chamada de modelo. Não executa o agente completo e pode consumir orçamento.">
         <form action={rerunTraceAction}>
           <input type="hidden" name="org" value={org} />
           <input type="hidden" name="project" value={project} />
@@ -148,7 +148,7 @@ export function TraceHeaderActions({ org, project, traceId, rubrics, compareCand
           </Field>
           <div style={actionsStyle}>
             <button type="button" className="btn btn--sm" onClick={close}>Cancelar</button>
-            <button type="submit" className="btn btn--sm btn--primary"><Play size={12} /> Reexecutar</button>
+            <button type="submit" className="btn btn--sm btn--primary"><Play size={12} /> Repetir chamada LLM</button>
           </div>
         </form>
       </Modal>

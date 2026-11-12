@@ -618,3 +618,19 @@ export async function retrySamplingJob(projectId: string, traceId: string, confi
     method: "POST", body: JSON.stringify({ confirm_possible_charge: confirmPossibleCharge }),
   });
 }
+
+export async function taskWrite<T>(path: string, payload: unknown, idempotencyKey: string): Promise<T> {
+  return requestJson<T>(path, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(payload) });
+}
+
+export async function taskRead<T>(path: string): Promise<T> {
+  return requestJson<T>(path);
+}
+
+export async function taskPatch<T>(path: string, payload: unknown, revision: number, idempotencyKey: string): Promise<T> {
+  return requestJson<T>(path, { method: "PATCH", headers: { "Idempotency-Key": idempotencyKey, "If-Match": String(revision) }, body: JSON.stringify(payload) });
+}
+
+export async function taskPut<T>(path: string, payload: unknown, revision: number, idempotencyKey: string): Promise<T> {
+  return requestJson<T>(path, { method: "PUT", headers: { "If-Match": String(revision), "Idempotency-Key": idempotencyKey }, body: JSON.stringify(payload) });
+}

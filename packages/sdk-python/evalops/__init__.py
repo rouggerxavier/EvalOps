@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from evalops.client import Client
+from evalops.runner import RunnerClient
 from evalops.tracer import EvalOpsTracer
 from evalops.uploader import DEFAULT_TIMEOUT_S, ReplayResult, replay_dead_letter as _replay_dead_letter
 

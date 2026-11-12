@@ -85,8 +85,24 @@ class QualityGateConfig(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
 
+class ServicePrincipal(Base):
+    __tablename__ = "service_principals"
+    __table_args__ = (UniqueConstraint("id", "project_id", name="uq_principal_project"),)
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"), index=True)
+    name: Mapped[str] = mapped_column(String(255))
+    owner_user_id: Mapped[str] = mapped_column(ForeignKey("users.id"))
+    disabled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class ApiKey(Base):
     __tablename__ = "api_keys"
+    __table_args__ = (ForeignKeyConstraint(["service_principal_id", "project_id"],
+        ["service_principals.id", "service_principals.project_id"], name="fk_key_principal_project"),)
+
+    service_principal_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     project_id: Mapped[str] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
@@ -322,7 +338,11 @@ class PromptVersion(Base):
 
 class Dataset(Base):
     __tablename__ = "datasets"
-    __table_args__ = (UniqueConstraint("project_id", "slug", name="uq_datasets_project_slug"),)
+
+    task_type: Mapped[str] = mapped_column(String(32), default="text", server_default="text")
+    task_schema: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    access_label: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    __table_args__ = (UniqueConstraint("project_id", "slug", name="uq_datasets_project_slug"), UniqueConstraint("id", "project_id", name="uq_dataset_project"))
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     project_id: Mapped[str] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
@@ -337,6 +357,8 @@ class Dataset(Base):
 class DatasetItem(Base):
     __tablename__ = "dataset_items"
 
+    access_label: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     dataset_id: Mapped[str] = mapped_column(ForeignKey("datasets.id", ondelete="CASCADE"), index=True)
     ord: Mapped[int] = mapped_column(Integer, default=0)
@@ -350,12 +372,17 @@ class DatasetItem(Base):
 
 class Experiment(Base):
     __tablename__ = "experiments"
+    __table_args__ = (CheckConstraint("(kind = 'legacy_synthetic' AND rubric_id IS NOT NULL) OR (kind = 'task_comparison' AND snapshot_id IS NOT NULL)", name="ck_experiment_kind"),
+        ForeignKeyConstraint(["snapshot_id", "project_id"], ["dataset_snapshots.id", "dataset_snapshots.project_id"], name="fk_experiment_snapshot"),)
+
+    kind: Mapped[str] = mapped_column(String(32), default="legacy_synthetic", server_default="legacy_synthetic")
+    snapshot_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     project_id: Mapped[str] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
     name: Mapped[str] = mapped_column(String(255))
     dataset_id: Mapped[str] = mapped_column(ForeignKey("datasets.id", ondelete="RESTRICT"), index=True)
-    rubric_id: Mapped[str] = mapped_column(ForeignKey("rubrics.id", ondelete="RESTRICT"), index=True)
+    rubric_id: Mapped[str | None] = mapped_column(ForeignKey("rubrics.id", ondelete="RESTRICT"), nullable=True, index=True)
     variants: Mapped[list] = mapped_column(JSON, default=list)
     pass_criteria: Mapped[dict] = mapped_column(JSON, default=dict)
     baseline_variant: Mapped[str | None] = mapped_column(String(255), nullable=True)
@@ -364,6 +391,15 @@ class Experiment(Base):
 
 class ExperimentRun(Base):
     __tablename__ = "experiment_runs"
+    __table_args__ = (
+        UniqueConstraint("id", "project_id", name="uq_experiment_run_project"),
+        CheckConstraint("decision IS NULL OR decision IN ('pass','fail','review','inconclusive')", name="ck_run_decision"),
+        CheckConstraint("(kind = 'legacy_synthetic' AND decision IS NULL) OR (kind = 'task_comparison' AND passed IS NULL AND (status = 'running' OR decision IS NOT NULL))", name="ck_run_kind_decision"),
+    )
+    kind: Mapped[str] = mapped_column(String(32), default="legacy_synthetic", server_default="legacy_synthetic")
+    decision: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    decision_reasons: Mapped[list] = mapped_column(JSON, default=list)
+
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     experiment_id: Mapped[str] = mapped_column(ForeignKey("experiments.id", ondelete="CASCADE"), index=True)
@@ -551,3 +587,249 @@ class EvaluationSamplingJob(Base):
     next_attempt_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
+class ModelVersion(Base):
+    __tablename__ = "model_versions"
+    __table_args__ = (UniqueConstraint("id", "project_id", name="uq_model_version_project"), UniqueConstraint("project_id", "name", "version_ref", name="uq_model_version_identity"))
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"), index=True)
+    access_label: Mapped[dict] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    name: Mapped[str] = mapped_column(String(255))
+    version_ref: Mapped[str] = mapped_column(String(255))
+    content_hash: Mapped[str] = mapped_column(String(80))
+    content: Mapped[dict] = mapped_column(JSON)
+
+
+class DatasetSnapshot(Base):
+    __tablename__ = "dataset_snapshots"
+    __table_args__ = (UniqueConstraint("id", "project_id", name="uq_snapshot_project"), ForeignKeyConstraint(["dataset_id", "project_id"], ["datasets.id", "datasets.project_id"]))
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"), index=True)
+    access_label: Mapped[dict] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    dataset_id: Mapped[str] = mapped_column(String(64))
+    content_hash: Mapped[str] = mapped_column(String(80))
+    item_count: Mapped[int] = mapped_column(Integer)
+    content: Mapped[str] = mapped_column(Text)
+    created_by: Mapped[str] = mapped_column(String(64))
+
+
+class SnapshotItem(Base):
+    __tablename__ = "snapshot_items"
+    snapshot_id: Mapped[str] = mapped_column(ForeignKey("dataset_snapshots.id"), primary_key=True)
+    sample_id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    content: Mapped[dict] = mapped_column(JSON)
+
+
+class PredictionSet(Base):
+    __tablename__ = "prediction_sets"
+    __table_args__ = (
+        UniqueConstraint("id", "project_id", name="uq_prediction_project"),
+        UniqueConstraint("id", "snapshot_id", name="uq_prediction_snapshot"),
+        UniqueConstraint("project_id", "snapshot_id", "model_version_id", "content_hash", name="uq_prediction_content"),
+        ForeignKeyConstraint(["snapshot_id", "project_id"], ["dataset_snapshots.id", "dataset_snapshots.project_id"]),
+        ForeignKeyConstraint(["model_version_id", "project_id"], ["model_versions.id", "model_versions.project_id"]),
+        CheckConstraint("environment IN ('dev','staging','prod')", name="ck_prediction_environment"),
+    )
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"), index=True)
+    access_label: Mapped[dict] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    snapshot_id: Mapped[str] = mapped_column(String(64))
+    model_version_id: Mapped[str] = mapped_column(String(64))
+    environment: Mapped[str] = mapped_column(String(16))
+    content_hash: Mapped[str] = mapped_column(String(80))
+    producer_manifest: Mapped[dict] = mapped_column(JSON)
+    provenance: Mapped[str] = mapped_column(String(16), default="partial")
+
+
+class Prediction(Base):
+    __tablename__ = "predictions"
+    __table_args__ = (
+        ForeignKeyConstraint(["set_id", "snapshot_id"], ["prediction_sets.id", "prediction_sets.snapshot_id"]),
+        ForeignKeyConstraint(["snapshot_id", "sample_id"], ["snapshot_items.snapshot_id", "snapshot_items.sample_id"]),
+    )
+    set_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    sample_id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    snapshot_id: Mapped[str] = mapped_column(String(64))
+    content: Mapped[dict] = mapped_column(JSON)
+
+
+class TaskEvaluation(Base):
+    __tablename__ = "task_evaluations"
+    __table_args__ = (UniqueConstraint("id", "project_id", name="uq_task_evaluation_project"),
+        ForeignKeyConstraint(["prediction_set_id", "project_id"], ["prediction_sets.id", "prediction_sets.project_id"]),
+        CheckConstraint("decision IS NULL OR decision IN ('pass','fail','review','inconclusive')", name="ck_task_decision"),
+        CheckConstraint("status IN ('queued','running','succeeded','failed','cancelled','timed_out','uncertain')", name="ck_task_status"),
+        CheckConstraint("(status IN ('queued','running') AND decision IS NULL) OR (status NOT IN ('queued','running') AND decision IS NOT NULL)", name="ck_task_terminal_decision"),)
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"), index=True)
+    access_label: Mapped[dict] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    prediction_set_id: Mapped[str] = mapped_column(String(64))
+    environment: Mapped[str] = mapped_column(String(16))
+    status: Mapped[str] = mapped_column(String(16))
+    decision: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    decision_reasons: Mapped[list] = mapped_column(JSON)
+    result: Mapped[dict] = mapped_column(JSON)
+    created_by: Mapped[str] = mapped_column(String(64))
+
+
+class MetricFact(Base):
+    __tablename__ = "metric_facts"
+    __table_args__ = (UniqueConstraint("task_evaluation_id", "definition_id", "definition_version", "scope", "scope_key", name="uq_metric_definition_scope"),)
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    task_evaluation_id: Mapped[str] = mapped_column(ForeignKey("task_evaluations.id"))
+    definition_id: Mapped[str] = mapped_column(String(128))
+    definition_version: Mapped[str] = mapped_column(String(32))
+    scope: Mapped[str] = mapped_column(String(32))
+    scope_key: Mapped[str] = mapped_column(Text)
+    content: Mapped[dict] = mapped_column(JSON)
+
+
+class TaskReceipt(Base):
+    __tablename__ = "task_receipts"
+    response_snapshot: Mapped[dict | None] = mapped_column(JSON(none_as_null=True), nullable=True)
+    __table_args__ = (UniqueConstraint("project_id", "actor_id", "method", "path", "key", name="uq_task_receipt"),)
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"))
+    actor_id: Mapped[str] = mapped_column(String(64))
+    method: Mapped[str] = mapped_column(String(16))
+    path: Mapped[str] = mapped_column(String(512))
+    key: Mapped[str] = mapped_column(String(128))
+    body_hash: Mapped[str] = mapped_column(String(80))
+    resource_ref: Mapped[str] = mapped_column(String(128))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class ExperimentRunEvaluation(Base):
+    __tablename__ = "experiment_run_evaluations"
+    __table_args__ = (
+        ForeignKeyConstraint(["run_id", "project_id"], ["experiment_runs.id", "experiment_runs.project_id"]),
+        ForeignKeyConstraint(["task_evaluation_id", "project_id"], ["task_evaluations.id", "task_evaluations.project_id"]),
+    )
+    project_id: Mapped[str] = mapped_column(String(64))
+    run_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    variant_name: Mapped[str] = mapped_column(String(255), primary_key=True)
+    task_evaluation_id: Mapped[str] = mapped_column(String(64))
+
+
+
+
+
+class Investigation(Base):
+    __tablename__ = "investigations"
+    __table_args__ = (
+        UniqueConstraint("id", "project_id", name="uq_investigation_project"),
+        CheckConstraint("environment IN ('dev','staging','prod')", name="ck_investigation_environment"),
+        CheckConstraint("revision >= 1", name="ck_investigation_revision"),
+    )
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"), index=True)
+    environment: Mapped[str] = mapped_column(String(16))
+    revision: Mapped[int] = mapped_column(Integer)
+    state: Mapped[dict] = mapped_column(JSON)
+    access_label: Mapped[dict] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class InvestigationRevision(Base):
+    __tablename__ = "investigation_revisions"
+    __table_args__ = (
+        UniqueConstraint("investigation_id", "revision", name="uq_investigation_revision"),
+        ForeignKeyConstraint(["investigation_id", "project_id"], ["investigations.id", "investigations.project_id"]),
+    )
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    investigation_id: Mapped[str] = mapped_column(String(64))
+    project_id: Mapped[str] = mapped_column(String(64))
+    environment: Mapped[str] = mapped_column(String(16))
+    revision: Mapped[int] = mapped_column(Integer)
+    state: Mapped[dict] = mapped_column(JSON)
+    access_label: Mapped[dict] = mapped_column(JSON)
+    author_kind: Mapped[str] = mapped_column(String(16))
+    author_id: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+
+class Execution(Base):
+    __tablename__ = "executions"
+    __table_args__ = (
+        UniqueConstraint("id", "project_id", name="uq_execution_project"),
+        CheckConstraint("environment IN ('dev','staging','prod')", name="ck_execution_environment"),
+        CheckConstraint("status IN ('succeeded','failed','cancelled','timed_out','uncertain')", name="ck_imported_execution_status"),
+    )
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"), index=True)
+    environment: Mapped[str] = mapped_column(String(16))
+    mode: Mapped[str] = mapped_column(String(32))
+    status: Mapped[str] = mapped_column(String(16))
+    manifest_hash: Mapped[str] = mapped_column(String(80))
+    manifest_content: Mapped[str] = mapped_column(Text)
+    access_label: Mapped[dict] = mapped_column(JSON)
+    created_by: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class ExecutionAttempt(Base):
+    __tablename__ = "execution_attempts"
+    __table_args__ = (
+        UniqueConstraint("execution_id", "attempt_number", name="uq_execution_attempt_number"),
+        ForeignKeyConstraint(["execution_id", "project_id"], ["executions.id", "executions.project_id"]),
+        CheckConstraint("attempt_number >= 1", name="ck_execution_attempt_number"),
+    )
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    execution_id: Mapped[str] = mapped_column(String(64))
+    project_id: Mapped[str] = mapped_column(String(64))
+    environment: Mapped[str] = mapped_column(String(16))
+    attempt_number: Mapped[int] = mapped_column(Integer)
+    result_hash: Mapped[str] = mapped_column(String(80))
+    result_content: Mapped[str] = mapped_column(Text)
+    access_label: Mapped[dict] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class ExecutionPolicyRevision(Base):
+    __tablename__ = "execution_policy_revisions"
+    __table_args__ = (UniqueConstraint("project_id", "version", name="uq_execution_policy_version"),
+                      CheckConstraint("version >= 1", name="ck_execution_policy_version"))
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"), index=True)
+    version: Mapped[int] = mapped_column(Integer)
+    content: Mapped[dict] = mapped_column(JSON)
+    content_hash: Mapped[str] = mapped_column(String(80))
+    access_label: Mapped[dict] = mapped_column(JSON)
+    created_by: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class Runner(Base):
+    __tablename__ = "runners"
+    __table_args__ = (UniqueConstraint("id", "project_id", name="uq_runner_project"),)
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"), index=True)
+    name: Mapped[str] = mapped_column(String(255))
+    owner_user_id: Mapped[str] = mapped_column(ForeignKey("users.id"))
+    capabilities: Mapped[dict] = mapped_column(JSON)
+    access_label: Mapped[dict] = mapped_column(JSON)
+    disabled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class RunnerCredential(Base):
+    __tablename__ = "runner_credentials"
+    __table_args__ = (ForeignKeyConstraint(["runner_id", "project_id"], ["runners.id", "runners.project_id"]),)
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    runner_id: Mapped[str] = mapped_column(String(64), index=True)
+    project_id: Mapped[str] = mapped_column(String(64))
+    prefix: Mapped[str] = mapped_column(String(32), index=True)
+    hash: Mapped[str] = mapped_column(String(512))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+from app.domain.tasks.immutability import register as _register_task_immutability
+_register_task_immutability(Base.metadata)
