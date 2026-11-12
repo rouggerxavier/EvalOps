@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.domain.services.rate_limit_service import check_api_key_rate_limit
-from app.models import ApiKey, Membership, Project, RevokedToken, User
+from app.models import ApiKey, Membership, Project, RevokedToken, User, ServicePrincipal
 from app.request_id import set_request_org, set_request_user
 from app.security import decode_access_token, verify_api_key
 
@@ -24,6 +24,12 @@ def get_current_user(
     db: Session = Depends(get_db),
 ) -> User:
     if not authorization or not authorization.startswith("Bearer "):
+        raw_key = request.headers.get("x-evalops-key")
+        if raw_key:
+            principals = db.query(ApiKey).filter(ApiKey.prefix == raw_key[:14], ApiKey.service_principal_id.is_not(None)).all()
+            if any(verify_api_key(raw_key, key.hash) for key in principals):
+                # JWT-only legacy routes also deny new principals without revealing resources.
+                authenticate_api_key(request, raw_key, db, "read")
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="unauthorized")
     token = authorization.removeprefix("Bearer ").strip()
     try:
@@ -76,7 +82,7 @@ def get_project_from_api_key(
     return authenticate_api_key(request, x_evalops_key, db, "ingest")
 
 
-def authenticate_api_key(request: Request, x_evalops_key: str | None, db: Session, scope: str) -> Project:
+def authenticate_api_key(request: Request, x_evalops_key: str | None, db: Session, scope: str, require_service_principal: bool = False) -> Project:
     if not x_evalops_key:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="unauthorized")
     key_prefix = x_evalops_key[:14]
@@ -92,6 +98,21 @@ def authenticate_api_key(request: Request, x_evalops_key: str | None, db: Sessio
     if _is_expired(selected.expires_at, datetime.now(timezone.utc)):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="unauthorized")
 
+    if require_service_principal and not selected.service_principal_id:
+        raise HTTPException(403, "service_principal_required")
+    if selected.service_principal_id:
+        principal = db.get(ServicePrincipal, selected.service_principal_id)
+        owning_project = db.get(Project, selected.project_id)
+        owner = db.get(Membership, (principal.owner_user_id, owning_project.organization_id)) if principal and owning_project else None
+        if not principal or principal.disabled_at or not owner or owner.role != "owner":
+            raise HTTPException(401, "unauthorized")
+        # Legacy resources lack verified labels. Deny this new identity until those routes enforce source access.
+        if not getattr(request.state, "task_surface", False):
+            raise HTTPException(404, "not_found")
+    request.state.api_key_id = selected.id
+    request.state.service_principal_id = selected.service_principal_id
+    request.state.key_environment = selected.environment
+    request.state.key_scopes = set(selected.scopes.split(","))
     scopes = {s for s in selected.scopes.split(",") if s}
     if scope not in scopes:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="forbidden")
@@ -104,9 +125,10 @@ def authenticate_api_key(request: Request, x_evalops_key: str | None, db: Sessio
             headers={"Retry-After": str(retry_after)},
         )
 
-    selected.last_used_at = datetime.now(timezone.utc)
-    db.add(selected)
-    db.commit()
+    if not getattr(request.state, "task_surface", False):
+        selected.last_used_at = datetime.now(timezone.utc)
+        db.add(selected)
+        db.commit()
     project = db.get(Project, selected.project_id)
     if not project or project.archived_at is not None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="not_found")

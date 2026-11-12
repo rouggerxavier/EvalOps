@@ -70,3 +70,11 @@ docker stop evalops-pg-tmp
 O job `migrate-postgres` (`.github/workflows/ci.yml`) sobe Postgres 16, instala a
 API com `-c requirements.lock` e roda `alembic upgrade head`. Ele não roda
 `alembic check`; rode o passo 4 localmente antes do PR.
+
+## Fundações de tarefas — 0014
+
+Esta versão adiciona snapshots materializados, modelos declarados, predições, avaliações, métricas, principals e recibos. Antes de iniciar a nova API sobre um banco existente, faça backup e aplique `alembic upgrade head`; `EVALOPS_USE_ALEMBIC=1` mantém o caminho normal em produção. A API não completa parcialmente essa migration por `create_all`.
+
+Para um banco local criado por `create_all` e sem `alembic_version`, verifique primeiro se o schema corresponde integralmente à revisão 0013 (incluindo mudanças anteriores). Somente nessa condição use `alembic stamp 0013_user_credential_version` seguido de `alembic upgrade head`. Não use stamp para ocultar divergências de schema. Bancos novos continuam aceitando `create_all` no modo local.
+
+Upgrade preserva IDs, JSONs, status e `passed` legados. Os novos resultados usam decisão própria. O downgrade 0014 é bloqueado se houver dados de tarefas ou principals; não apaga evidências nem transforma chaves de principals em chaves legadas. Rollback operacional desabilita principals e suspende a UI nova, mantendo o schema aditivo. Não retornar uma API antiga ao tráfego enquanto houver chaves de principal ativas, pois ela não aplica o isolamento de ambiente dessas identidades.

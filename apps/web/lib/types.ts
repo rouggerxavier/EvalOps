@@ -218,6 +218,8 @@ export type PromptVersion = {
 };
 
 export type Dataset = {
+  task_type?: "text" | "regression";
+  task_schema?: { target: { name: string; unit: string } };
   id: string;
   project_id: string;
   slug: string;

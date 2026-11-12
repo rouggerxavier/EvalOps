@@ -1,5 +1,7 @@
 # Grankasa e EvalOps: primeira bateria sintética
 
+Nota de contexto (2026-11-09): este registro histórico descreve a bateria scripted abaixo. A [auditoria da evolução](../audits/estado-real-2026-11-09.md) distingue o relatório posterior de modelo real em branch local, sem tratá-lo como implementação da main.
+
 A Grankasa possui um harness opt-in em `backend/evals/evalops_bridge`, integrado
 pelo [PR #254](https://github.com/rouggerxavier/Grankasa/pull/254). Ele decora as
 portas de modelo e ferramentas da Mariana Minimal, envia os turnos como traces

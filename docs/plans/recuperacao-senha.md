@@ -4,7 +4,7 @@
 Recuperar conta com senha via email SMTP, token de uso único e novo login; standard.
 
 ## Scope
-- In: auth público, tabela/migration 0014, Redis estrito, worker ARQ/SMTP, cleanup, forgot/reset web e configuração operacional.
+- In: auth público, tabela/migration 0018, Redis estrito, worker ARQ/SMTP, cleanup, forgot/reset web e configuração operacional.
 - Out: email real nesta sessão, MFA, convites, RBAC, SDK, auditoria geral, redesign.
 
 ## Phases
@@ -20,7 +20,7 @@ Recuperar conta com senha via email SMTP, token de uso único e novo login; stan
 - Uma troca/redefinição invalida todas as sessões pessoais e links pendentes; chaves de projeto seguem o contrato A1.
 
 ## Rollback
-Desabilitar SMTP/origem; remover rotas/UI/worker depois de escoar jobs. Downgrade 0014 remove somente pedidos de recuperação. Preservar coluna e verificador credential_version de A1.
+Desabilitar SMTP/origem; remover rotas/UI/worker depois de escoar jobs. Downgrade 0018 remove somente pedidos de recuperação. Preservar coluna e verificador credential_version de A1.
 
 ## Acceptance Criteria
 - 202 indistinguível por existência/sem hash; 503 global antes de lookup em dependências incompletas/indisponíveis.

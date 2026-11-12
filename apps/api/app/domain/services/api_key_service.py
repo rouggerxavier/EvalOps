@@ -9,7 +9,8 @@ from __future__ import annotations
 from sqlalchemy.orm import Session
 
 from app.domain.services.audit_service import record_audit
-from app.models import ApiKey, Project, utcnow
+from app.models import ApiKey, Project, ServicePrincipal, Membership, utcnow
+from fastapi import HTTPException
 from app.schemas import ApiKeyCreate, ApiKeyCreateOut, ApiKeyOut
 from app.security import generate_api_key, hash_api_key, new_id
 
@@ -43,9 +44,15 @@ def create_key(
     payload: ApiKeyCreate,
     actor_user_id: str,
 ) -> ApiKeyCreateOut:
+    if payload.service_principal_id:
+        principal = db.get(ServicePrincipal, payload.service_principal_id)
+        membership = db.get(Membership, (principal.owner_user_id, project.organization_id)) if principal else None
+        if not principal or principal.project_id != project.id or principal.disabled_at or not membership or membership.role != "owner":
+            raise HTTPException(404, "not_found")
     raw_key, prefix = generate_api_key(payload.environment)
     row = ApiKey(
         id=new_id("key"),
+        service_principal_id=payload.service_principal_id,
         project_id=project.id,
         prefix=prefix,
         hash=hash_api_key(raw_key),

@@ -164,3 +164,33 @@ def test_client_trace_id_is_captured_only_in_active_trace():
     assert tracer.current_client_trace_id() is None
     tracer._sample_rate = 0
     assert reply() is None
+
+
+def test_classification_evaluator_manifest_uses_same_result_contract(server):
+    url, events, responses = server
+    result = {"id": "evaluation", "decision": "inconclusive"}
+    responses.append((201, result, 0))
+    assert Client(api_key="task-key", api_url=url).evaluate("project", "predictions", evaluator="classification.standard", idempotency_key="operation") == result
+    assert events[0][3] == {"prediction_set_id": "predictions", "evaluator": {"id": "classification.standard", "version": "1", "config": {}}}
+
+
+def test_external_execution_import_and_get_share_capture(server):
+    url, events, responses = server
+    capture = {"id": "execution", "capture_origin": "external_import", "decision": None}
+    responses.extend([(201, capture, 0), (200, capture, 0)])
+    client = Client(api_key="task-key", api_url=url)
+    payload = {"manifest": {"schema_version": 1}, "result": {"cost": {"state": "unknown"}}}
+    assert client.import_execution("project", payload, idempotency_key="operation") == client.get_execution("execution") == capture
+    assert events[0][1:4] == ("/v1/projects/project/execution-imports", "task-key", payload)
+
+
+def test_runner_client_sends_only_runner_header_and_has_no_general_read(monkeypatch):
+    from evalops import RunnerClient
+    calls = []
+    original = httpx.Client
+    transport = httpx.MockTransport(lambda request: (calls.append(request), httpx.Response(200, json={"dispatch_available": False}))[1])
+    monkeypatch.setattr(httpx, "Client", lambda **kwargs: original(transport=transport, **kwargs))
+    runner = RunnerClient(runner_key="runner-secret", api_url="https://api.example.test/v1")
+    assert runner.capabilities("runner")["dispatch_available"] is False
+    assert calls[0].headers["X-EvalOps-Runner-Key"] == "runner-secret"
+    assert "X-EvalOps-Key" not in calls[0].headers and not hasattr(runner, "task_result")
