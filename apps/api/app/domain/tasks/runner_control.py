@@ -1,4 +1,4 @@
-"""Owner-controlled policy and runner identity; dispatch remains disabled until ledger/leases exist."""
+"""Owner-controlled policy and runner identity; dispatch remains disabled until the fixture runtime exists."""
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Literal

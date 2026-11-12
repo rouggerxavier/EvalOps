@@ -34,6 +34,8 @@ PATCH	/v1/datasets/{dataset_id}/cases/{item_id}	write
 PATCH	/v1/investigations/{investigation_id}	write
 POST	/v1/datasets/{dataset_id}/cases	write
 POST	/v1/datasets/{dataset_id}/snapshots	write
+POST	/v1/executions/{execution_id}/attempts/{attempt_id}/complete	runner-only
+POST	/v1/executions/{execution_id}/attempts/{attempt_id}/heartbeat	runner-only
 POST	/v1/executions/{execution_id}/cancel	evaluate
 POST	/v1/experiments/{experiment_id}/comparisons	evaluate
 POST	/v1/projects/{project_id}/execution-imports	write
@@ -48,6 +50,7 @@ POST	/v1/projects/{project_id}/task-evaluations	evaluate
 POST	/v1/runners/{runner_id}/credentials	admin
 POST	/v1/runners/{runner_id}/credentials/{credential_id}/revoke	admin
 POST	/v1/runners/{runner_id}/disable	admin
+POST	/v1/runners/{runner_id}/leases	runner-only
 POST	/v1/service-principals/{principal_id}/disable	admin
 POST	/v1/task-resources/dataset/{dataset_id}/classify	admin
 POST	/v1/task-resources/{kind}/{resource_id}/restrict	admin
