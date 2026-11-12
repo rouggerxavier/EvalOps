@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, CheckConstraint, DateTime, Float, ForeignKey, ForeignKeyConstraint, Index, Integer, JSON, Numeric, String, Text, UniqueConstraint, text
+from sqlalchemy import BigInteger, Boolean, CheckConstraint, DateTime, Float, ForeignKey, ForeignKeyConstraint, Index, Integer, JSON, Numeric, String, Text, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
@@ -760,11 +760,13 @@ class Execution(Base):
     __table_args__ = (
         UniqueConstraint("id", "project_id", name="uq_execution_project"),
         CheckConstraint("environment IN ('dev','staging','prod')", name="ck_execution_environment"),
-        CheckConstraint("status IN ('succeeded','failed','cancelled','timed_out','uncertain')", name="ck_imported_execution_status"),
+        CheckConstraint("origin IN ('external_import','controlled_runner')", name="ck_execution_origin"),
+        CheckConstraint("status IN ('queued','running','succeeded','failed','cancelled','timed_out','uncertain')", name="ck_imported_execution_status"),
     )
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"), index=True)
     environment: Mapped[str] = mapped_column(String(16))
+    origin: Mapped[str] = mapped_column(String(32), default="external_import", server_default="external_import")
     mode: Mapped[str] = mapped_column(String(32))
     status: Mapped[str] = mapped_column(String(16))
     manifest_hash: Mapped[str] = mapped_column(String(80))
@@ -829,6 +831,108 @@ class RunnerCredential(Base):
     hash: Mapped[str] = mapped_column(String(512))
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class OrganizationExecutionBudgetRevision(Base):
+    __tablename__ = "organization_execution_budget_revisions"
+    __table_args__ = (UniqueConstraint("organization_id", "version", name="uq_org_execution_budget_version"),
+                      CheckConstraint("version >= 1", name="ck_org_execution_budget_version"))
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"), index=True)
+    version: Mapped[int] = mapped_column(Integer)
+    content: Mapped[dict] = mapped_column(JSON)
+    content_hash: Mapped[str] = mapped_column(String(80))
+    created_by: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class OrganizationExecutionAccount(Base):
+    __tablename__ = "organization_execution_accounts"
+    __table_args__ = (CheckConstraint("reserved_units >= 0 AND spent_units >= 0", name="ck_org_execution_balance"),)
+    organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"), primary_key=True)
+    period: Mapped[str] = mapped_column(String(7), primary_key=True)
+    reserved_units: Mapped[int] = mapped_column(BigInteger, default=0)
+    spent_units: Mapped[int] = mapped_column(BigInteger, default=0)
+
+
+class ProjectExecutionAccount(Base):
+    __tablename__ = "project_execution_accounts"
+    __table_args__ = (CheckConstraint("reserved_units >= 0 AND spent_units >= 0", name="ck_project_execution_balance"),)
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"), primary_key=True)
+    period: Mapped[str] = mapped_column(String(7), primary_key=True)
+    reserved_units: Mapped[int] = mapped_column(BigInteger, default=0)
+    spent_units: Mapped[int] = mapped_column(BigInteger, default=0)
+
+
+class ExecutionPlan(Base):
+    __tablename__ = "execution_plans"
+    __table_args__ = (UniqueConstraint("id", "project_id", name="uq_execution_plan_project"),
+                      ForeignKeyConstraint(["runner_id", "project_id"], ["runners.id", "runners.project_id"]))
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"), index=True)
+    environment: Mapped[str] = mapped_column(String(16))
+    runner_id: Mapped[str] = mapped_column(String(64))
+    policy_revision_id: Mapped[str] = mapped_column(ForeignKey("execution_policy_revisions.id"))
+    organization_budget_revision_id: Mapped[str] = mapped_column(ForeignKey("organization_execution_budget_revisions.id"))
+    manifest_content: Mapped[str] = mapped_column(Text)
+    manifest_hash: Mapped[str] = mapped_column(String(80))
+    access_label: Mapped[dict] = mapped_column(JSON)
+    created_by: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class ExecutionReservation(Base):
+    __tablename__ = "execution_reservations"
+    __table_args__ = (
+        ForeignKeyConstraint(["execution_id", "project_id"], ["executions.id", "executions.project_id"]),
+        CheckConstraint("reserved_units >= 0 AND slots >= 1", name="ck_execution_reservation_amount"),
+        CheckConstraint("state IN ('reserved','unknown','settled')", name="ck_execution_reservation_state"),
+    )
+    execution_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    project_id: Mapped[str] = mapped_column(String(64), index=True)
+    organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"), index=True)
+    period: Mapped[str] = mapped_column(String(7))
+    reserved_units: Mapped[int] = mapped_column(BigInteger)
+    spent_units: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    slots: Mapped[int] = mapped_column(Integer)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    state: Mapped[str] = mapped_column(String(16), default="reserved")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    settled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class ExecutionLedgerEntry(Base):
+    __tablename__ = "execution_ledger_entries"
+    __table_args__ = (
+        ForeignKeyConstraint(["execution_id", "project_id"], ["executions.id", "executions.project_id"]),
+        UniqueConstraint("execution_id", "event_key", name="uq_execution_ledger_event"),
+        CheckConstraint("kind IN ('reserve','settle','release','adjust') AND amount_units >= 0 AND amount_units <= 100000000000000000", name="ck_execution_ledger_kind"),
+    )
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    execution_id: Mapped[str] = mapped_column(String(64), index=True)
+    project_id: Mapped[str] = mapped_column(String(64))
+    organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"))
+    attempt_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    period: Mapped[str] = mapped_column(String(7))
+    kind: Mapped[str] = mapped_column(String(16))
+    event_key: Mapped[str] = mapped_column(String(128))
+    amount_units: Mapped[int] = mapped_column(BigInteger)  # 10^-8 USD; never a float column
+    measurement_source: Mapped[str] = mapped_column(String(255))
+    pricing_version: Mapped[str] = mapped_column(String(128))
+    actor_id: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class ExecutionSchedule(Base):
+    __tablename__ = "execution_schedules"
+    __table_args__ = (ForeignKeyConstraint(["execution_id", "project_id"], ["executions.id", "executions.project_id"]),
+                      ForeignKeyConstraint(["plan_id", "project_id"], ["execution_plans.id", "execution_plans.project_id"]))
+    execution_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    project_id: Mapped[str] = mapped_column(String(64))
+    plan_id: Mapped[str] = mapped_column(String(64))
+    actor_context: Mapped[dict] = mapped_column(JSON)
+    cancel_requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 from app.domain.tasks.immutability import register as _register_task_immutability

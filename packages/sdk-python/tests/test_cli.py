@@ -92,3 +92,21 @@ def test_runner_cli_requires_own_credential_without_api_fallback(monkeypatch, ca
     monkeypatch.setattr(cli, "RunnerClient", RunnerClient)
     assert cli.main(["runner-capabilities", "runner", "--json"]) == 0
     assert json.loads(capsys.readouterr().out) == {"dispatch_available": False}
+
+
+def test_cli_execution_admission_and_cancel_preserve_operation(monkeypatch, capsys):
+    monkeypatch.setenv("EVALOPS_API_KEY", "test-secret")
+    class Client:
+        def __init__(self, **kwargs):
+            pass
+        def enqueue_execution(self, project, plan, **kwargs):
+            assert (project, plan) == ("p", "plan") and kwargs == {"idempotency_key": "admit"}
+            return {"id": "execution", "status": "queued"}
+        def cancel_execution(self, identifier):
+            assert identifier == "execution"
+            return {"id": identifier, "status": "cancelled"}
+    monkeypatch.setattr(cli, "Client", Client)
+    assert cli.main(["execution-start", "--project", "p", "--plan", "plan", "--idempotency-key", "admit", "--json"]) == 0
+    assert json.loads(capsys.readouterr().out)["status"] == "queued"
+    assert cli.main(["execution-cancel", "execution", "--json"]) == 0
+    assert json.loads(capsys.readouterr().out)["status"] == "cancelled"

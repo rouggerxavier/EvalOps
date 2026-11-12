@@ -45,7 +45,19 @@ def main(argv=None):
     execution_import.add_argument("--idempotency-key", required=True)
     runner_capabilities = commands.add_parser("runner-capabilities")
     runner_capabilities.add_argument("id")
-    for command in (discover, evaluate, result, investigation, inv_create, inv_update, execution, execution_import, runner_capabilities):
+    plan_create = commands.add_parser("execution-plan-create")
+    plan_create.add_argument("--project", required=True)
+    plan_create.add_argument("--file", required=True)
+    plan_create.add_argument("--idempotency-key", required=True)
+    plan_get = commands.add_parser("execution-plan")
+    plan_get.add_argument("id")
+    execution_start = commands.add_parser("execution-start")
+    execution_start.add_argument("--project", required=True)
+    execution_start.add_argument("--plan", required=True)
+    execution_start.add_argument("--idempotency-key", required=True)
+    execution_cancel = commands.add_parser("execution-cancel")
+    execution_cancel.add_argument("id")
+    for command in (discover, evaluate, result, investigation, inv_create, inv_update, execution, execution_import, runner_capabilities, plan_create, plan_get, execution_start, execution_cancel):
         command.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
     credential_name = "EVALOPS_RUNNER_KEY" if args.command == "runner-capabilities" else "EVALOPS_API_KEY"
@@ -62,11 +74,17 @@ def main(argv=None):
             output = client.discover(args.project)
         elif args.command == "evaluate":
             output = client.evaluate(args.project, args.prediction_set, idempotency_key=args.idempotency_key or str(uuid.uuid4()), evaluator=args.evaluator.split("@")[0])
+        elif args.command == "execution-plan":
+            output = client.get_execution_plan(args.id)
+        elif args.command == "execution-start":
+            output = client.enqueue_execution(args.project, args.plan, idempotency_key=args.idempotency_key)
+        elif args.command == "execution-cancel":
+            output = client.cancel_execution(args.id)
         elif args.command == "execution":
             output = client.get_execution(args.id)
         elif args.command == "investigation":
             output = client.investigation_history(args.id) if args.history else client.get_investigation(args.id)
-        elif args.command in {"investigation-create", "investigation-update", "execution-import"}:
+        elif args.command in {"investigation-create", "investigation-update", "execution-import", "execution-plan-create"}:
             try:
                 with open(args.file, encoding="utf-8") as stream:
                     state = json.load(stream)
@@ -76,7 +94,9 @@ def main(argv=None):
             if not isinstance(state, dict):
                 print("JSON input must be an object", file=sys.stderr)
                 return 2
-            if args.command == "execution-import":
+            if args.command == "execution-plan-create":
+                output = client.create_execution_plan(args.project, state, idempotency_key=args.idempotency_key)
+            elif args.command == "execution-import":
                 output = client.import_execution(args.project, state, idempotency_key=args.idempotency_key)
             elif args.command == "investigation-create":
                 output = client.create_investigation(args.project, {"environment": args.environment, "state": state}, idempotency_key=args.idempotency_key)

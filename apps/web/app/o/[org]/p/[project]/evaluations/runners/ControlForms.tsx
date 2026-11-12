@@ -9,13 +9,13 @@ function Submit({ ready, label, intent }: { ready: boolean; label: string; inten
 function Fields({ org, project, operation }: { org: string; project: string; operation: string }) {
   return <><input type="hidden" name="org" value={org} /><input type="hidden" name="project" value={project} /><input type="hidden" name="operation" value={operation} /></>;
 }
-export function PolicyForm({ org, project, version, policy }: { org: string; project: string; version: number; policy: unknown }) {
+export function PolicyForm({ org, project, version, policy, organization = false }: { org: string; project: string; version: number; policy: unknown; organization?: boolean }) {
   const [state, action] = useFormState(controlRunner, {});
   const [operation, setOperation] = useState("");
   useEffect(() => setOperation(crypto.randomUUID()), [version]);
-  return <form action={action} className="ops-form"><Fields org={org} project={project} operation={operation} /><input type="hidden" name="intent" value="policy" /><input type="hidden" name="revision" value={version} />
-    <p>Revisão {version}. Alterações criam nova versão; revisão antiga recebe conflito.</p><label className="ops-form__field">Política de execução JSON<textarea name="policy" rows={12} defaultValue={JSON.stringify(policy, null, 2)} required /></label>
-    {state.error && <p role="alert">{state.error}</p>}{state.message && <p role="status">{state.message}</p>}<Submit ready={!!operation} label="Salvar versão da política" /></form>;
+  return <form action={action} className="ops-form"><Fields org={org} project={project} operation={operation} /><input type="hidden" name="intent" value={organization ? "organization-budget" : "policy"} /><input type="hidden" name="revision" value={version} />
+    <p>Revisão {version}. Alterações criam nova versão; revisão antiga recebe conflito.</p><label className="ops-form__field">{organization ? "Budget da organização JSON" : "Política de execução JSON"}<textarea name="policy" rows={12} defaultValue={JSON.stringify(policy, null, 2)} required /></label>
+    {state.error && <p role="alert">{state.error}</p>}{state.message && <p role="status">{state.message}</p>}<Submit ready={!!operation} label={organization ? "Salvar budget da organização" : "Salvar versão da política"} /></form>;
 }
 export function RegisterForm({ org, project }: { org: string; project: string }) {
   const [state, action] = useFormState(controlRunner, {});

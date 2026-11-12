@@ -35,14 +35,16 @@ def put_policy(project_id: str, payload: ExecutionPolicy, request: Request, db: 
     raw = request.headers.get("if-match", "")
     if not raw.isascii() or not raw.isdecimal() or len(raw) > 10:
         raise HTTPException(409, "execution_policy_revision_conflict")
-    return s.serialize(s.write(db, actor, request, project_id, payload.model_dump(mode="json"),
+    receipt = payload.model_dump(mode="json", exclude={"max_wall_time_s", "max_tool_calls", "max_tokens"} - payload.model_fields_set)
+    return s.serialize(s.write(db, actor, request, project_id, receipt,
                                lambda: policy_revision(db, actor, project_id, payload, int(raw))))
 
 
 @router.post("/projects/{project_id}/runners", status_code=201)
 def create_runner(project_id: str, payload: RunnerRegistration, request: Request, db: Session = Depends(task_db)):
     actor = admin(request, db, project_id)
-    return s.serialize(s.write(db, actor, request, project_id, payload.model_dump(mode="json"),
+    receipt = payload.model_dump(mode="json", exclude={"max_parallel"} - payload.model_fields_set)
+    return s.serialize(s.write(db, actor, request, project_id, receipt,
                                lambda: register_runner(db, actor, project_id, payload)))
 
 
