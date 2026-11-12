@@ -59,7 +59,7 @@ test("member can write trace actions, viewer keeps compare, only destructive can
     });
     const html = render(React.createElement(TraceHeaderActions, { org: "org", project: "project", traceId: "trace", rubrics: [], compareCandidates: [], canWrite, canDestructive }));
     assert.match(html, /Comparar/); assert.equal(html.includes("Ocultar trace"), canDestructive);
-    for (const name of ["Marcar para revisão", "Reexecutar", "Avaliar"]) assert.equal(html.includes(name), canWrite, name);
+    for (const name of ["Marcar para revisão", "Repetir chamada LLM", "Avaliar"]) assert.equal(html.includes(name), canWrite, name);
   }
 });
 
