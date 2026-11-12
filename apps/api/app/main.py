@@ -77,9 +77,16 @@ app = FastAPI(title="EvalOps API", version="0.1.0", lifespan=lifespan)
 
 @app.exception_handler(RequestValidationError)
 async def _validation_error(request: Request, exc: RequestValidationError):
-    if request.method == "POST" and _route_template(request) == "/v1/auth/change-password":
+    if request.method == "POST" and _route_template(request) in {
+        "/v1/auth/change-password", "/v1/auth/forgot-password", "/v1/auth/reset-password",
+    }:
         # FastAPI's default validation body includes input, which can contain passwords.
-        return JSONResponse(status_code=422, content={"detail": "invalid_password"})
+        if _route_template(request) == "/v1/auth/reset-password" and any(
+            error["loc"][:2] == ("body", "token") for error in exc.errors()
+        ):
+            return JSONResponse(status_code=400, content={"detail": "invalid_reset"})
+        detail = "invalid_request" if _route_template(request) == "/v1/auth/forgot-password" else "invalid_password"
+        return JSONResponse(status_code=422, content={"detail": detail})
     if request.url.path.endswith(("/datasets", "/experiments")):
         try:
             payload = await request.json()

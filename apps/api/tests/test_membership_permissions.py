@@ -154,6 +154,7 @@ def test_every_http_route_has_a_reviewed_permission_and_auth_contract():
     assert actual == expected, "Classify every added HTTP method/path in r1_route_permissions.tsv"
     assert {(r["method"], r["path"]) for r in ROUTES if r["permission"] == "own-contract"} == {
         ("POST", "/v1/auth/register"), ("POST", "/v1/auth/login"),
+        ("POST", "/v1/auth/forgot-password"), ("POST", "/v1/auth/reset-password"),
         ("POST", "/v1/auth/change-password"), ("POST", "/v1/auth/logout"), ("GET", "/v1/auth/session"),
         ("GET", "/v1/me"), ("GET", "/v1/organizations"), ("POST", "/v1/organizations"),
         ("GET", "/v1/judges/cli"), ("GET", "/health/liveness"), ("GET", "/health/readiness"),

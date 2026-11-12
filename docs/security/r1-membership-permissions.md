@@ -24,6 +24,12 @@ API keys permanecem separadas de papéis: somente scopes/capacidades anteriores.
 
 O [inventário executável TSV](../../apps/api/tests/fixtures/r1_route_permissions.tsv) registra cada método/path, permissão JWT e contrato de API key (`jwt`, scope, `only:scope` ou `public`). O gate compara essa lista estática com `app.routes` realmente registrado em processo limpo, incluindo rotas ocultas do OpenAPI. O processo separado impede que rotas artificiais adicionadas por outras suítes durante collection contaminem o inventário; nenhuma rota desconhecida é ignorada. Uma nova rota/método exige classificação e requests de teste. Exceções `own-contract` também são enumeradas explicitamente.
 
+Na composição com A2, `POST /v1/auth/forgot-password` e
+`POST /v1/auth/reset-password` são explicitamente `own-contract/public` no TSV e
+na asserção de exceções. Os requests anônimos de `test_password_recovery.py`
+verificam 202 uniforme, 204 com token válido, replay/expiração negados, 429 e 503,
+sem depender de membership. A classificação não altera a política organizacional.
+
 | Severidade / achado corrigido | Atacante → recurso / request | Correção e prova |
 | --- | --- | --- |
 | Alta: membership sem capacidade suficiente | viewer/legado da organização → projeto, chave, configuração, trace, dataset, prompt, export ou execução por GET/POST/PUT/PATCH/DELETE do inventário | loaders/deps verificam permission antes de mutações, reservas e enqueue; matriz HTTP integral com snapshot de todas as tabelas, captura DML e fila fake |
