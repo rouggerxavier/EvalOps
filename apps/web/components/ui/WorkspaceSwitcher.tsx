@@ -9,13 +9,14 @@ type WorkspaceProject = {
 };
 
 type WorkspaceSwitcherProps = {
+  canAdmin: boolean;
   current: string;
   projects: WorkspaceProject[];
 };
 
 const NEW_PROJECT_VALUE = "__new_project__";
 
-export function WorkspaceSwitcher({ current, projects }: WorkspaceSwitcherProps) {
+export function WorkspaceSwitcher({ current, projects, canAdmin }: WorkspaceSwitcherProps) {
   const router = useRouter();
   const currentProject = projects.find((p) => `${p.org}/${p.project}` === current) ?? projects[0];
 
@@ -27,6 +28,7 @@ export function WorkspaceSwitcher({ current, projects }: WorkspaceSwitcherProps)
       onChange={(event) => {
         const value = event.target.value;
         if (value === NEW_PROJECT_VALUE) {
+          if (!canAdmin) return;
           // Route to settings of the currently-active project — that's where
           // the "Novo projeto" form lives. The fragment is informational only.
           if (currentProject) {
@@ -43,8 +45,7 @@ export function WorkspaceSwitcher({ current, projects }: WorkspaceSwitcherProps)
           {project.label}
         </option>
       ))}
-      <option disabled>──────</option>
-      <option value={NEW_PROJECT_VALUE}>+ Novo projeto…</option>
+      {canAdmin ? <><option disabled>──────</option><option value={NEW_PROJECT_VALUE}>+ Novo projeto…</option></> : null}
     </select>
   );
 }

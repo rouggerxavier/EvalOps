@@ -12,6 +12,7 @@ from app.domain.services.trace_lock_service import JOB_MAX_TRIES
 from app.workers.evaluation_worker import evaluate_trace_job
 from app.workers.maintenance_worker import maintenance_cleanup_job, maintenance_hour, maintenance_timezone
 from app.workers.password_recovery_worker import send_password_reset_job
+from app.workers.invitation_worker import send_invitation_job
 from app.workers.replay_worker import replay_trace
 from app.workers.sampling_worker import dispatch_sampling_job, evaluate_sample_job
 
@@ -49,7 +50,7 @@ def _cron_jobs() -> list:
 
 
 class WorkerSettings:
-    functions: list = [send_password_reset_job, replay_trace, evaluate_trace_job, evaluate_sample_job, dispatch_sampling_job]
+    functions: list = [send_invitation_job, send_password_reset_job, replay_trace, evaluate_trace_job, evaluate_sample_job, dispatch_sampling_job]
     cron_jobs = _cron_jobs()
     # Cron hours are read in this zone, not the process clock.
     timezone = maintenance_timezone()

@@ -7,9 +7,9 @@ import type { QualityGateStatus } from "@/lib/types";
 
 const percent = (value: number) => `${new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 2 }).format(value * 100)}%`;
 
-export function QualityGateCard({ gate, settingsHref }: { gate: QualityGateStatus | null; settingsHref: string }) {
+export function QualityGateCard({ gate, settingsHref }: { gate: QualityGateStatus | null; settingsHref?: string }) {
   if (!gate) return (
-    <Card title="Controle de qualidade · Quality Gate" action={<Link className="btn btn--sm" href={settingsHref}>Configurar limites</Link>}>
+    <Card title="Controle de qualidade · Quality Gate" action={settingsHref ? <Link className="btn btn--sm" href={settingsHref}>Configurar limites</Link> : null}>
       <p role="status">Não foi possível carregar o Quality Gate. Atualize a página para tentar novamente.</p>
     </Card>
   );
@@ -18,7 +18,7 @@ export function QualityGateCard({ gate, settingsHref }: { gate: QualityGateStatu
     <Card
       title="Controle de qualidade · Quality Gate"
       subtitle={`${gate.metrics.trace_count} traces · janela ${gate.window} · ambiente ${gate.environment ?? "todos"}`}
-      action={<><Badge variant={state.variant}>{state.label}</Badge><Link className="btn btn--sm" href={settingsHref}>Configurar limites</Link></>}
+      action={<><Badge variant={state.variant}>{state.label}</Badge>{settingsHref ? <Link className="btn btn--sm" href={settingsHref}>Configurar limites</Link> : null}</>}
     >
       <p className="quality-gate__intro">Resultado do gate: <strong>{state.label}</strong>. Limites do projeto aplicados às evidências de avaliações e operação.</p>
       <div className="quality-gate__metrics">

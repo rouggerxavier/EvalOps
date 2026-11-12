@@ -11,7 +11,7 @@ const nav = readFileSync(new URL("../components/app-shell-nav.ts", import.meta.u
 const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
 
 test("P6 internal shell mounts shortcuts, toast bridge and toast host", () => {
-  assert.match(appShell, /<EvoShortcuts \/>/);
+  assert.match(appShell, /<EvoShortcuts permissions=\{permissions\} \/>/);
   assert.match(appShell, /<EvoToastBridge \/>/);
   assert.match(appShell, /<EvoToastHost \/>/);
   assert.match(appShell, /Suspense fallback=\{null\}/);

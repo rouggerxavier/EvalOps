@@ -18,6 +18,7 @@ type NotificationsBellProps = {
   project: string;
   projectId: string | null;
   currentPath: string;
+  canWrite: boolean;
 };
 
 export function NotificationsBell({
@@ -26,10 +27,11 @@ export function NotificationsBell({
   project,
   projectId,
   currentPath,
+  canWrite,
 }: NotificationsBellProps) {
   const [open, setOpen] = useState(false);
   const unread = notifications.filter((n) => !n.read_at);
-  const canMarkRead = unread.length > 0 && projectId !== null;
+  const canMarkRead = canWrite && unread.length > 0 && projectId !== null;
 
   return (
     <div className="notifications-control">

@@ -4,8 +4,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import secrets
-import smtplib
-import ssl
 from datetime import datetime, timezone
 from email.headerregistry import Address
 from email.message import EmailMessage
@@ -14,6 +12,7 @@ from sqlalchemy import update
 
 from app.config import RecoveryMailConfig, recovery_mail_config
 from app.domain.services.password_recovery import RESET_TTL, token_digest
+from app.infra.mail import send_message
 from app.maintenance.cleanup import _is_expired
 from app.models import PasswordReset, User
 
@@ -28,17 +27,7 @@ def send_reset_email(config: RecoveryMailConfig, recipient: str, token: str) -> 
     message.set_content("Para redefinir sua senha, abra o link abaixo. Ele expira em 30 minutos.\n\n"
                         + config.public_origin + "/reset-password#" + token
                         + "\n\nSe você não pediu esta alteração, ignore este email.")
-    context = ssl.create_default_context()
-    if config.tls == "implicit":
-        connection = smtplib.SMTP_SSL(config.host, config.port, timeout=config.timeout, context=context)
-    else:
-        connection = smtplib.SMTP(config.host, config.port, timeout=config.timeout)
-    with connection as smtp:
-        if config.tls == "starttls":
-            smtp.starttls(context=context)
-        if config.username:
-            smtp.login(config.username, config.password)
-        smtp.send_message(message, to_addrs=[recipient])
+    send_message(config, message, recipient)
 
 
 def _dispatch(factory, user_id: str, version: int, request_id: str, requested_at: str, mailer) -> None:

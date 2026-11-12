@@ -77,6 +77,7 @@ export default async function TracesListPage({ params, searchParams }: Props) {
   if (!(await hasAuthToken())) return <AuthRequiredPanel layout="main" />;
 
   const resolved = await resolveProject(org, project);
+  const canWrite = resolved.membership?.permissions.includes("write") ?? false;
 
   const tabStatus = tab === "errors" ? "error,partial" : tab === "partial" ? "partial" : qp.status;
   const slowKind: SlowKind = tab === "slow" ? parseSlowKind(qp.slow_kind) : "trace";
@@ -352,7 +353,7 @@ export default async function TracesListPage({ params, searchParams }: Props) {
         ) : rows.length === 0 ? (
           <TracesEmpty project={project} />
         ) : (
-          <TracesTable org={org} project={project} rows={rows} verdicts={verdicts} environment={qp.environment} />
+          <TracesTable canWrite={canWrite} org={org} project={project} rows={rows} verdicts={verdicts} environment={qp.environment} />
         )}
       </section>
 

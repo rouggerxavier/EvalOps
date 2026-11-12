@@ -55,5 +55,5 @@ test("experiments: run history lists runs per experiment and reuses RunResultCar
   assert.match(page, /Nenhuma run ainda/);
   assert.match(page, /href=\{`\?experiment_id=\$\{run\.experiment_id\}&run_id=\$\{run\.id\}`\}/);
   assert.match(page, /href=\{`\?experiment_id=\$\{experiment\.id\}`\}/);
-  assert.match(page, /<RunResultCard run=\{runDetail\.run\}/);
+  assert.match(page, /<RunResultCard[^>]* run=\{runDetail\.run\}/);
 });

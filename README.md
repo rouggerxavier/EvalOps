@@ -119,3 +119,17 @@ cd apps/web && npm run test
 A implementação de tarefas acrescenta snapshots imutáveis, modelos externos declarados, predições importadas e métricas tipadas. API, SDK/CLI e a página **Avaliações → Regressão offline** consultam os mesmos resultados persistidos. A comparação usa pares do mesmo snapshot e preserva a leitura legada por opt-in `view=task_v1`.
 
 Antes do rollout, aplique a migration 0014. Escopo, limites, testes e rollback estão em [F0/F1](docs/plans/f0-implementation-progress.md); as [SPECs](docs/specs/README.md) continuam como referência de evolução.
+
+### Convites e gestão de membros
+
+Convites exigem JWT pessoal e owner atual, com viewer como papel padrão e prazo
+fixo de 24 horas. `EVALOPS_INVITATIONS_ENABLED=false` mantém emissão e worker
+desligados mesmo com SMTP de recuperação configurado; leitura, revogação, aceite
+de links existentes e gestão de membros continuam disponíveis. Novos envios
+exigem SMTP/origem/Redis válidos e worker com `send_invitation_job` registrado.
+A emissão limita cada par organização/owner a dez pedidos por 300 segundos,
+sem fallback em memória. Retorno 503 pode significar envio já iniciado: confira a
+lista antes de reemitir. Contenção retorna 409 `membership_conflict`; repita apenas
+por um novo pedido explícito.
+
+Migração, invariantes, testes dedicados e rollback: [R2](docs/security/r2-invitations-memberships.md).

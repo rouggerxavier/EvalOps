@@ -385,3 +385,18 @@ def check_recovery_rate_limits(email: str | None, ip: str) -> tuple[int | None, 
         return ip_result.retry_after_seconds, account_allowed
     finally:
         client.close()
+
+
+def check_invitation_rate_limit(org_id: str, owner_id: str) -> int | None:
+    """Ten issue attempts per owner/org in 300s; fail closed on distributed errors."""
+    from app import config
+
+    url = config.redis_url()
+    if not url:
+        raise RuntimeError("invitations_unavailable")
+    client = _create_redis_client(url, config.redis_timeout_ms() / 1000)
+    try:
+        result = RedisRateLimiter(client).check(f"invitation-issue:{org_id}:{owner_id}", 10, 300)
+        return result.retry_after_seconds if not result.allowed else None
+    finally:
+        client.close()

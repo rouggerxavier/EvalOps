@@ -16,6 +16,8 @@ import {
 import type { Rubric, Trace } from "@/lib/types";
 
 type Props = {
+  canWrite: boolean;
+  canDestructive: boolean;
   org: string;
   project: string;
   traceId: string;
@@ -85,7 +87,7 @@ function HideTraceConfirmation({ org, project, traceId, environment, onClose }: 
   );
 }
 
-export function TraceHeaderActions({ org, project, traceId, rubrics, compareCandidates, flagged, environment }: Props) {
+export function TraceHeaderActions({ org, project, traceId, rubrics, compareCandidates, flagged, environment, canWrite, canDestructive }: Props) {
   const [open, setOpen] = useState<null | "flag" | "rerun" | "compare" | "evaluate" | "hide">(null);
   const close = () => setOpen(null);
 
@@ -94,26 +96,26 @@ export function TraceHeaderActions({ org, project, traceId, rubrics, compareCand
 
   return (
     <>
-      <button type="button" className="btn" onClick={() => setOpen("hide")}><EyeOff size={14} aria-hidden="true" /> Ocultar trace</button>
-      {open === "hide" ? <HideTraceConfirmation org={org} project={project} traceId={traceId} environment={environment} onClose={close} /> : null}
+      {canDestructive ? <button type="button" className="btn" onClick={() => setOpen("hide")}><EyeOff size={14} aria-hidden="true" /> Ocultar trace</button> : null}
+      {canDestructive && open === "hide" ? <HideTraceConfirmation org={org} project={project} traceId={traceId} environment={environment} onClose={close} /> : null}
       <button type="button" className="btn" onClick={() => setOpen("compare")}>
         <GitCompare size={14} /> Comparar
       </button>
       {flagged ? (
         <span className="ops-status ops-status--partial"><Flag size={13} aria-hidden="true" /> Marcado para revisão</span>
-      ) : (
+      ) : canWrite ? (
         <button type="button" className="btn" onClick={() => setOpen("flag")}>
           <Flag size={14} /> Marcar para revisão
         </button>
-      )}
-      <button type="button" className="btn" onClick={() => setOpen("rerun")}>
+      ) : null}
+      {canWrite ? <button type="button" className="btn" onClick={() => setOpen("rerun")}>
         <Play size={12} /> Repetir chamada LLM
-      </button>
-      <button type="button" className="btn btn--primary" onClick={() => setOpen("evaluate")}>
+      </button> : null}
+      {canWrite ? <button type="button" className="btn btn--primary" onClick={() => setOpen("evaluate")}>
         <Target size={12} /> Avaliar
-      </button>
+      </button> : null}
 
-      <Modal open={open === "flag"} onClose={close} title="Flagear trace" subtitle="POST /v1/traces/{id}/flags">
+      <Modal open={canWrite && open === "flag"} onClose={close} title="Flagear trace" subtitle="POST /v1/traces/{id}/flags">
         <form action={flagTraceAction}>
           <input type="hidden" name="org" value={org} />
           <input type="hidden" name="project" value={project} />
@@ -135,7 +137,7 @@ export function TraceHeaderActions({ org, project, traceId, rubrics, compareCand
         </form>
       </Modal>
 
-      <Modal open={open === "rerun"} onClose={close} title="Repetir chamada LLM" subtitle="Repete uma chamada de modelo. Não executa o agente completo e pode consumir orçamento.">
+      <Modal open={canWrite && open === "rerun"} onClose={close} title="Repetir chamada LLM" subtitle="Repete uma chamada de modelo. Não executa o agente completo e pode consumir orçamento.">
         <form action={rerunTraceAction}>
           <input type="hidden" name="org" value={org} />
           <input type="hidden" name="project" value={project} />
@@ -176,7 +178,7 @@ export function TraceHeaderActions({ org, project, traceId, rubrics, compareCand
         </form>
       </Modal>
 
-      <Modal open={open === "evaluate"} onClose={close} title="Rodar avaliação" subtitle="POST /v1/evaluations/run">
+      <Modal open={canWrite && open === "evaluate"} onClose={close} title="Rodar avaliação" subtitle="POST /v1/evaluations/run">
         <form action={triggerEvaluationAction}>
           <input type="hidden" name="return_to" value="trace" />
           <input type="hidden" name="org" value={org} />

@@ -39,6 +39,7 @@ type WorkspaceProject = { org: string; project: string; label: string };
 export function Sidebar({
   org,
   project,
+  permissions,
   projects,
   attentionCount,
   usage,
@@ -48,6 +49,7 @@ export function Sidebar({
 }: {
   org: string;
   project: string;
+  permissions: string[];
   projects: WorkspaceProject[];
   attentionCount: number | null;
   usage: { used: number; limit: number } | null;
@@ -87,14 +89,14 @@ export function Sidebar({
       </div>
 
       <div className="ops-sidebar__project">
-        <WorkspaceSwitcher current={`${org}/${project}`} projects={projects} />
+        <WorkspaceSwitcher canAdmin={permissions.includes("admin")} current={`${org}/${project}`} projects={projects} />
       </div>
 
       <nav className="ops-sidebar__nav" aria-label="Seções do projeto">
         {APP_SHELL_NAV_SECTIONS.map((section) => (
           <section className="sb-section" key={section.label}>
             <div className="sb-section__label">{section.label}</div>
-            {section.items.map(({ id, label, path, shortcut }) => {
+            {section.items.filter((item) => item.id !== "keys" || permissions.includes("admin")).map(({ id, label, path, shortcut }) => {
               const Icon = NAV_ICONS[id] ?? Activity;
               const active = isActive(path);
               return (
@@ -123,6 +125,7 @@ export function Sidebar({
       </nav>
 
       <div className="sb-footer ops-sidebar__usage">
+        {permissions.includes("admin") ? <>
         <div className="ops-sidebar__usage-label">
           <span>Traces no mês</span>
           <strong>{usage ? `${usagePercent}%` : "Sem dados"}</strong>
@@ -138,6 +141,7 @@ export function Sidebar({
         >
           <span style={{ width: `${usagePercent}%` }} />
         </div>
+        </> : null}
         <Link className="ops-sidebar__docs" href="/docs" onClick={onNavigate}>Documentação</Link>
       </div>
     </aside>

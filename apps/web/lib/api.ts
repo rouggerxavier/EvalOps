@@ -553,8 +553,10 @@ export async function getOrganizationUsage(orgId: string, period?: string): Prom
   return fetchJson<OrgUsage>(`/organizations/${orgId}/usage${suffix}`);
 }
 
-export async function getMembers(orgId: string): Promise<{ data: Member[] }> {
-  return fetchJson<{ data: Member[] }>(`/organizations/${orgId}/members`);
+export async function getMembers(orgId: string, cursor?: string): Promise<{ data: Member[]; next_cursor: string | null }> {
+  const query = new URLSearchParams({ limit: "50" });
+  if (cursor) query.set("cursor", cursor);
+  return fetchJson<{ data: Member[]; next_cursor: string | null }>(`/organizations/${orgId}/members?${query}`);
 }
 
 export async function getProjects(orgId: string): Promise<{ data: Project[] }> {
@@ -617,6 +619,29 @@ export async function retrySamplingJob(projectId: string, traceId: string, confi
   return requestJson<SamplingJob>(`/projects/${projectId}/evaluation-sampling/jobs/${encodeURIComponent(traceId)}/retry`, {
     method: "POST", body: JSON.stringify({ confirm_possible_charge: confirmPossibleCharge }),
   });
+}
+
+// Membership operations always use the current personal session, never the dev bearer.
+export async function membershipRequest<T>(path: string, method = "GET", payload?: object): Promise<T> {
+  const session = await getSession();
+  if (!session) throw new Error("API 401");
+  const res = await fetch(`${getApiBaseUrl()}${path}`, {
+    method, cache: "no-store",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.token}` },
+    body: payload ? JSON.stringify(payload) : undefined,
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    const allowed = ["already_member", "last_owner", "membership_conflict", "invalid_transfer", "invitation_already_accepted", "invalid_invitation"];
+    const detail = typeof body?.detail === "string" && allowed.includes(body.detail) ? body.detail : "";
+    throw new Error(`API ${res.status}: ${detail}`);
+  }
+  return res.status === 204 ? undefined as T : await res.json() as T;
+}
+export async function getInvitations(orgId: string, cursor?: string): Promise<import("./types").InvitationList> {
+  const query = new URLSearchParams({ limit: "50" });
+  if (cursor) query.set("cursor", cursor);
+  return membershipRequest(`/organizations/${encodeURIComponent(orgId)}/invitations?${query}`);
 }
 
 export async function taskWrite<T>(path: string, payload: unknown, idempotencyKey: string): Promise<T> {

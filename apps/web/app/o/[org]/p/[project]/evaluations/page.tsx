@@ -124,6 +124,7 @@ export default async function EvaluationsPage({ params, searchParams }: Props) {
   if (!(await hasAuthToken())) return <AuthRequiredPanel layout="main" />;
 
   const resolved = await resolveProject(org, project);
+  const canWrite = resolved.membership?.permissions.includes("write") ?? false;
   const environment = await getActiveEnvironment(qp.environment);
 
   const [summary, evalsRes, rubricsRes, tracesRes] = await Promise.all([
@@ -225,12 +226,12 @@ export default async function EvaluationsPage({ params, searchParams }: Props) {
           </p>
         </div>
         <div className="ops-page-header__actions">
-          <Link href={modalHref("create")} className="btn btn--sm" aria-label="Criar nova rubrica">
+          {canWrite ? <Link href={modalHref("create")} className="btn btn--sm" aria-label="Criar nova rubrica">
             <Plus size={12} /> Nova rubrica
-          </Link>
-          <Link href={modalHref("run")} className="btn btn--sm btn--primary">
+          </Link> : null}
+          {canWrite ? <Link href={modalHref("run")} className="btn btn--sm btn--primary">
             <Play size={12} /> Rodar avaliação
-          </Link>
+          </Link> : null}
         </div>
       </header>
 
@@ -282,9 +283,9 @@ export default async function EvaluationsPage({ params, searchParams }: Props) {
             <div className="ops-empty">
               <div className="ops-empty__title">Nenhuma rubrica cadastrada</div>
               <p className="ops-empty__description">Crie uma rubrica YAML antes de avaliar execuções.</p>
-              <Link href={modalHref("create")} className="btn btn--sm btn--primary">
+              {canWrite ? <Link href={modalHref("create")} className="btn btn--sm btn--primary">
                 <Plus size={12} /> Nova rubrica
-              </Link>
+              </Link> : null}
             </div>
           ) : (
             <>
@@ -374,9 +375,9 @@ export default async function EvaluationsPage({ params, searchParams }: Props) {
                     : "Escolha uma rubrica e um trace elegível para iniciar a primeira avaliação."}
               </p>
               {rubrics.length > 0 && traces.length > 0 && (
-                <Link href={modalHref("run")} className="btn btn--sm btn--primary">
+                canWrite ? <Link href={modalHref("run")} className="btn btn--sm btn--primary">
                   <Play size={12} /> Rodar avaliação
-                </Link>
+                </Link> : null
               )}
             </div>
           ) : (
@@ -425,6 +426,7 @@ export default async function EvaluationsPage({ params, searchParams }: Props) {
       )}
 
       <EvaluationsModals
+        canWrite={canWrite}
         org={org}
         project={project}
         projectId={resolved.project_id}

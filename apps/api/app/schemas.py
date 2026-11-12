@@ -54,6 +54,54 @@ class MemberOut(BaseModel):
     joined_at: ServerTimestamp
 
 
+class InvitationCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    email: str = Field(min_length=3, max_length=320, pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+    role: Literal["member", "viewer"] = "viewer"
+
+    @field_validator("email", mode="before")
+    @classmethod
+    def normalize_email(cls, value):
+        if isinstance(value, str):
+            if "\r" in value or "\n" in value:
+                raise ValueError("invalid_email")
+            value = value.strip().lower()
+            from email.headerregistry import Address
+            Address(addr_spec=value)
+        return value
+
+
+class InvitationAccept(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    token: str = Field(min_length=43, max_length=43, pattern=r"^[A-Za-z0-9_-]{43}$")
+
+
+class InvitationOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    organization_id: str
+    email: str
+    role: str
+    invited_by_user_id: str | None
+    status: str
+    created_at: ServerTimestamp
+    expires_at: ServerTimestamp
+    accepted_at: ServerTimestamp | None
+    revoked_at: ServerTimestamp | None
+
+
+class MembershipUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    role: Literal["member", "viewer"]
+
+
+class OwnershipTransfer(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    user_id: str = Field(min_length=1, max_length=64)
+
+
 class ApiKeyCreate(BaseModel):
     name: str = Field(min_length=2, max_length=255)
     environment: str = Field(pattern=r"^(dev|staging|prod)$")

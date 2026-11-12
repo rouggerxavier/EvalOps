@@ -76,6 +76,7 @@ export default async function RubricsPage({ params, searchParams }: Props) {
   if (!(await hasAuthToken())) return <AuthRequiredPanel layout="main" />;
 
   const resolved = await resolveProject(org, project);
+  const canWrite = resolved.membership?.permissions.includes("write") ?? false;
   const environment = await getActiveEnvironment(qp.environment);
   const { data: rubrics } = await getRubrics(resolved.project_id);
   const cliJudges = await getCliJudges();
@@ -118,7 +119,7 @@ export default async function RubricsPage({ params, searchParams }: Props) {
             O que a IA deveria fazer. Cada execução é avaliada com base nisso.
           </p>
         </div>
-        <details className="ops-create" open={rubrics.length === 0}>
+        {canWrite ? <details className="ops-create" open={rubrics.length === 0}>
           <summary className="btn btn--sm btn--primary"><Plus size={12} /> Nova rubrica</summary>
           <form action={createRubricAction} className="ops-form">
             <input type="hidden" name="org" value={org} />
@@ -127,7 +128,7 @@ export default async function RubricsPage({ params, searchParams }: Props) {
             <RubricYamlEditor label="YAML da rubrica" defaultValue={DEFAULT_YAML} judges={cliJudges} />
             <button type="submit" className="btn btn--sm btn--primary">Criar rubrica</button>
           </form>
-        </details>
+        </details> : null}
       </header>
 
       {errorMessage && <div className="ops-flash ops-flash--error" role="alert">{errorMessage}</div>}
@@ -177,7 +178,7 @@ export default async function RubricsPage({ params, searchParams }: Props) {
                   <h2>{selected.slug}</h2>
                   <p>{selected.description ?? "Sem descrição disponível."}</p>
                 </div>
-                <details className="ops-create ops-create--version">
+                {canWrite ? <details className="ops-create ops-create--version">
                   <summary className="btn btn--sm">Salvar nova versão</summary>
                   <form action={createRubricVersionAction} className="ops-form">
                     <input type="hidden" name="org" value={org} />
@@ -186,7 +187,7 @@ export default async function RubricsPage({ params, searchParams }: Props) {
                     <RubricYamlEditor label="YAML" defaultValue={latestVersion?.yaml_source ?? ""} judges={cliJudges} />
                     <button type="submit" className="btn btn--sm btn--primary">Criar versão</button>
                   </form>
-                </details>
+                </details> : null}
               </header>
               <div className="ops-rubric-metrics">
                 <div className="ops-rubric-metric">
@@ -359,7 +360,7 @@ export default async function RubricsPage({ params, searchParams }: Props) {
                 </>
               )}
 
-              <Card title="Avaliar em lote" subtitle="Avaliações concluídas com veredito nesta rubrica e versão são ignoradas. Avaliações com erro ou parciais sem veredito podem voltar à fila e gerar novo custo.">
+              {canWrite ? <Card title="Avaliar em lote" subtitle="Avaliações concluídas com veredito nesta rubrica e versão são ignoradas. Avaliações com erro ou parciais sem veredito podem voltar à fila e gerar novo custo.">
                 <form action={triggerEvaluationBatchAction} className="ops-batch-form">
                   <input type="hidden" name="org" value={org} />
                   <input type="hidden" name="project" value={project} />
@@ -392,7 +393,7 @@ export default async function RubricsPage({ params, searchParams }: Props) {
                   </label>
                   <button type="submit" className="btn btn--sm btn--primary">Enfileirar avaliações</button>
                 </form>
-              </Card>
+              </Card> : null}
             </section>
           </div>
         </div>

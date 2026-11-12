@@ -32,15 +32,15 @@ export async function AppShell({ children, org, project, initials }: Props) {
       getNotifications(resolved.project_id),
       getProjects(resolved.org_id),
       getAttention(resolved.project_id),
-      getOrganizationUsage(resolved.org_id),
-      getOrganizationSubscription(resolved.org_id),
+      resolved.membership?.permissions.includes("admin") ? getOrganizationUsage(resolved.org_id) : Promise.resolve(null),
+      resolved.membership?.permissions.includes("admin") ? getOrganizationSubscription(resolved.org_id) : Promise.resolve(null),
     ]);
     if (notifResult.status === "fulfilled") notifications = notifResult.value.data;
     if (projectsResult.status === "fulfilled") {
       projects = projectsResult.value.data.map((p) => ({ org, project: p.slug, label: p.name }));
     }
     if (attentionResult.status === "fulfilled") attentionCount = attentionResult.value.count;
-    if (usageResult.status === "fulfilled" && subscriptionResult.status === "fulfilled") {
+    if (usageResult.status === "fulfilled" && subscriptionResult.status === "fulfilled" && usageResult.value && subscriptionResult.value) {
       usage = {
         used: usageResult.value.traces_ingested,
         limit: subscriptionResult.value.plan.monthly_trace_limit,
@@ -61,6 +61,7 @@ export async function AppShell({ children, org, project, initials }: Props) {
       environment={environment}
       attentionCount={attentionCount}
       usage={usage}
+      permissions={resolved?.membership?.permissions ?? []}
     >
       {children}
     </OpsShellFrame>

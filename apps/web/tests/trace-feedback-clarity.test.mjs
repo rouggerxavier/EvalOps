@@ -12,6 +12,7 @@ test("conversation turns have a distinct heading while existing tabs and links s
   const { default: Page } = loadTs("app/o/[org]/p/[project]/traces/[trace]/page.tsx", {
     "@/lib/api": {
       hasAuthToken: async () => true,
+      resolveProject: async () => ({ project_id: "project", membership: { permissions: ["read"] } }),
       getTrace: async () => ({ trace, spans: [], feedback: [], flags: [] }),
       getRubrics: async () => ({ data: [] }),
       getTraces: async () => ({ data: [trace], next_cursor: null }),
@@ -33,7 +34,7 @@ test("batch form explains verdict skips and errored or partial retries beside th
   const { default: Page } = loadTs("app/o/[org]/p/[project]/rubrics/page.tsx", {
     "@/lib/api": {
       hasAuthToken: async () => true,
-      resolveProject: async () => ({ project_id: "project" }),
+      resolveProject: async () => ({ project_id: "project", membership: { permissions: ["read", "write"] } }),
       getRubrics: async () => ({ data: [{ id: "rubric", slug: "support", threshold: 0.7, current_version: 2, created_at: "2026-11-08T10:00:00Z" }] }),
       getCliJudges: async () => [],
       getRubricVersions: async () => ({ data: [{ id: "v1", version: 1 }, { id: "v2", version: 2 }] }),

@@ -74,6 +74,7 @@ export default async function DatasetsPage({ params, searchParams }: Props) {
 
   const basePath = `/o/${org}/p/${project}/datasets`;
   const resolved = await resolveProject(org, project);
+  const canWrite = resolved.membership?.permissions.includes("write") ?? false;
   let datasets: Dataset[] = [];
   let itemsByDataset = new Map<string, DatasetItem[]>();
   let loadError: string | null = null;
@@ -115,7 +116,7 @@ export default async function DatasetsPage({ params, searchParams }: Props) {
           </p>
         </div>
         <div className="page-header__actions ops-actions">
-          <details className="ops-inline">
+          {canWrite ? <details className="ops-inline">
             <summary className="btn">Construir a partir de traces</summary>
             {rows.length > 0 ? (
               <form action={buildDatasetFromTracesAction} className="card ops-form">
@@ -156,8 +157,8 @@ export default async function DatasetsPage({ params, searchParams }: Props) {
                 <p className="ops-empty">Crie um dataset antes de importar traces.</p>
               </div>
             )}
-          </details>
-          <details className="ops-inline">
+          </details> : null}
+          {canWrite ? <details className="ops-inline">
             <summary className="btn btn--primary">Novo dataset</summary>
             <form action={createDatasetAction} className="card ops-form">
               <input type="hidden" name="org" value={org} />
@@ -170,7 +171,7 @@ export default async function DatasetsPage({ params, searchParams }: Props) {
               </label>
               <button type="submit" className="btn btn--primary">Criar dataset</button>
             </form>
-          </details>
+          </details> : null}
         </div>
       </header>
 
@@ -229,10 +230,10 @@ export default async function DatasetsPage({ params, searchParams }: Props) {
             <div className="card__header">
               <h2 className="card__title">Itens de {selectedRow?.dataset.slug ?? "Sem dados"}</h2>
               {selectedRow && selectedRow.dataset.task_type !== "regression" ? (
-                <details className="ops-inline">
+                canWrite ? <details className="ops-inline">
                   <summary className="btn">Adicionar item</summary>
                   <DatasetItemForm org={org} project={project} datasetId={selectedRow.dataset.id} action={addDatasetItemFromFormAction} />
-                </details>
+                </details> : null
               ) : null}
             </div>
             {selectedRow && selectedItems.length > 0 ? (

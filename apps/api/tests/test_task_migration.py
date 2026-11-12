@@ -144,11 +144,13 @@ def test_execution_admission_migration_preserves_imported_capture(dialect, tmp_p
                 id="budget", organization_id="org", version=1,
                 content={"enabled": False, "monthly_budget_usd": "0", "max_parallel": 1},
                 content_hash="sha256:" + "0" * 64, created_by="fixture", created_at=now))
+        # PG rolls back a refused multi-step downgrade as one transaction; start the refusal from 0019 on every dialect.
+        alembic("downgrade", "0019_execution_ledger")
         refused = subprocess.run([sys.executable, "-m", "alembic", "downgrade", "0018_password_resets"], cwd=API_ROOT, env=env, capture_output=True, text=True)
         assert refused.returncode != 0 and "execution_ledger_downgrade_requires_empty_tables" in refused.stderr
         assert values() == expected
         with engine.connect() as conn:
-            assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one() in {"0019_execution_ledger", "0021_runner_leases"}  # PG rolls back the whole refused downgrade
+            assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == "0019_execution_ledger"
     finally:
         engine.dispose()
         if schema:

@@ -81,3 +81,10 @@ GET	/v1/projects/{project_id}/evaluation-sampling/jobs	read	read
 POST	/v1/projects/{project_id}/evaluation-sampling/jobs/{trace_id}/retry	write	evaluate
 GET	/health/liveness	own-contract	public
 GET	/health/readiness	own-contract	public
+POST	/v1/organizations/{org_id}/invitations	admin	jwt
+GET	/v1/organizations/{org_id}/invitations	admin	jwt
+POST	/v1/organizations/{org_id}/invitations/{invitation_id}/revoke	admin	jwt
+POST	/v1/invitations/accept	own-contract	jwt
+PATCH	/v1/organizations/{org_id}/members/{user_id}	admin	jwt
+DELETE	/v1/organizations/{org_id}/members/{user_id}	admin	jwt
+POST	/v1/organizations/{org_id}/ownership/transfer	admin	jwt

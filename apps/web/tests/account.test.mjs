@@ -112,7 +112,7 @@ test("active topbar exposes Conta while retaining logout", () => {
     "@/lib/actions": { setEnvironmentAction: "/env" }, "@/lib/auth-actions": { logoutAction: "/logout" },
     "@/components/ui/NotificationsBell": { NotificationsBell: () => null },
   });
-  const html = renderToStaticMarkup(React.createElement(EvoTopbar, { org: "org", project: "project", orgLabel: "Org", projectLabel: "Project", initials: "AC", mobileMenuOpen: false, onMenuToggle: () => {} }));
+  const html = renderToStaticMarkup(React.createElement(EvoTopbar, { org: "org", project: "project", permissions: ["read"], orgLabel: "Org", projectLabel: "Project", initials: "AC", mobileMenuOpen: false, onMenuToggle: () => {} }));
   assert.match(html, /href="\/account"[^>]*>Conta<\/a>/);
   assert.match(html, /action="\/logout"/);
   assert.match(html, /aria-label="Sair"/);
