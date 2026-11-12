@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.db import get_db
 from app.deps import get_current_user
 from app.domain.services.audit_service import record_audit
+from app.domain.services.trace_lock_service import trace_execution_lock
 from app.domain.services.eval_service import (
     DuplicateEvaluation,
     JudgeBudgetExhausted,
@@ -63,69 +64,76 @@ def trigger_evaluation(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
-    trace = load_trace(db, user.id, payload.trace_id, "write")
+    # Authorize before the lock reveals anything; the lock rebinds the session, so end this transaction.
+    load_trace(db, user.id, payload.trace_id, "write")
+    user_id = user.id
+    db.rollback()
+    with trace_execution_lock(db, payload.trace_id) as acquired:
+        if not acquired:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="trace_busy")
+        trace = load_trace(db, user_id, payload.trace_id, "write")
 
-    rubric = load_rubric(db, user.id, payload.rubric_id, "write")
-    if rubric.project_id != trace.project_id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="forbidden")
+        rubric = load_rubric(db, user_id, payload.rubric_id, "write")
+        if rubric.project_id != trace.project_id:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="forbidden")
 
-    rubric_version_row = _resolve_rubric_version(rubric, payload.rubric_version, db)
+        rubric_version_row = _resolve_rubric_version(rubric, payload.rubric_version, db)
 
-    project = load_project(db, user.id, trace.project_id)
+        project = load_project(db, user_id, trace.project_id)
 
-    try:
-        run = evaluate_trace(
-            db,
-            trace,
-            rubric,
-            rubric_version_row.version,
-            rubric_version_row.id,
-            project,
-            triggered_by=payload.triggered_by,
-            user_id=user.id,
-        )
-        db.commit()
-    except DuplicateEvaluation as exc:
-        # G-11: surfaces the existing run id so the client can fetch it without retrying.
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail={"error": "evaluation_run_duplicate", "existing_run_id": exc.existing_run_id},
-        ) from exc
-    except JudgeBudgetExhausted as exc:
-        # G-12: gate at 402 when the plan's judge budget is already exhausted.
-        raise HTTPException(
-            status_code=status.HTTP_402_PAYMENT_REQUIRED,
-            detail={
-                "error": "judge_budget_exhausted",
-                "spent_usd": round(exc.spent_usd, 6),
-                "budget_usd": round(exc.budget_usd, 6),
-            },
-        ) from exc
-    except HTTPException:
-        db.rollback()
-        raise
-    except ValueError as exc:
-        db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=safe_message(exc, fallback="invalid_evaluation", context="run_evaluation"),
-        ) from exc
-    except IntegrityError as exc:
-        # G-11: race condition safety net — another request created the row
-        # between our pre-check and the insert. Translate to a clean 409.
-        db.rollback()
-        existing = existing_run(db, trace.id, rubric.id, rubric_version_row.version)
-        if existing is None:
-            raise exc
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail={"error": "evaluation_run_duplicate", "existing_run_id": existing.id},
-        ) from exc
-    except Exception:
-        db.rollback()
-        raise
+        try:
+            run = evaluate_trace(
+                db,
+                trace,
+                rubric,
+                rubric_version_row.version,
+                rubric_version_row.id,
+                project,
+                triggered_by=payload.triggered_by,
+                user_id=user_id,
+            )
+            db.commit()
+        except DuplicateEvaluation as exc:
+            # G-11: surfaces the existing run id so the client can fetch it without retrying.
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={"error": "evaluation_run_duplicate", "existing_run_id": exc.existing_run_id},
+            ) from exc
+        except JudgeBudgetExhausted as exc:
+            # G-12: gate at 402 when the plan's judge budget is already exhausted.
+            raise HTTPException(
+                status_code=status.HTTP_402_PAYMENT_REQUIRED,
+                detail={
+                    "error": "judge_budget_exhausted",
+                    "spent_usd": round(exc.spent_usd, 6),
+                    "budget_usd": round(exc.budget_usd, 6),
+                },
+            ) from exc
+        except HTTPException:
+            db.rollback()
+            raise
+        except ValueError as exc:
+            db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=safe_message(exc, fallback="invalid_evaluation", context="run_evaluation"),
+            ) from exc
+        except IntegrityError as exc:
+            # G-11: race condition safety net — another request created the row
+            # between our pre-check and the insert. Translate to a clean 409.
+            db.rollback()
+            existing = existing_run(db, trace.id, rubric.id, rubric_version_row.version)
+            if existing is None:
+                raise exc
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={"error": "evaluation_run_duplicate", "existing_run_id": existing.id},
+            ) from exc
+        except Exception:
+            db.rollback()
+            raise
 
-    return {"run": _run_detail(run, db)}
+        return {"run": _run_detail(run, db)}
 
 
 @router.post("/projects/{project_id}/evaluations/batch", status_code=status.HTTP_202_ACCEPTED)

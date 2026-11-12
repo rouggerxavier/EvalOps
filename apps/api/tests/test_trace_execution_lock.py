@@ -127,3 +127,27 @@ def test_postgres_failure_cleanup_restores_bind_and_invalidates_if_needed(postgr
     db.rollback.assert_called_once_with()
     assert connection.invalidate.call_args_list == ([] if failure in {"acquire", "acquire_commit"} else [call()])
     assert connection.__exit__.call_args.args[1] is error
+
+
+def test_postgres_multi_lock_orders_deduplicates_and_releases_partial_set(postgres):
+    import hashlib
+    db, engine, connection = postgres
+    connection.execute.side_effect = [Mock(scalar=lambda: True), Mock(scalar=lambda: False), Mock()]
+    with trace_execution_lock(db, ["b", "a", "a"]) as acquired:
+        assert not acquired
+    keys = [int.from_bytes(hashlib.sha256(f"sampling:{item}".encode()).digest()[:8], "big", signed=True)
+            for item in ["a", "b"]]
+    assert [item.args[1]["key"] for item in connection.execute.call_args_list] == keys + keys[:1]
+    assert str(connection.execute.call_args_list[-1].args[0]) == "SELECT pg_advisory_unlock(:key)"
+    assert db.bind is engine
+    engine.connect.assert_called_once_with()
+
+
+def test_postgres_multi_lock_acquisition_error_unlocks_previous_key(postgres):
+    db, engine, connection = postgres
+    connection.execute.side_effect = [Mock(scalar=lambda: True), ValueError("failed"), Mock()]
+    with pytest.raises(ValueError, match="failed"):
+        with trace_execution_lock(db, ["a", "b"]):
+            pytest.fail("incomplete acquisition yielded")
+    assert str(connection.execute.call_args_list[-1].args[0]) == "SELECT pg_advisory_unlock(:key)"
+    assert db.bind is engine

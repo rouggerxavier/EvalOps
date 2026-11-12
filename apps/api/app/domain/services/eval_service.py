@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import time
+from copy import deepcopy
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 
 from sqlalchemy import extract, func
 from sqlalchemy.orm import Session
@@ -239,7 +241,7 @@ def run_evaluation(
     if rubric_ver is None:
         raise ValueError(f"rubric version {target_version} not found")
 
-    # Create the run record
+    # Keep the run and scores in memory until provider calls finish.
     run = EvaluationRun(
         id=new_id("evr"),
         project_id=trace.project_id,
@@ -252,12 +254,12 @@ def run_evaluation(
         cost_usd=0.0,
         run_metadata={},
     )
-    db.add(run)
-    db.flush()  # get run.id without committing
+    project_id = trace.project_id
 
     # Build trace context for evaluators
     context = build_trace_context(trace, spans)
     context["trace"]["conversation"] = _conversation_context(db, trace)
+    context = deepcopy(context)
 
     # Load evaluator rows ordered by ord
     evaluator_rows: list[EvaluatorRow] = (
@@ -267,7 +269,13 @@ def run_evaluation(
         .all()
     )
 
-    parsed_spec: dict = rubric_ver.parsed_spec or {}
+    evaluator_rows = [
+        SimpleNamespace(**{key: deepcopy(getattr(row, key)) for key in
+                           ("id", "type", "config", "slug", "weight", "fail_fast")})
+        for row in evaluator_rows
+    ]
+    parsed_spec: dict = deepcopy(rubric_ver.parsed_spec or {})
+    db.commit()  # Materialized inputs: providers run without a database transaction.
     aggregate_method: str = parsed_spec.get("aggregate", "weighted_mean")
     fail_fast_global: bool = parsed_spec.get("fail_fast", False)
     auto_fail_conditions: list[dict] = parsed_spec.get("automatic_fail_conditions", [])
@@ -284,7 +292,9 @@ def run_evaluation(
 
         # Budget guard for llm_judge
         if _spends_judge_budget(ev_row):
-            if not _check_judge_budget(trace.project_id, db):
+            has_budget = _check_judge_budget(project_id, db)
+            db.commit()
+            if not has_budget:
                 err_score = EvaluationScore(
                     id=new_id("evs"),
                     run_id=run.id,
@@ -297,7 +307,6 @@ def run_evaluation(
                     cost_usd=0.0,
                     latency_ms=0,
                 )
-                db.add(err_score)
                 score_records.append(err_score)
                 continue
 
@@ -331,7 +340,6 @@ def run_evaluation(
             cost_usd=result.cost_usd,
             latency_ms=result.latency_ms,
         )
-        db.add(score_rec)
         score_records.append(score_rec)
         if result.cost_usd is None:
             cost_unknown = True
@@ -396,8 +404,7 @@ def run_evaluation(
     run.completed_at = _utcnow()
     run.latency_ms = int((time.monotonic() - run_start) * 1000)
 
-    db.add(run)
-    db.flush()
+    run.scores = score_records
     return run
 
 
@@ -486,24 +493,30 @@ def evaluate_trace(
             raise JudgeBudgetExhausted(spent, budget)
 
     enforce_quota(db, project, "evaluations_run", 1)
-    db.commit()
 
     previous_cost = 0.0
     attempt = 1
     if previous is not None:
         previous_cost = float(previous.cost_usd or 0)  # NULL adds nothing, and stays NULL below
         attempt = int((previous.run_metadata or {}).get("attempt", 1)) + 1
-        db.delete(previous)
-        db.flush()
+    previous_id = previous.id if previous is not None else None
+    trace_id, rubric_id = trace.id, rubric.id
+    db.commit()
 
     run = run_evaluation(
-        trace_id=trace.id,
-        rubric_id=rubric.id,
+        trace_id=trace_id,
+        rubric_id=rubric_id,
         triggered_by=triggered_by,
         user_id=user_id or "",
         db=db,
         rubric_version_num=rubric_version,
     )
+    if previous_id is not None:
+        with db.no_autoflush:
+            previous = db.get(EvaluationRun, previous_id)
+            db.delete(previous)
+            db.flush()
+    db.add(run)
     apply_usage_with_quota(db, project, evals=1, cost_usd=float(run.cost_usd or 0))
     if previous is not None:
         if run.cost_usd is not None or previous_cost:

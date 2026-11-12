@@ -19,9 +19,13 @@ import re
 import time
 from datetime import datetime, timezone
 from decimal import Decimal
+from types import SimpleNamespace
 from typing import Any
 
+from arq import Retry
+
 from app.domain.evaluators import llm_judge
+from app.domain.services.trace_lock_service import trace_execution_lock
 from app.domain.services.usage_service import current_period, get_or_create_counter
 from app.infra.llm.pricing import estimate_judge_cost_usd, estimate_tokens, split_provider_model
 from app.models import Span, Trace
@@ -261,17 +265,27 @@ async def replay_trace(ctx: dict, original_trace_id: str, new_trace_id: str) -> 
         extra={"trace_id": new_trace_id, "original": original_trace_id},
     )
 
-    with db_factory() as db:
+    with db_factory() as db, trace_execution_lock(db, [original_trace_id, new_trace_id]) as acquired:
+        if not acquired:
+            raise Retry(defer=5)
         try:
             placeholder = _load_trace_or_fail(db, new_trace_id)
         except ValueError as exc:
             logger.error("replay.failed", extra={"trace_id": new_trace_id, "reason": str(exc)})
             return {"status": "failed", "reason": str(exc)}
+        # A redelivered job must not call the provider again nor rewrite a settled replay.
+        if (placeholder.metadata_json or {}).get("replay_status") in {"completed", "failed"}:
+            return {"status": placeholder.metadata_json["replay_status"]}
         try:
             original = _load_trace_or_fail(db, original_trace_id)
         except ValueError:
             set_replay_status(db, placeholder, "failed", error="original_trace_not_found")
             logger.error("replay.failed", extra={"trace_id": new_trace_id, "reason": "original_trace_not_found"})
+            return {"status": "failed", "reason": "original_trace_not_found"}
+
+        if (original.project_id != placeholder.project_id
+                or original.organization_id != placeholder.organization_id):
+            set_replay_status(db, placeholder, "failed", error="original_trace_not_found")
             return {"status": "failed", "reason": "original_trace_not_found"}
 
         set_replay_status(db, placeholder, "running")
@@ -291,6 +305,9 @@ async def replay_trace(ctx: dict, original_trace_id: str, new_trace_id: str) -> 
         model = override_model or llm_span.model
         messages = _build_messages(llm_span, variables if isinstance(variables, dict) else {})
 
+        llm_span = SimpleNamespace(**{key: getattr(llm_span, key) for key in
+                                   ("id", "type", "name", "prompt_version_ref", "provider")})
+        db.commit()
         try:
             result = await _call_provider(llm_span.provider, model, messages, override=bool(override_model))
         except Exception as exc:  # noqa: BLE001

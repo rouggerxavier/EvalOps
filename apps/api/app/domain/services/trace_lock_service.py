@@ -12,23 +12,29 @@ _sqlite_lock = Lock()
 
 
 @contextmanager
-def trace_execution_lock(db: Session, trace_id: str):
+def trace_execution_lock(db: Session, trace_id: str | list[str] | tuple[str, ...]):
+    trace_ids = sorted(set([trace_id] if isinstance(trace_id, str) else trace_id))
     if db.get_bind().dialect.name == "postgresql":
         # Session lock survives preflight commits on the same connection: one pool slot per job.
-        key = int.from_bytes(hashlib.sha256(f"sampling:{trace_id}".encode()).digest()[:8], "big", signed=True)
+        keys = [int.from_bytes(hashlib.sha256(f"sampling:{item}".encode()).digest()[:8], "big", signed=True)
+                for item in trace_ids]
         engine = db.get_bind()
         with engine.connect() as connection:
             db.bind = connection
-            acquired = False
+            acquired_keys = []
             try:
-                acquired = bool(connection.execute(text("SELECT pg_try_advisory_lock(:key)"), {"key": key}).scalar())
+                for key in keys:
+                    if not connection.execute(text("SELECT pg_try_advisory_lock(:key)"), {"key": key}).scalar():
+                        break
+                    acquired_keys.append(key)
                 connection.commit()
-                yield acquired
+                yield len(acquired_keys) == len(keys)
             finally:
                 try:
                     db.rollback()
-                    if acquired:
+                    for key in reversed(acquired_keys):
                         connection.execute(text("SELECT pg_advisory_unlock(:key)"), {"key": key})
+                    if acquired_keys:
                         connection.commit()
                 except BaseException:
                     connection.invalidate()
@@ -42,4 +48,7 @@ def trace_execution_lock(db: Session, trace_id: str):
             yield acquired
         finally:
             if acquired:
-                _sqlite_lock.release()
+                try:
+                    db.rollback()
+                finally:
+                    _sqlite_lock.release()
