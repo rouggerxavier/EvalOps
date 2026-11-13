@@ -56,6 +56,7 @@ def statements(dialect):
     for name, table in (
         ("execution_ledger", "execution_ledger_entries"),
         ("execution_leases", "execution_leases"),
+        ("execution_attempts", "execution_attempts"),
         ("execution_late_reports", "execution_late_reports"),
     ):
         if dialect == "sqlite":

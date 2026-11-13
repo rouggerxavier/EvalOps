@@ -110,7 +110,7 @@ def test_single_lease_heartbeat_and_exact_settlement_once():
         assert db.query(m.ExecutionLateReport).count() == 1
         for statement in ("UPDATE execution_leases SET state='active'", "UPDATE executions SET status='running'",
                           "UPDATE execution_late_reports SET content='{}'",
-                          "DELETE FROM execution_leases", "DELETE FROM execution_late_reports"):
+                          "DELETE FROM execution_leases", "DELETE FROM execution_attempts", "DELETE FROM execution_late_reports"):
             with pytest.raises(DBAPIError, match="immutable_task_resource"):
                 db.execute(text(statement)); db.commit()
             db.rollback()
