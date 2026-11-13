@@ -162,7 +162,7 @@ def test_every_http_route_has_a_reviewed_permission_and_auth_contract():
         ("POST", "/v1/auth/forgot-password"), ("POST", "/v1/auth/reset-password"),
         ("POST", "/v1/invitations/accept"),
         ("POST", "/v1/auth/change-password"), ("POST", "/v1/auth/logout"), ("GET", "/v1/auth/session"),
-        ("GET", "/v1/me"), ("GET", "/v1/organizations"), ("POST", "/v1/organizations"),
+        ("GET", "/v1/me"), ("GET", "/v1/auth/me/deletion-preview"), ("GET", "/v1/organizations"), ("POST", "/v1/organizations"),
         ("GET", "/v1/judges/cli"), ("GET", "/health/liveness"), ("GET", "/health/readiness"),
     }
     assert {r["permission"] for r in ROUTES} <= {"read", "write", "admin", "destructive", "own-contract"}
