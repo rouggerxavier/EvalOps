@@ -15,6 +15,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import MetaData, create_engine, text
 from sqlalchemy.engine import make_url
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import sessionmaker
 
 from app import models as m
@@ -106,6 +107,12 @@ def test_postgres_duplicate_completions_settle_once(postgres):
     responses = parallel(*[lambda: t.finish(ctx, lease, t.report())] * 3)
     assert [response.status_code for response in responses] == [200] * 3
     assert settlements(postgres, ctx["execution"]) == 1
+    with postgres() as db:
+        with pytest.raises(DBAPIError, match="immutable_task_resource"):
+            db.execute(text("DELETE FROM execution_attempts"))
+            db.commit()
+        db.rollback()
+        assert db.query(m.ExecutionAttempt).filter_by(execution_id=ctx["execution"]).count() == 1
 
 
 def test_postgres_refused_completions_with_provided_cost_settle_once(postgres):
@@ -182,6 +189,8 @@ def test_runner_lease_migration_round_trip_refuses_evidence_loss(dialect, tmp_pa
         assert alembic("upgrade", "head").returncode == 0
         if dialect == "postgresql":
             assert alembic("check").returncode == 0
+        # Simulate an existing installation before the additive attempt guard.
+        assert alembic("downgrade", "0022_organization_invitations").returncode == 0
         metadata = MetaData()
         metadata.reflect(engine)
         now = datetime.now(timezone.utc)
@@ -198,19 +207,45 @@ def test_runner_lease_migration_round_trip_refuses_evidence_loss(dialect, tmp_pa
                                  "token_hash": "sha256:" + "1" * 64, "state": "expired", "claimed_at": now, "expires_at": now},
             "execution_late_reports": {"id": "lr", "execution_id": "x", "project_id": "p", "attempt_id": "a", "reason": "lease_closed",
                                        "content": "{}", "content_hash": "sha256:" + "2" * 64, "created_at": now},
+            "execution_attempts": {"id": "a", "execution_id": "x", "project_id": "p", "environment": "dev", "attempt_number": 1,
+                                   "result_hash": "sha256:" + "3" * 64, "result_content": "{}", "access_label": label, "created_at": now},
         }
         with engine.begin() as conn:
             for table, values in rows.items():
                 conn.execute(metadata.tables[table].insert().values(**{key: value for key, value in values.items() if key in metadata.tables[table].c}))
+
+        def evidence():
+            with engine.connect() as conn:
+                return {table: [tuple(row) for row in conn.execute(metadata.tables[table].select())] for table in rows}
+
+        expected = evidence()
+        assert alembic("upgrade", "head").returncode == 0
+        assert evidence() == expected
+        with engine.connect() as conn:
+            assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == "0023_attempt_delete_guard"
         for statement in (
             "UPDATE execution_leases SET state='active'",
             r"""UPDATE execution_late_reports SET content='{"a"\:1}'""",
             "DELETE FROM execution_leases",
+            "DELETE FROM execution_attempts",
             "DELETE FROM execution_late_reports",
         ):
             with pytest.raises(Exception, match="immutable_task_resource"):
                 with engine.begin() as conn:
                     conn.execute(text(statement))
+        assert alembic("downgrade", "0022_organization_invitations").returncode == 0
+        assert evidence() == expected
+        # Downgrade removes only the new guard; roll back the probe so evidence survives.
+        with engine.connect() as conn:
+            transaction = conn.begin()
+            assert conn.execute(text("DELETE FROM execution_attempts")).rowcount == 1
+            transaction.rollback()
+        with pytest.raises(Exception, match="immutable_task_resource"), engine.begin() as conn:
+            conn.execute(text("UPDATE execution_attempts SET result_content='changed'"))
+        assert alembic("upgrade", "head").returncode == 0
+        assert evidence() == expected
+        with pytest.raises(Exception, match="immutable_task_resource"), engine.begin() as conn:
+            conn.execute(text("DELETE FROM execution_attempts"))
         refused = alembic("downgrade", "0019_execution_ledger")
         assert refused.returncode != 0 and "runner_leases_downgrade_requires_empty_tables" in refused.stderr
         with engine.connect() as conn:

@@ -30,7 +30,9 @@ A revalidação confronta também os valores e slots reservados com os limites v
 - Cancel em running só registra o pedido. O runner confirma com complete `status=cancelled`. Esse status sem pedido recebe 422. Se o runner terminar com outro status antes do ack, esse desfecho prevalece.
 - Um relatório após expiração, cancelamento ou terminal recebe 409 sem mudar o estado. Ele fica em `execution_late_reports`: deduplicado por hash, até 20 por attempt e sem liquidar custo.
 
-Lock order: projeto, organização, identidade. Guards de banco tornam imutáveis o status terminal, os leases fechados, as colunas seladas e os relatórios tardios, e bloqueiam DELETE em `execution_ledger_entries`, `execution_leases` e `execution_late_reports`.
+Lock order: projeto, organização, identidade. Guards de banco tornam imutáveis o status terminal, os leases fechados, as colunas seladas e os relatórios tardios, e bloqueiam DELETE em `execution_ledger_entries`, `execution_leases`, `execution_attempts` e `execution_late_reports`.
+
+A migration `0023_attempt_delete_guard`, após `0022_organization_invitations`, acrescenta a proteção de DELETE dos attempts em SQLite e PostgreSQL sem alterar os registros existentes. Aplique `alembic upgrade head` em instalações existentes. O downgrade para `0022_organization_invitations` remove somente esse trigger e preserva os dados e as proteções anteriores; após o rollback, attempts voltam a aceitar DELETE direto. Schemas criados pelo ORM recebem o mesmo guard.
 
 ## Pendente de decisão (produto)
 
