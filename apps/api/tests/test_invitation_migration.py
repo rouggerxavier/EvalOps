@@ -75,7 +75,7 @@ def test_invitation_migration_roundtrip(monkeypatch, tmp_path, dialect):
                     return [tuple(conn.execute(select(metadata.tables[table])).one()) for table in rows]
 
             expected_evidence = evidence()
-            command.upgrade(cfg, "head")
+            command.upgrade(cfg, "0022_organization_invitations")
             assert evidence() == expected_evidence
             with engine.begin() as conn:
                 assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar() == "0022_organization_invitations"
@@ -102,6 +102,7 @@ def test_invitation_migration_roundtrip(monkeypatch, tmp_path, dialect):
                 assert conn.execute(text("SELECT role FROM memberships")).scalar() == "owner"
                 assert conn.execute(text("SELECT credential_version FROM users")).scalar() == 7
                 assert conn.execute(text("SELECT request_id FROM password_resets")).scalar() == "old-reset"
+            # The invitation assertions target 0022; schema check must run at the latest head.
             command.upgrade(cfg, "head")
             assert evidence() == expected_evidence
             if dialect == "postgresql":
