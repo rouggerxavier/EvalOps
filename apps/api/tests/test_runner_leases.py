@@ -8,6 +8,7 @@ from sqlalchemy.exc import DBAPIError
 
 from app import models as m
 from app.db import Base, engine
+from app.domain.tasks import runner_leases as leases
 import test_offline_task_api as h
 from test_execution_budget import configure, enqueue, plan
 from test_execution_imports import payload as import_payload
@@ -358,8 +359,8 @@ def test_heartbeat_renews_ttl_and_respects_wall_time_limit(monkeypatch):
     now = m.utcnow()
     monkeypatch.setattr(m, "utcnow", lambda: now)
     short_lease = claim(short_ctx, "claim-short").json()["lease"]
-    assert short_lease["lease_ttl_s"] == 25
-    assert datetime.fromisoformat(short_lease["expires_at"]) == now + timedelta(seconds=25)
+    assert short_lease["lease_ttl_s"] == 25 + leases.WALL_TIME_GRACE_S
+    assert datetime.fromisoformat(short_lease["expires_at"]) == now + timedelta(seconds=25 + leases.WALL_TIME_GRACE_S)
     assert finish(short_ctx, short_lease, report()).status_code == 200
 
     bounded_manifest = copy.deepcopy(ctx["plan"]["manifest"])
@@ -375,11 +376,11 @@ def test_heartbeat_renews_ttl_and_respects_wall_time_limit(monkeypatch):
     monkeypatch.setattr(m, "utcnow", lambda: near_limit)
     near_beat = beat(bounded_ctx, bounded_lease)
     assert near_beat.status_code == 200
-    assert datetime.fromisoformat(near_beat.json()["expires_at"]) == start + timedelta(seconds=70)
+    assert datetime.fromisoformat(near_beat.json()["expires_at"]) == start + timedelta(seconds=70 + leases.WALL_TIME_GRACE_S)
     with h.SessionLocal() as db:
-        db.get(m.ExecutionLease, bounded_ctx["execution"]).expires_at = start + timedelta(seconds=120)
+        db.get(m.ExecutionLease, bounded_ctx["execution"]).expires_at = start + timedelta(seconds=150)
         db.commit()
-    after_limit = start + timedelta(seconds=70)
+    after_limit = start + timedelta(seconds=70 + leases.WALL_TIME_GRACE_S)
     monkeypatch.setattr(m, "utcnow", lambda: after_limit)
     assert beat(bounded_ctx, bounded_lease).status_code == 409
     view = execution(bounded_ctx)
@@ -396,3 +397,22 @@ def test_reported_cost_settles_exactly_and_overspend_is_preserved(cost, reported
     assert {entry["kind"]: entry["amount_usd"] for entry in balance["entries"]} == {"reserve": cost, "settle": reported, "release": cost}
     warnings = execution(ctx)["attempts"][0]["result"]["warnings"]
     assert warnings == ([] if cost == reported else ["reported_cost_exceeds_reserved_limit"])
+
+
+@pytest.mark.parametrize("finish_after_s,accepted", [(62, True), (60 + leases.WALL_TIME_GRACE_S + 1, False)])
+def test_timed_out_report_inside_wall_time_grace_settles(monkeypatch, finish_after_s, accepted):
+    ctx = setup()  # manifest wall_time_s=60
+    start = m.utcnow()
+    monkeypatch.setattr(m, "utcnow", lambda: start)
+    lease = leased(ctx)
+    monkeypatch.setattr(m, "utcnow", lambda: start + timedelta(seconds=50))
+    assert beat(ctx, lease).status_code == 200
+    monkeypatch.setattr(m, "utcnow", lambda: start + timedelta(seconds=finish_after_s))
+    response = finish(ctx, lease, report(status="timed_out", amount="0.25"))
+    balance = budget(ctx)
+    if accepted:
+        assert response.status_code == 200 and response.json()["status"] == "timed_out"
+        assert (balance["state"], balance["known_spent_usd"], balance["slots_active"]) == ("settled", "0.25000000", False)
+    else:
+        assert response.status_code == 409 and execution(ctx)["status"] == "uncertain"
+        assert (balance["state"], balance["known_spent_usd"], balance["slots_active"]) == ("unknown", None, True)

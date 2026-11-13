@@ -28,6 +28,7 @@ HEARTBEAT_INTERVAL_S = 20
 IDLE_RETRY_AFTER_S = 5
 CLAIM_SCAN = 20
 MAX_LATE_REPORTS = 20
+WALL_TIME_GRACE_S = 30  # a runner finishing at wall_time_s still has time to publish its terminal report
 
 
 class RunnerReport(Contract):
@@ -47,7 +48,7 @@ def iso(value):
 
 def wall_time_deadline(claimed_at, execution):
     limit_s = ExecutionManifest.model_validate_json(execution.manifest_content).limits.wall_time_s
-    return server_timestamp(claimed_at) + timedelta(seconds=limit_s)
+    return server_timestamp(claimed_at) + timedelta(seconds=limit_s + WALL_TIME_GRACE_S)
 
 
 def lease_expires_at(claimed_at, now, execution):
@@ -186,7 +187,7 @@ def cancel_unstarted(db, execution, runner_id, reason):
 def grant(lease, execution, token):
     manifest = ExecutionManifest.model_validate_json(execution.manifest_content)
     return {"execution_id": execution.id, "attempt_id": lease.attempt_id, "lease_token": token,
-            "expires_at": iso(lease.expires_at), "lease_ttl_s": min(LEASE_TTL_S, manifest.limits.wall_time_s),
+            "expires_at": iso(lease.expires_at), "lease_ttl_s": min(LEASE_TTL_S, manifest.limits.wall_time_s + WALL_TIME_GRACE_S),
             "heartbeat_interval_s": HEARTBEAT_INTERVAL_S,
             "manifest_hash": execution.manifest_hash, "manifest": manifest.model_dump(mode="json")}
 
