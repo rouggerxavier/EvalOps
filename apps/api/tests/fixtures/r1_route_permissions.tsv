@@ -88,3 +88,6 @@ POST	/v1/invitations/accept	own-contract	jwt
 PATCH	/v1/organizations/{org_id}/members/{user_id}	admin	jwt
 DELETE	/v1/organizations/{org_id}/members/{user_id}	admin	jwt
 POST	/v1/organizations/{org_id}/ownership/transfer	admin	jwt
+GET	/v1/projects/{project_id}/deletion-preview	destructive	jwt
+GET	/v1/organizations/{org_id}/deletion-preview	destructive	jwt
+GET	/v1/auth/me/deletion-preview	own-contract	jwt

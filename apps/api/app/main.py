@@ -10,6 +10,7 @@ from sqlalchemy import inspect, text
 
 from app.api.routes import router as v1_router
 from app.api.routes_auth import router as auth_router
+from app.api.routes_deletion_preview import router as deletion_preview_router
 from app.api.routes_memberships import router as memberships_router
 from app.api.routes_rubrics import router as rubrics_router
 from app.api.routes_evaluations import router as evaluations_router
@@ -207,6 +208,7 @@ async def _request_context_middleware(request: Request, call_next):
 
 
 app.include_router(auth_router)
+app.include_router(deletion_preview_router)
 app.include_router(memberships_router)
 app.include_router(v1_router)
 app.include_router(rubrics_router)
