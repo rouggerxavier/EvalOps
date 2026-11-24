@@ -24,6 +24,7 @@ GET	/v1/projects/{project_id}/organization-execution-budget	admin
 GET	/v1/projects/{project_id}/runners	admin
 GET	/v1/projects/{project_id}/service-principals	admin
 GET	/v1/projects/{project_id}/task-evaluations	read
+GET	/v1/projects/{project_id}/task-traces	read
 GET	/v1/runners/{runner_id}	admin
 GET	/v1/runners/{runner_id}/capabilities	runner-only
 GET	/v1/task-evaluations/{evaluation_id}	read

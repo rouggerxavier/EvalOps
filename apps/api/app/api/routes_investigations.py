@@ -96,13 +96,14 @@ def classify_dataset(dataset_id: str, payload: LabelDeclaration, request: Reques
 
 
 @router.get("/projects/{project_id}/task-traces")
-def list_trace_evidence(project_id: str, request: Request, environment: Environment,
+def list_trace_evidence(project_id: str, request: Request, environment: Environment | None = None,
                         limit: int = Query(50, ge=1, le=100), cursor: str | None = Query(None, max_length=512),
                         conversation_id: str | None = Query(None, max_length=255), db: Session = Depends(task_db)):
     from app.api.routes import _decode_cursor, _encode_cursor
 
     actor = s.authenticate(request, db)
-    s.project_access(db, actor, project_id)
+    project = s.project_access(db, actor, project_id)
+    environment = environment or actor.environment or project.default_environment
     if actor.environment and actor.environment != environment:
         raise HTTPException(404, "not_found")
     trace = m.Trace
