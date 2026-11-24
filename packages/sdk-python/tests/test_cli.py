@@ -110,3 +110,21 @@ def test_cli_execution_admission_and_cancel_preserve_operation(monkeypatch, caps
     assert json.loads(capsys.readouterr().out)["status"] == "queued"
     assert cli.main(["execution-cancel", "execution", "--json"]) == 0
     assert json.loads(capsys.readouterr().out)["status"] == "cancelled"
+
+
+def test_cli_reads_trace_evidence_with_scoped_client(monkeypatch, capsys):
+    monkeypatch.setenv("EVALOPS_API_KEY", "test-secret")
+
+    def request(self, method, path, **kwargs):
+        assert method == "GET"
+        if path.startswith("/projects/p/task-traces?"):
+            assert path == "/projects/p/task-traces?environment=prod&limit=3&conversation_id=a%2Bb"
+            return {"data": [{"id": "tr_1"}]}
+        assert path == "/task-evidence/traces/tr_1"
+        return {"id": "tr_1", "spans": [{"name": "get_property"}]}
+
+    monkeypatch.setattr(cli.Client, "_request", request)
+    assert cli.main(["traces", "--project", "p", "--environment", "prod", "--limit", "3", "--conversation", "a+b"]) == 0
+    assert json.loads(capsys.readouterr().out)["data"][0]["id"] == "tr_1"
+    assert cli.main(["trace", "tr_1"]) == 0
+    assert json.loads(capsys.readouterr().out)["spans"] == [{"name": "get_property"}]

@@ -36,3 +36,22 @@ Código de saída: 0 sucesso, 1 falha de transporte/API, 2 entrada inválida. A 
 Fontes são revalidadas em cada leitura. Remover referência do editor não remove restrições acumuladas. Restrição ou exclusão da fonte pode ocultar investigação e histórico. Ciclos e referências entre projetos são recusados.
 
 Migre com Alembic antes de iniciar banco existente. A migration 0015 é aditiva. Downgrade recusa dados de investigações ou recibos de revisões; preserve o banco para rollback de código. Testes locais usam fixtures, não comprovam valor de piloto externo.
+
+## Investigar produção com Codex ou Claude Code
+
+Use uma chave de leitura de um principal de serviço restrito ao projeto e ao
+ambiente. Configure a chave via ambiente. Os comandos devolvem JSON e não
+acionam um provedor de modelos.
+
+```bash
+evalops traces --project PROJECT --environment prod --limit 20
+evalops traces --project PROJECT --environment prod --conversation CONVERSATION_ID
+evalops trace TRACE_ID
+```
+
+A lista retorna um cursor para a próxima página. O detalhe entrega os spans
+observados e o identificador `source_ref` para a investigação. O assistente
+pode citar esse identificador e os spans que sustentam a hipótese. A interface
+web permite abrir a mesma evidência e revisar o caso. Para uma sessão do ChatGPT
+que não tenha acesso ao CLI, compartilhe evidência selecionada pelo operador
+ou exponha leitura por uma conexão autorizada.
