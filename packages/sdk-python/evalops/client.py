@@ -183,12 +183,12 @@ class Client(_HttpClient):
 
     def list_traces(self, project_id: str, *, environment: str, limit: int = 50,
                     conversation_id: str | None = None, cursor: str | None = None) -> dict[str, Any]:
-        params = {"project_id": project_id, "environment": environment, "limit": limit}
+        params = {"environment": environment, "limit": limit}
         if conversation_id is not None:
             params["conversation_id"] = conversation_id
         if cursor is not None:
             params["cursor"] = cursor
-        return self._request("GET", f"/traces?{urlencode(params)}")
+        return self._request("GET", f"/projects/{_path_id(project_id)}/task-traces?{urlencode(params)}")
 
     def get_trace_evidence(self, trace_id: str) -> dict[str, Any]:
         return self._request("GET", f"/task-evidence/traces/{_path_id(trace_id)}")

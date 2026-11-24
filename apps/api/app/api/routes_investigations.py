@@ -1,9 +1,10 @@
 """F2 investigation and evidence endpoints reuse task authorization and receipts."""
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from sqlalchemy import or_
+from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
 from app import models as m
+from app.timestamps import server_timestamp
 from app.api.routes_tasks import task_db, visible_list
 from app.domain.tasks import service as s
 from app.domain.tasks.investigations import InvestigationCreate, InvestigationPatch, revise
@@ -92,6 +93,38 @@ def classify_dataset(dataset_id: str, payload: LabelDeclaration, request: Reques
             item.access_label = s.derived_label(db, [f"dataset:{dataset_id}", *refs], dataset.project_id, payload.environment)
         return "dataset", dataset
     return s.serialize(s.write(db, actor, request, dataset.project_id, payload.model_dump(mode="json"), operation))
+
+
+@router.get("/projects/{project_id}/task-traces")
+def list_trace_evidence(project_id: str, request: Request, environment: Environment,
+                        limit: int = Query(50, ge=1, le=100), cursor: str | None = Query(None, max_length=512),
+                        conversation_id: str | None = Query(None, max_length=255), db: Session = Depends(task_db)):
+    from app.api.routes import _decode_cursor, _encode_cursor
+
+    actor = s.authenticate(request, db)
+    s.project_access(db, actor, project_id)
+    if actor.environment and actor.environment != environment:
+        raise HTTPException(404, "not_found")
+    trace = m.Trace
+    query = db.query(trace).filter(trace.project_id == project_id, trace.environment == environment, trace.deleted_at.is_(None))
+    if conversation_id is not None:
+        query = query.filter(trace.metadata_json["conversation_id"].as_string() == conversation_id)
+    if cursor:
+        created_at, trace_id = _decode_cursor(cursor)
+        query = query.filter(or_(trace.created_at < created_at, and_(trace.created_at == created_at, trace.id < trace_id)))
+    page = query.order_by(trace.created_at.desc(), trace.id.desc()).limit(limit + 1).all()
+    rows = page[:limit]
+    if environment == "prod" and rows:
+        s.audit(db, actor, project_id, "task.sensitive_trace_list", f"project:{project_id}")
+    return {
+        "data": [{
+            "id": row.id, "source_ref": f"trace:{row.id}", "name": row.name,
+            "environment": row.environment, "status": row.status, "tags": row.tags,
+            "conversation_id": row.metadata_json.get("conversation_id"),
+            "started_at": server_timestamp(row.started_at).isoformat(),
+        } for row in rows],
+        "next_cursor": _encode_cursor(rows[-1].created_at, rows[-1].id) if len(page) > limit else None,
+    }
 
 
 @router.get("/task-evidence/traces/{trace_id}")

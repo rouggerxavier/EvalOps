@@ -117,8 +117,8 @@ def test_cli_reads_trace_evidence_with_scoped_client(monkeypatch, capsys):
 
     def request(self, method, path, **kwargs):
         assert method == "GET"
-        if path.startswith("/traces?"):
-            assert path == "/traces?project_id=p&environment=prod&limit=3&conversation_id=a%2Bb"
+        if path.startswith("/projects/p/task-traces?"):
+            assert path == "/projects/p/task-traces?environment=prod&limit=3&conversation_id=a%2Bb"
             return {"data": [{"id": "tr_1"}]}
         assert path == "/task-evidence/traces/tr_1"
         return {"id": "tr_1", "spans": [{"name": "get_property"}]}

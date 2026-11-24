@@ -99,3 +99,29 @@ def test_cross_project_reference_and_prospective_cycle():
     assert response.status_code == 422 and response.json()["detail"] == "cyclic_evidence"
     other = h.post("/projects", {"organization_id": org, "name": "Other", "slug": "other"}, headers)
     h.post(f"/projects/{other['id']}/investigations", {"environment": "dev", "state": {"title": "Wrong project", "evidence_refs": [f"item:{case['id']}"]}}, headers, expected=404)
+
+
+def test_trace_evidence_list_is_scoped_and_paginated():
+    headers, project, org = h.bootstrap()
+    key, _, _ = h.key_for(headers, project, scopes=("read",), env="prod")
+    legacy = h.post(f"/projects/{project}/api-keys", {"name": "Legacy", "environment": "prod", "scopes": ["read"]}, headers)
+    with SessionLocal() as db:
+        for identifier, environment, deleted in (("a", "prod", False), ("b", "prod", False),
+                                                  ("dev", "dev", False), ("deleted", "prod", True)):
+            db.add(m.Trace(id=identifier, project_id=project, organization_id=org, environment=environment,
+                           name="Observation", status="ok", started_at=m.utcnow(), ended_at=m.utcnow(),
+                           duration_ms=0, metadata_json={"conversation_id": "conv"},
+                           deleted_at=m.utcnow() if deleted else None))
+        db.commit()
+    route = f"/v1/projects/{project}/task-traces"
+    params = {"environment": "prod", "limit": 1, "conversation_id": "conv"}
+    response = h.client.get(route, headers=key, params=params)
+    assert response.status_code == 200, response.text
+    first = response.json()
+    second = h.client.get(route, headers=key, params={**params, "cursor": first["next_cursor"]}).json()
+    assert {first["data"][0]["id"], second["data"][0]["id"]} == {"a", "b"}
+    assert second["next_cursor"] is None
+    assert h.client.get(route, headers=key, params={**params, "environment": "dev"}).status_code == 404
+    assert h.client.get("/v1/projects/another/task-traces", headers=key, params=params).status_code == 404
+    assert h.client.get(route, headers={"X-EvalOps-Key": legacy["key"]}, params=params).status_code == 403
+    assert h.client.get("/v1/task-evidence/traces/a", headers=key).status_code == 200
