@@ -37,6 +37,14 @@ def main(argv=None):
     inv_update.add_argument("--revision", type=int, required=True)
     inv_update.add_argument("--file", required=True)
     inv_update.add_argument("--idempotency-key", required=True)
+    traces = commands.add_parser("traces")
+    traces.add_argument("--project", required=True)
+    traces.add_argument("--environment", required=True, choices=["dev", "staging", "prod"])
+    traces.add_argument("--conversation")
+    traces.add_argument("--cursor")
+    traces.add_argument("--limit", type=int, default=50, choices=range(1, 101), metavar="1-100")
+    trace = commands.add_parser("trace")
+    trace.add_argument("id")
     execution = commands.add_parser("execution")
     execution.add_argument("id")
     execution_import = commands.add_parser("execution-import")
@@ -57,7 +65,7 @@ def main(argv=None):
     execution_start.add_argument("--idempotency-key", required=True)
     execution_cancel = commands.add_parser("execution-cancel")
     execution_cancel.add_argument("id")
-    for command in (discover, evaluate, result, investigation, inv_create, inv_update, execution, execution_import, runner_capabilities, plan_create, plan_get, execution_start, execution_cancel):
+    for command in (discover, evaluate, result, investigation, inv_create, inv_update, traces, trace, execution, execution_import, runner_capabilities, plan_create, plan_get, execution_start, execution_cancel):
         command.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
     credential_name = "EVALOPS_RUNNER_KEY" if args.command == "runner-capabilities" else "EVALOPS_API_KEY"
@@ -80,6 +88,13 @@ def main(argv=None):
             output = client.enqueue_execution(args.project, args.plan, idempotency_key=args.idempotency_key)
         elif args.command == "execution-cancel":
             output = client.cancel_execution(args.id)
+        elif args.command == "traces":
+            output = client.list_traces(
+                args.project, environment=args.environment, limit=args.limit,
+                conversation_id=args.conversation, cursor=args.cursor,
+            )
+        elif args.command == "trace":
+            output = client.get_trace_evidence(args.id)
         elif args.command == "execution":
             output = client.get_execution(args.id)
         elif args.command == "investigation":
